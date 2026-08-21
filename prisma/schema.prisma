@@ -1,0 +1,222 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Back-office operator role. Values must stay exactly the code-defined `AdminRole`
+/// (`src/common/authz/admin-role.ts`). Role → permission policy is code, not data
+/// (ADR 0007); this column only records which role an admin holds.
+enum AdminRole {
+  SUPER_ADMIN
+  WAREHOUSE
+  ORDER_OPS
+}
+
+/// Back-office operator identity. A separate identity and authorization domain from
+/// `User`: no shared credential storage, sessions, or permission model.
+model Admin {
+  id           String    @id @default(uuid()) @db.Uuid
+  /// Canonical login email (trimmed, lowercased, ASCII). Identity only — never an
+  /// authorization primitive.
+  email        String    @unique @db.VarChar(254)
+  /// Argon2id digest produced through the `PasswordHasher` port. Never plaintext.
+  passwordHash String    @db.VarChar(255)
+  role         AdminRole
+  /// Prefer deactivation over hard deletion; an inactive admin resolves no permissions.
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @db.Timestamptz(3)
+
+  sessions AdminAuthSession[]
+}
+
+/// Customer/store identity. The authenticated storefront subject is this record.
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  /// Canonical E.164 Iranian mobile, e.g. +989121234567
+  phone     String   @unique @db.VarChar(16)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  sessions AuthSession[]
+}
+
+/// Server-side refresh session for a User only. Admin sessions live on
+/// `AdminAuthSession`; `userId` stays non-nullable rather than becoming a
+/// nullable polymorphic subject (ADR 0008 / ADR 0009).
+model AuthSession {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @db.Uuid
+  /// SHA-256 digest of the current refresh token (base64url, 43 chars). Never store plaintext.
+  refreshTokenHash String    @unique @db.VarChar(43)
+  /// Stable family id for rotation and reuse detection (UUID).
+  tokenFamilyId    String    @db.Uuid
+  expiresAt        DateTime  @db.Timestamptz(3)
+  /// Null while active; set on logout/revocation (row retained).
+  revokedAt        DateTime? @db.Timestamptz(3)
+  lastUsedAt       DateTime? @db.Timestamptz(3)
+  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  /// List/revoke sessions for a user (includes revoked rows for filtering).
+  @@index([userId, revokedAt])
+  /// Family revocation / reuse detection lookups.
+  @@index([tokenFamilyId])
+  /// Future expiry cleanup scans.
+  @@index([expiresAt])
+}
+
+/// Bounded history of consumed User refresh-token digests for reuse detection (AUTH-04).
+/// Rows expire for future cleanup; PostgreSQL remains authoritative (not Redis).
+/// Admin consumed digests live on `AdminAuthRefreshTokenConsumption` (ADR 0009).
+model AuthRefreshTokenConsumption {
+  id               String   @id @default(uuid()) @db.Uuid
+  sessionId        String   @db.Uuid
+  tokenFamilyId    String   @db.Uuid
+  /// SHA-256 digest of a previously valid refresh token (base64url, 43 chars).
+  refreshTokenHash String   @unique @db.VarChar(43)
+  consumedAt       DateTime @db.Timestamptz(3)
+  /// Retention bound for later cleanup (aligned with session expiry at consumption time).
+  expiresAt        DateTime @db.Timestamptz(3)
+
+  @@index([tokenFamilyId])
+  @@index([sessionId])
+  @@index([expiresAt])
+}
+
+/// Server-side refresh session for an Admin only. Dedicated table rather than a
+/// nullable polymorphic subject on `AuthSession` (ADR 0009).
+model AdminAuthSession {
+  id               String    @id @default(uuid()) @db.Uuid
+  adminId          String    @db.Uuid
+  /// SHA-256 digest of the current refresh token (base64url, 43 chars). Never store plaintext.
+  refreshTokenHash String    @unique @db.VarChar(43)
+  /// Stable family id for rotation and reuse detection (UUID).
+  tokenFamilyId    String    @db.Uuid
+  expiresAt        DateTime  @db.Timestamptz(3)
+  /// Null while active; set on logout/revocation (row retained).
+  revokedAt        DateTime? @db.Timestamptz(3)
+  lastUsedAt       DateTime? @db.Timestamptz(3)
+  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @db.Timestamptz(3)
+
+  admin Admin @relation(fields: [adminId], references: [id], onDelete: Restrict)
+
+  /// List/revoke sessions for an admin (includes revoked rows for filtering).
+  @@index([adminId, revokedAt])
+  /// Family revocation / reuse detection lookups.
+  @@index([tokenFamilyId])
+  /// Future expiry cleanup scans.
+  @@index([expiresAt])
+}
+
+/// Bounded history of consumed Admin refresh-token digests for reuse detection.
+/// Separate from `AuthRefreshTokenConsumption` so User consumption cannot
+/// reference Admin sessions (ADR 0009). Cleanup later via DATA-02.
+model AdminAuthRefreshTokenConsumption {
+  id               String   @id @default(uuid()) @db.Uuid
+  sessionId        String   @db.Uuid
+  tokenFamilyId    String   @db.Uuid
+  /// SHA-256 digest of a previously valid refresh token (base64url, 43 chars).
+  refreshTokenHash String   @unique @db.VarChar(43)
+  consumedAt       DateTime @db.Timestamptz(3)
+  /// Retention bound for later cleanup (aligned with session expiry at consumption time).
+  expiresAt        DateTime @db.Timestamptz(3)
+
+  @@index([tokenFamilyId])
+  @@index([sessionId])
+  @@index([expiresAt])
+}
+
+/// Product category reference (CAT-02). Flat identity only — no hierarchy in
+/// this schema. Legacy field inventory is incomplete (MIG-01); columns are the
+/// minimal justified set. Prefer `isActive = false` over hard delete; Product
+/// FKs use Restrict (CAT-03).
+model Category {
+  id        String   @id @default(uuid()) @db.Uuid
+  /// Display label. Stored trimmed; not unique until MIG-01 evidences uniqueness.
+  name      String   @db.VarChar(100)
+  /// Public lists return active rows only. Deactivate instead of deleting.
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  products Product[]
+
+  /// Public active list and Admin filter+name sort.
+  @@index([isActive, name])
+}
+
+/// Sellable catalog item (CAT-03). Owns identity, Category link, and current
+/// selling price in integer Toman. Inventory quantities are not Product fields
+/// (INV-01). Media attachment is later work; CAT-04 owns reusable Media
+/// records independently. No SKU/description until
+/// MIG-01 evidences them. Prefer `isActive = false` over hard delete.
+model Product {
+  id         String   @id @default(uuid()) @db.Uuid
+  /// Display name / storefront title. Stored trimmed; not unique (MIG-01).
+  name       String   @db.VarChar(100)
+  /// Current selling price in integer Toman (not Rial). JSON number; PG int4.
+  /// Price history is PRC-01; Orders must snapshot this value (ORD-01).
+  price      Int
+  categoryId String   @db.Uuid
+  /// Public APIs return only active products whose Category is also active.
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  /// Category filter + active visibility.
+  @@index([categoryId, isActive])
+  /// Public/admin list by recency when filtered by active.
+  @@index([isActive, createdAt])
+}
+
+/// Reusable Media library object (CAT-04). Metadata only — binaries live in
+/// object storage. Not owned by Product; future Product/Blog/Category FKs
+/// must Restrict and must not assume a one-to-one relationship.
+model Media {
+  id               String   @id @default(uuid()) @db.Uuid
+  /// Server-generated object key (`media/<year>/<month>/<uuid>.<ext>`). Unique.
+  storageKey       String   @unique @db.VarChar(255)
+  /// Client filename metadata only. Never used as a storage path.
+  originalFileName String   @db.VarChar(255)
+  mimeType         String   @db.VarChar(64)
+  /// Byte length of the stored object. int4 is sufficient for launch file caps.
+  sizeBytes        Int
+  /// Pixel width when reliably parsed from image headers; otherwise null.
+  width            Int?
+  /// Pixel height when reliably parsed from image headers; otherwise null.
+  height           Int?
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime @updatedAt @db.Timestamptz(3)
+
+  /// Admin library recency and mime filter.
+  @@index([createdAt])
+  @@index([mimeType, createdAt])
+}
+
+/// Geographic/service region reference (CAT-02). No shipping or pricing fields
+/// until evidenced. Prefer `isActive = false` over hard delete; future profile
+/// or delivery FKs should use Restrict and revisit deletion rules.
+model Region {
+  id        String   @id @default(uuid()) @db.Uuid
+  /// Display label. Stored trimmed; not unique until MIG-01 evidences uniqueness.
+  name      String   @db.VarChar(100)
+  /// Public lists return active rows only. Deactivate instead of deleting.
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  /// Public active list and Admin filter+name sort.
+  @@index([isActive, name])
+}

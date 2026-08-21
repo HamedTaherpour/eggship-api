@@ -1,0 +1,9 @@
+# EggShip Codex project layer
+
+# Loaded only when this repository is trusted in Codex.
+# Canonical agent policy remains root AGENTS.md and instructions/*.
+# Do not put secrets, provider credentials, or model-provider overrides here.
+
+# Custom [agents] role TOML files are intentionally omitted until the
+# project-local agent-role format is verified against the installed Codex
+# release. Use docs/agent-workflows/* and Claude/Cursor review adapters instead.

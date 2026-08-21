@@ -1,0 +1,32 @@
+# Dependencies and builds
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Generated code
+src/generated/prisma/
+
+# Generated artifacts
+artifacts/openapi.json
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+pnpm-debug.log*
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local tooling
+.eslintcache
+
+# Personal AI host overrides (never commit secrets or local permission grants)
+.claude/settings.local.json

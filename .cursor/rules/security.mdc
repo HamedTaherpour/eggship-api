@@ -1,0 +1,17 @@
+---
+description: EggShip security, validation, secrets, and authorization checks
+alwaysApply: false
+---
+
+# Security
+
+Follow `instructions/security.md` whenever the change touches HTTP, auth, data access, logging, uploads, or configuration. For local/remote env and `.env` workflow, also follow `instructions/environment.md`.
+
+- Validate strictly; whitelist fields; reject unexpected input.
+- Keep errors safe; never leak stack traces or secrets to clients.
+- Never log secrets, tokens, cookies, OTPs, passwords, or authorization headers.
+- Treat authentication and authorization separately; enforce ownership server-side.
+- Authorization fails closed; check permissions, never role names. See `instructions/authorization.md`.
+- Derive owner scope from the authenticated principal, never from client-supplied ids.
+- Never commit secrets or put credentials in AI host config directories.
+- Never invent credentials or copy production database/Redis secrets into development config.

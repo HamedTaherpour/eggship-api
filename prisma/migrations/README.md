@@ -1,0 +1,13 @@
+# Prisma migrations
+
+Business migrations live here and are applied with `prisma migrate deploy`.
+
+| Migration                                       | Purpose                                                      |
+| ----------------------------------------------- | ------------------------------------------------------------ |
+| `20260820200000_auth_user_session`              | AUTH-02 User + AuthSession persistence foundation            |
+| `20260820210000_auth_refresh_token_consumption` | AUTH-04 bounded consumed refresh digests for reuse detection |
+| `20260821170000_admin_identity`                 | ADM-00 Admin identity persistence                            |
+| `20260821210000_admin_auth_session`             | ADM-AUTH-01 Admin refresh sessions                           |
+| `20260821220000_category_region_reference`      | CAT-02 Category and Region reference tables                  |
+
+Integration suites apply migrations with `prisma migrate deploy` against `TEST_DATABASE_URL`. Do not use `prisma db push` as the canonical path.

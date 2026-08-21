@@ -1,0 +1,29 @@
+{
+  "description": "EggShip deterministic Codex guardrails for governance context and completion checks",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .codex/hooks/session-start.js",
+            "timeout": 10,
+            "statusMessage": "Loading EggShip governance"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .codex/hooks/stop-check.js",
+            "timeout": 10,
+            "statusMessage": "Checking completion evidence"
+          }
+        ]
+      }
+    ]
+  }
+}

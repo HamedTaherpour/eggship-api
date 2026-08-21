@@ -1,0 +1,113 @@
+name: Release
+
+# Creates a GitHub Release for annotated v* tags.
+# Does not deploy the API. Tag creation and push remain human-controlled.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: pnpm prisma:generate
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/eggship_ci
+
+      - name: Check agent tooling adapters
+        run: pnpm check:agent-tooling
+
+      - name: Check environment tooling
+        run: pnpm env:check
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Type-check
+        run: pnpm typecheck
+
+      - name: Run unit tests
+        run: pnpm test
+
+      - name: Run release validator tests
+        run: pnpm test:release
+
+      - name: Run end-to-end tests
+        run: pnpm test:e2e
+
+      - name: Build
+        run: pnpm build
+
+      - name: Check OpenAPI document
+        run: node dist/common/openapi/check-openapi.js
+
+      - name: Check release metadata
+        run: pnpm release:check
+
+  publish:
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Validate tag matches package version
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="$(node -p "require('./package.json').version")"
+          EXPECTED="v${VERSION}"
+          if [[ "${TAG}" != "${EXPECTED}" ]]; then
+            echo "Tag ${TAG} does not match package.json version ${VERSION} (expected ${EXPECTED})."
+            exit 1
+          fi
+          node scripts/release-check.mjs
+          node scripts/extract-release-notes.mjs "${VERSION}" CHANGELOG.md release-notes.md
+          echo "RELEASE_VERSION=${VERSION}" >> "${GITHUB_ENV}"
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "EggShip API v${RELEASE_VERSION}" \
+            --notes-file release-notes.md \
+            --verify-tag

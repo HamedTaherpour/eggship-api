@@ -1,0 +1,26 @@
+# API contract
+
+- All endpoints use the `/api/v1` prefix. That path segment is the HTTP contract version and is independent of the application release version (`APP_VERSION` / package version).
+- OpenAPI is the machine-readable HTTP contract generated from Nest controllers and DTOs. Do not maintain a parallel handwritten YAML contract that can drift from implementation.
+- Every public endpoint requires accurate OpenAPI documentation before it is considered done.
+- Operation IDs are deterministic and stable for future client generation: `{Tag}_{action}` (examples: `Health_get`, `Orders_list`, `Orders_create`). Prefer an explicit `@ApiOperation({ operationId })` over Nest defaults.
+- Document every externally visible DTO field with accurate type, required/optional status, enums, and constraints. Add examples and descriptions only when they clarify non-obvious meaning; keep examples synthetic.
+- Every response includes `X-Request-Id`; an error body's `requestId` is the same value.
+- JSON fields use camelCase and URL segments use kebab-case.
+- A successful single-resource response is `{ "data": {} }`.
+- A paginated response is `{ "data": [], "meta": { "page": 1, "pageSize": 20, "total": 0, "totalPages": 0 } }`.
+- List query semantics (pagination, search, sort allowlists, explicit filters, strict unknown-query rejection, offset pagination default, and OpenAPI expectations) are defined in [list-queries.md](list-queries.md). Summary:
+  - Pagination parameters are `page` and `pageSize` (defaults `1` / `20`, `pageSize` max `100`). Invalid values are rejected, never clamped.
+  - Search uses optional `search` (trimmed; resource-owned searchable fields).
+  - Sorting uses `sortBy` and `sortOrder` (`asc` | `desc`); every sortable field must be allowlisted per resource.
+  - Filters are explicit and resource-specific — no operator DSL.
+  - Unsupported list query parameters fail validation (`forbidNonWhitelisted`).
+  - Offset pagination with `total` / `totalPages` is the default; cursor pagination is not introduced globally.
+- Errors use `{ "error": { "code": "DOMAIN_REASON", "message": "Human-readable message", "details": {} }, "requestId": "req_..." }`.
+- Rate-limit and cooldown Auth errors that include `error.details.retryAfterSeconds` also set the HTTP `Retry-After` header to the same delay (whole seconds).
+- Unexpected server errors use the stable `INTERNAL_ERROR` code and a safe generic message; internal exception details are never exposed.
+- Clients use stable error codes for program logic and never parse error messages.
+- Timestamps are ISO 8601 and handled internally in UTC.
+- Monetary values are integers expressed in Toman.
+- Endpoints return explicit response DTOs and never expose raw Prisma models.
+- After production release of a contract surface, breaking HTTP/OpenAPI changes require compatibility review, OpenAPI diff awareness, and an explicit versioning decision. Generated clients must derive from the approved OpenAPI document rather than handwritten duplicate types where practical.

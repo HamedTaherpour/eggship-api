@@ -1,0 +1,21 @@
+# Security
+
+- Validate all request DTOs strictly, transform only where intended, whitelist allowed fields, and reject unexpected fields.
+- Return safe structured errors; never leak stack traces, credentials, or internal implementation details to clients.
+- Never log secrets, tokens, cookies, OTPs, passwords, or authorization headers.
+- Avoid mass assignment, particularly for sensitive models. Admin `role`, `isActive`, and `passwordHash`, along with ownership columns, are never client-writable. Changing them requires an explicit named operation with its own authorization, never a generic update endpoint accepting arbitrary Prisma input.
+- Authorization fails closed: an unknown role, an unknown permission, an unsupported subject type, or a missing permission declaration denies. Never default to allow, and never branch on a role name in a controller or service. `src/common/authz/role-branching.spec.ts` enforces the last clause by scanning source outside `common/authz`.
+- An authenticated principal of the wrong subject type is forbidden (403), not unauthenticated (401). Only missing or invalid authentication is 401. See [authorization.md](authorization.md).
+- Admin credentials are never created implicitly. No default or seeded admin account, no committed hash, no environment default password, and no automatic provisioning at startup — in any environment.
+- Owner scope for a user-owned resource is derived from the authenticated principal only. A client-supplied `userId`, `ownerId`, or `storeId` must never select whose data is read or written; that is the BOLA/IDOR boundary described in [authorization.md](authorization.md).
+- Authorization denials return a generic `AUTH_FORBIDDEN` (403) without the failed permission or the caller's role. Policy detail belongs in operational logs.
+- Production CORS must use an explicit allowlist and must never use wildcard origins.
+- Authentication proves identity; authorization grants actions. Treat them separately and validate ownership server-side. Detailed rules live in [authentication.md](authentication.md) and [authorization.md](authorization.md).
+- Never commit secrets. `.env.example` may document required names and explicitly safe non-secret development examples, but it must never contain real credentials or secrets.
+- Cookie-based authentication requires CSRF protection. Browser clients must not store refresh tokens in LocalStorage; see [authentication.md](authentication.md) and [ADR 0004](../docs/adr/0004-auth-session-strategy.md).
+- AUTH-04 implements HttpOnly `eggship_at` / `eggship_rt` cookies, refresh rotation, reuse detection, and logout. ADM-AUTH-01 implements namespaced Admin cookies `eggship_admin_at` / `eggship_admin_rt` (`Path=/api/v1/admin`). **CSRF middleware is still required** before treating browser cookie-authenticated mutations as production-ready (customer and Admin); SameSite alone is not sufficient if cross-origin topology needs more.
+- Auth refresh/logout, Admin auth, and OTP request/verify responses use `Cache-Control: no-store`. Do not globally disable caching for unrelated public APIs.
+- Future file uploads must validate content, type, and size and must not trust client filenames or persist important files on ephemeral local disk. CAT-04 implements this for Admin Media; see [media.md](media.md).
+- Development must never use production PostgreSQL or Redis credentials. Do not invent environment credentials or copy production secrets into local `.env`.
+- Never print complete `DATABASE_URL`, `REDIS_URL`, passwords, tokens, or other credentials in logs or setup scripts; use masked host metadata when a connection target must be identified.
+- Environment workflow details live in [environment.md](environment.md).

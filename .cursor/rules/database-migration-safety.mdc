@@ -1,0 +1,15 @@
+---
+description: Prisma schema and migration safety for EggShip
+globs: prisma/**/*
+alwaysApply: false
+---
+
+# Database and migration safety
+
+Follow `instructions/database.md` and `docs/adr/0002-postgresql-prisma.md`.
+
+- PostgreSQL is authoritative; Prisma is persistence technology, not a domain API.
+- Prefer versioned migrations; never use `prisma db push` for production.
+- Destructive or data-rewriting migrations need explicit human review and recovery planning.
+- Enforce important invariants with constraints where appropriate.
+- For migration review, use the shared workflow in `docs/agent-workflows/review-prisma-migration.md`.

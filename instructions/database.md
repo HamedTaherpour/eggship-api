@@ -8,6 +8,17 @@
 - Historical business records such as orders, audit events, and inventory ledger entries must not be casually hard-deleted.
 - When Redis is introduced later, it must never be authoritative for critical order or inventory state.
 
+## Inventory raw SQL
+
+Prisma cannot express Inventory conditional updates that compare columns (`onHand - reserved >= qty`, `reserved <= onHand` after a signed adjust). Inventory infrastructure may use tagged `Prisma.sql` / `$queryRaw` / `$executeRaw` for those predicates only:
+
+- Parameterize every client value. Never interpolate identifiers, `ORDER BY` fragments, or table names from input.
+- Do not use `$queryRawUnsafe` or `$executeRawUnsafe` in application code.
+- Keep SQL inside Inventory repositories. Domain and application contracts stay Prisma-free.
+- Translate driver/Prisma errors into Inventory application errors. Never leak SQLSTATE, constraint names, or SQL text to clients.
+
+CHECK constraints, unique indexes, and `ON DELETE RESTRICT` remain the database-enforced invariants. Application read-check-write is forbidden for stock mutations.
+
 ## Migration workflow
 
 | Context                                | Approved command             |

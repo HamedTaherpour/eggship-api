@@ -15,7 +15,7 @@ Categories and Regions remain **independent** reference modules. Product referen
 ## Product boundaries (CAT-03)
 
 - **Current price** is an integer number of **Toman** (not Rial). API field name: `price`. See [ADR 0010](../docs/adr/0010-integer-toman-money.md).
-- Product owns catalog identity, Category relationship, current selling price, and `isActive` visibility — not stock, reservations, discounts, or order history.
+- Product owns catalog identity, Category relationship, current selling price, and `isActive` visibility — not stock, reservations, discounts, or order history. Product creation composes through Inventory `ensureForProduct` so every Product has a 0/0 Inventory row (INV-01B). Product HTTP responses do not include inventory fields.
 - **Public visibility:** a product is public only when `Product.isActive` **and** its Category is active. Inactive categories may still be assigned in Admin; those products stay hidden from public APIs.
 - Prefer **deactivation** over hard delete. No Product DELETE HTTP endpoint in CAT-03.
 - Changing current Product `name` / `price` must not mutate historical Orders; Orders snapshot title and unit price at creation (ORD-01). PriceHistory is PRC-01.

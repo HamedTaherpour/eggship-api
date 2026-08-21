@@ -1,0 +1,170 @@
+import { randomUUID } from 'node:crypto';
+import { Injectable } from '@nestjs/common';
+import { Prisma } from '../../../generated/prisma/client';
+import { PrismaService } from '../../../infrastructure/database/prisma/prisma.service';
+import {
+  resolvePrismaConnection,
+  type PrismaConnection,
+} from '../../../infrastructure/database/prisma/prisma-transaction-context';
+import type { TransactionContext } from '../../../infrastructure/database/transaction';
+import { InventoryReservationConflictError } from '../domain/inventory-errors';
+import {
+  InventoryReservationStatus,
+  type InventoryReservation,
+} from '../domain/inventory-reservation';
+import {
+  assertInventoryUuid,
+  assertPositiveQuantity,
+} from '../domain/inventory-quantity';
+import { translateInventoryPersistenceError } from './inventory-persistence-errors';
+
+type PrismaReservation = {
+  id: string;
+  orderId: string;
+  productId: string;
+  quantity: number;
+  status: InventoryReservationStatus;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+@Injectable()
+export class InventoryReservationRepository {
+  constructor(private readonly prisma: PrismaService) {}
+
+  private db(tx?: TransactionContext): PrismaConnection {
+    return resolvePrismaConnection(this.prisma, tx);
+  }
+
+  async findById(
+    id: string,
+    tx?: TransactionContext,
+  ): Promise<InventoryReservation | null> {
+    const reservationId = assertInventoryUuid(id, 'reservationId');
+    const found = await this.db(tx).inventoryReservation.findUnique({
+      where: { id: reservationId },
+    });
+    return found === null ? null : mapReservation(found);
+  }
+
+  async findByOrderProduct(
+    orderId: string,
+    productId: string,
+    tx?: TransactionContext,
+  ): Promise<InventoryReservation | null> {
+    const order = assertInventoryUuid(orderId, 'orderId');
+    const product = assertInventoryUuid(productId, 'productId');
+    const found = await this.db(tx).inventoryReservation.findUnique({
+      where: {
+        orderId_productId: { orderId: order, productId: product },
+      },
+    });
+    return found === null ? null : mapReservation(found);
+  }
+
+  async insertActive(
+    input: { orderId: string; productId: string; quantity: number },
+    tx?: TransactionContext,
+  ): Promise<{ reservation: InventoryReservation; inserted: boolean }> {
+    const orderId = assertInventoryUuid(input.orderId, 'orderId');
+    const productId = assertInventoryUuid(input.productId, 'productId');
+    const quantity = assertPositiveQuantity(input.quantity);
+    const id = randomUUID();
+
+    try {
+      const rows = await this.db(tx).$queryRaw<PrismaReservation[]>(Prisma.sql`
+        INSERT INTO "InventoryReservation" (
+          "id", "orderId", "productId", "quantity", "status", "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${id}::uuid,
+          ${orderId}::uuid,
+          ${productId}::uuid,
+          ${quantity},
+          'ACTIVE'::"InventoryReservationStatus",
+          now(),
+          now()
+        )
+        ON CONFLICT ("orderId", "productId") DO NOTHING
+        RETURNING "id", "orderId", "productId", "quantity", "status", "createdAt", "updatedAt"
+      `);
+      if (rows.length === 1) {
+        return { reservation: mapReservation(rows[0]!), inserted: true };
+      }
+
+      const locked = await this.db(tx).$queryRaw<
+        PrismaReservation[]
+      >(Prisma.sql`
+        SELECT "id", "orderId", "productId", "quantity", "status", "createdAt", "updatedAt"
+        FROM "InventoryReservation"
+        WHERE "orderId" = ${orderId}::uuid
+          AND "productId" = ${productId}::uuid
+        FOR UPDATE
+      `);
+      const existing = locked.length === 1 ? mapReservation(locked[0]!) : null;
+      if (existing === null) {
+        throw new InventoryReservationConflictError(
+          'A reservation already exists for this order and product.',
+          { orderId, productId },
+        );
+      }
+      if (
+        existing.status !== InventoryReservationStatus.ACTIVE ||
+        existing.quantity !== quantity
+      ) {
+        throw new InventoryReservationConflictError(
+          'A reservation already exists for this order and product.',
+          { orderId, productId, status: existing.status },
+        );
+      }
+      return { reservation: existing, inserted: false };
+    } catch (error: unknown) {
+      translateInventoryPersistenceError(error);
+    }
+  }
+
+  /**
+   * ACTIVE → RELEASED | SHIPPED via conditional UPDATE. `transitioned` is true
+   * only when this statement moved the row.
+   */
+  async transitionFromActive(
+    id: string,
+    to:
+      | typeof InventoryReservationStatus.RELEASED
+      | typeof InventoryReservationStatus.SHIPPED,
+    tx?: TransactionContext,
+  ): Promise<{
+    reservation: InventoryReservation;
+    transitioned: boolean;
+  } | null> {
+    const reservationId = assertInventoryUuid(id, 'reservationId');
+    try {
+      const result = await this.db(tx).inventoryReservation.updateMany({
+        where: {
+          id: reservationId,
+          status: InventoryReservationStatus.ACTIVE,
+        },
+        data: { status: to },
+      });
+      const current = await this.findById(reservationId, tx);
+      if (current === null) {
+        return null;
+      }
+      return { reservation: current, transitioned: result.count === 1 };
+    } catch (error: unknown) {
+      translateInventoryPersistenceError(error);
+    }
+  }
+}
+
+function mapReservation(row: PrismaReservation): InventoryReservation {
+  return {
+    id: row.id,
+    orderId: row.orderId,
+    productId: row.productId,
+    quantity: row.quantity,
+    status: row.status,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}

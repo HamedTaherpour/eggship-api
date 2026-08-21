@@ -31,6 +31,12 @@ import type {
 import { normalizeProductName } from '../src/modules/products/domain/product-name';
 import { normalizeProductPrice } from '../src/modules/products/domain/product-price';
 import { ProductRepository } from '../src/modules/products/infrastructure/product.repository';
+import { InventoryService } from '../src/modules/inventory/application/inventory.service';
+import {
+  TRANSACTION_CONTEXT_BRAND,
+  TransactionRunner,
+  type TransactionContext,
+} from '../src/infrastructure/database/transaction';
 import { AuthSubjectType } from '../src/modules/auth/domain/subject-type';
 
 class ConfigurableAdminRoleResolver implements AdminRoleResolver {
@@ -264,6 +270,40 @@ class InMemoryProductRepository {
   }
 }
 
+class PassThroughTransactionRunner extends TransactionRunner {
+  override run<T>(fn: (tx: TransactionContext) => Promise<T>): Promise<T> {
+    return fn({ [TRANSACTION_CONTEXT_BRAND]: true });
+  }
+
+  override runIn<T>(
+    existing: TransactionContext | undefined,
+    fn: (tx: TransactionContext) => Promise<T>,
+  ): Promise<T> {
+    return fn(existing ?? { [TRANSACTION_CONTEXT_BRAND]: true });
+  }
+}
+
+const stubInventoryService = {
+  ensureForProduct: (
+    productId: string,
+  ): Promise<{
+    productId: string;
+    onHand: number;
+    reserved: number;
+    available: number;
+    createdAt: Date;
+    updatedAt: Date;
+  }> =>
+    Promise.resolve({
+      productId,
+      onHand: 0,
+      reserved: 0,
+      available: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }),
+};
+
 function signAccessToken(subjectType: AuthSubjectType): string {
   return jwt.sign(
     {
@@ -382,6 +422,10 @@ describe('Product catalog APIs (e2e)', () => {
       .useValue(categories)
       .overrideProvider(ProductRepository)
       .useValue(products)
+      .overrideProvider(TransactionRunner)
+      .useValue(new PassThroughTransactionRunner())
+      .overrideProvider(InventoryService)
+      .useValue(stubInventoryService)
       .overrideProvider(ADMIN_ROLE_RESOLVER)
       .useValue(admins)
       .compile();

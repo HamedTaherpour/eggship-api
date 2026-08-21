@@ -14,6 +14,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { ProductsModule } from './modules/products/products.module';
 import { MediaModule } from './modules/media/media.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
 import { RegionsModule } from './modules/regions/regions.module';
 import { UsersModule } from './modules/users/users.module';
 
@@ -37,6 +38,7 @@ import { UsersModule } from './modules/users/users.module';
     AuthModule,
     CategoriesModule,
     ProductsModule,
+    InventoryModule,
     MediaModule,
     RegionsModule,
   ],

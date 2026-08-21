@@ -5,7 +5,9 @@ import {
   type PaginatedResponse,
 } from '../../../common/list';
 import { ApplicationLogger } from '../../../common/observability/application-logger.service';
+import { TransactionRunner } from '../../../infrastructure/database/transaction';
 import { CategoryService } from '../../categories/application/category.service';
+import { InventoryService } from '../../inventory/application/inventory.service';
 import type { ProductRecord } from '../domain/product';
 import {
   ProductInvalidCategoryError,
@@ -24,6 +26,8 @@ export class ProductService {
   constructor(
     private readonly products: ProductRepository,
     private readonly categories: CategoryService,
+    private readonly inventory: InventoryService,
+    private readonly transactions: TransactionRunner,
     private readonly logger: ApplicationLogger,
   ) {}
 
@@ -85,11 +89,18 @@ export class ProductService {
   async create(body: CreateProductBodyDto): Promise<ProductRecord> {
     await this.requireExistingCategory(body.categoryId);
 
-    const created = await this.products.create({
-      name: body.name,
-      price: body.price,
-      categoryId: body.categoryId,
-      isActive: body.isActive,
+    const created = await this.transactions.run(async (tx) => {
+      const product = await this.products.create(
+        {
+          name: body.name,
+          price: body.price,
+          categoryId: body.categoryId,
+          isActive: body.isActive,
+        },
+        tx,
+      );
+      await this.inventory.ensureForProduct(product.id, tx);
+      return product;
     });
     this.logger.info(
       {

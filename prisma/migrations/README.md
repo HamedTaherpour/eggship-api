@@ -9,5 +9,8 @@ Business migrations live here and are applied with `prisma migrate deploy`.
 | `20260821170000_admin_identity`                 | ADM-00 Admin identity persistence                            |
 | `20260821210000_admin_auth_session`             | ADM-AUTH-01 Admin refresh sessions                           |
 | `20260821220000_category_region_reference`      | CAT-02 Category and Region reference tables                  |
+| `20260821230000_product_catalog`                | CAT-03 Product catalog table                                 |
+| `20260821240000_media_library`                  | CAT-04 Media library metadata                                |
+| `20260822120000_inventory_persistence`          | INV-01B Inventory, reservation, and ledger tables            |
 
 Integration suites apply migrations with `prisma migrate deploy` against `TEST_DATABASE_URL`. Do not use `prisma db push` as the canonical path.

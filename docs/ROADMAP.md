@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |    94 |
-| DONE        |    25 |
+| DONE        |    26 |
 | IN_PROGRESS |     0 |
-| READY       |     4 |
+| READY       |     6 |
 | BLOCKED     |     0 |
-| PLANNED     |    65 |
+| PLANNED     |    62 |
 
-- Current task: none in progress. Next recommended: `INV-01B — Inventory schema, reservation, ledger, and persistence primitives` (READY; depends on CAT-03 and accepted ADR 0012 / INV-01A). `CAT-05 — Admin catalog APIs` and `CAT-06 — Public catalog APIs` are now READY after CAT-04. `PRC-01 — Pricing rules and price history` is also READY (depends on CAT-03; starts with human architecture approval). `ADM-01 — Admin account management` when back-office operator administration is prioritized over catalog work; it depends on `ADM-AUTH-01` so disablement can revoke Admin sessions.
+- Current task: none in progress. Next recommended: `INV-02 — Stock receiving and adjustments` (READY after INV-01B; also `INV-03 — Reservation and release semantics`). `CAT-05 — Admin catalog APIs` and `CAT-06 — Public catalog APIs` remain READY. `PRC-01 — Pricing rules and price history` is READY (depends on CAT-03; starts with human architecture approval). `ORD-01 — Order schema and historical snapshots` is now READY (AUTH-07, CAT-03, INV-01B). `INV-04` stays PLANNED until INV-03 is DONE. `ADM-01 — Admin account management` when back-office operator administration is prioritized over catalog work; it depends on `ADM-AUTH-01` so disablement can revoke Admin sessions.
 - Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
@@ -340,7 +340,7 @@ Explicitly out of scope: Prisma schema, migrations, Inventory HTTP, Orders integ
 
 ### INV-01B — Inventory schema, reservation, ledger, and persistence primitives
 
-Status: READY | Depends on: CAT-03, INV-01A | Primary: Codex | Review: Claude/Cursor concurrency review, Human migration review
+Status: DONE | Depends on: CAT-03, INV-01A | Primary: Codex | Review: Claude/Cursor concurrency review, Human migration review
 
 Scope: Add Inventory, InventoryReservation, and InventoryLedger schema with CHECKs/indexes, Product Inventory-row creation/backfill strategy, repositories/persistence, atomic conditional SQL primitives, and PostgreSQL integration/concurrency foundation.
 
@@ -348,9 +348,11 @@ Acceptance criteria: Database constraints enforce non-negative valid state and `
 
 Explicitly out of scope: Admin/public Inventory HTTP, Orders integration, Redis-owned stock, and workers.
 
+Delivered: `Inventory` (`productId` PK, int4 `onHand`/`reserved`, CHECKs, Product FK RESTRICT), `InventoryReservation` (opaque `orderId`, UNIQUE(orderId,productId), ACTIVE/RELEASED/SHIPPED), append-only `InventoryLedger` with partial unique order-lifecycle idempotency; Product 0/0 backfill and create-time `ensureForProduct` in one transaction; atomic tagged-SQL reserve/release/ship/adjust/receive/return/write-off; inventory-row `FOR UPDATE` before reservation writes; opaque `TransactionContext`; no Inventory HTTP. Live `TEST_DATABASE_URL` concurrency run is environment-dependent.
+
 ### INV-02 — Stock receiving and adjustments
 
-Status: PLANNED | Depends on: INV-01B, AUTH-08 | Primary: Codex | Review: Claude/Cursor
+Status: READY | Depends on: INV-01B, AUTH-08 | Primary: Codex | Review: Claude/Cursor
 
 Scope: Implement transactional receiving and authorized adjustment application services with reason and actor metadata.
 
@@ -360,7 +362,7 @@ Explicitly out of scope: Reservations and order transitions.
 
 ### INV-03 — Reservation and release semantics
 
-Status: PLANNED | Depends on: INV-01B | Primary: Codex | Review: Claude/Cursor concurrency review
+Status: READY | Depends on: INV-01B | Primary: Codex | Review: Claude/Cursor concurrency review
 
 Scope: Implement atomic reservation and release contracts using conditional PostgreSQL updates and deterministic resource ordering for multi-SKU operations.
 
@@ -402,7 +404,7 @@ Explicitly out of scope: Customer inventory mutation and Redis caching.
 
 ### ORD-01 — Order schema and historical snapshots
 
-Status: PLANNED | Depends on: AUTH-07, CAT-03, INV-01B | Primary: Codex | Review: Claude/Cursor, Human migration review
+Status: READY | Depends on: AUTH-07, CAT-03, INV-01B | Primary: Codex | Review: Claude/Cursor, Human migration review
 
 Scope: Model orders/items and immutable shipping/address, product title, unit price, and discount snapshots independently from mutable catalog/profile data.
 

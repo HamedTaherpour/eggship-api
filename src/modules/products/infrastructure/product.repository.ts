@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { toSkipTake, type PageResult } from '../../../common/list';
 import { Prisma } from '../../../generated/prisma/client';
+import { resolvePrismaConnection } from '../../../infrastructure/database/prisma/prisma-transaction-context';
 import { PrismaService } from '../../../infrastructure/database/prisma/prisma.service';
+import type { TransactionContext } from '../../../infrastructure/database/transaction';
 import type {
   CreateProductInput,
   ProductListQuery,
@@ -81,12 +83,16 @@ export class ProductRepository {
     return { items: rows.map(mapProduct), total };
   }
 
-  async create(input: CreateProductInput): Promise<ProductRecord> {
+  async create(
+    input: CreateProductInput,
+    tx?: TransactionContext,
+  ): Promise<ProductRecord> {
     const name = normalizeProductName(input.name);
     const price = normalizeProductPrice(input.price);
+    const db = resolvePrismaConnection(this.prisma, tx);
 
     try {
-      const created = await this.prisma.product.create({
+      const created = await db.product.create({
         data: {
           name,
           price,

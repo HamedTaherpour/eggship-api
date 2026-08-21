@@ -21,6 +21,25 @@ import {
 } from '../api/dto/product-response.dto';
 import { UpdateProductBodyDto } from '../api/dto/update-product.dto';
 import { ProductService } from './product.service';
+import type { InventoryService } from '../../inventory/application/inventory.service';
+import {
+  TRANSACTION_CONTEXT_BRAND,
+  TransactionRunner,
+  type TransactionContext,
+} from '../../../infrastructure/database/transaction';
+
+class ImmediateTransactionRunner extends TransactionRunner {
+  override run<T>(fn: (tx: TransactionContext) => Promise<T>): Promise<T> {
+    return fn({ [TRANSACTION_CONTEXT_BRAND]: true });
+  }
+
+  override runIn<T>(
+    existing: TransactionContext | undefined,
+    fn: (tx: TransactionContext) => Promise<T>,
+  ): Promise<T> {
+    return fn(existing ?? { [TRANSACTION_CONTEXT_BRAND]: true });
+  }
+}
 
 const CATEGORY_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const PRODUCT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -59,6 +78,7 @@ describe('ProductService', () => {
     >
   >;
   let categories: jest.Mocked<Pick<CategoryService, 'findById'>>;
+  let inventory: jest.Mocked<Pick<InventoryService, 'ensureForProduct'>>;
   let logger: jest.Mocked<Pick<ApplicationLogger, 'info'>>;
   let service: ProductService;
 
@@ -71,10 +91,13 @@ describe('ProductService', () => {
       update: jest.fn(),
     };
     categories = { findById: jest.fn() };
+    inventory = { ensureForProduct: jest.fn() };
     logger = { info: jest.fn() };
     service = new ProductService(
       repository as unknown as ProductRepository,
       categories as unknown as CategoryService,
+      inventory as unknown as InventoryService,
+      new ImmediateTransactionRunner(),
       logger as unknown as ApplicationLogger,
     );
   });
@@ -191,12 +214,19 @@ describe('ProductService', () => {
 
     await expect(service.create(body)).resolves.toEqual(created);
     expect(categories.findById).toHaveBeenCalledWith(CATEGORY_ID);
-    expect(repository.create).toHaveBeenCalledWith({
-      name: 'Cage-free eggs (30)',
-      price: 625000,
-      categoryId: CATEGORY_ID,
-      isActive: undefined,
-    });
+    expect(repository.create).toHaveBeenCalledWith(
+      {
+        name: 'Cage-free eggs (30)',
+        price: 625000,
+        categoryId: CATEGORY_ID,
+        isActive: undefined,
+      },
+      expect.anything(),
+    );
+    expect(inventory.ensureForProduct).toHaveBeenCalledWith(
+      PRODUCT_ID,
+      expect.anything(),
+    );
     expect(logger.info).toHaveBeenCalledWith(
       expect.objectContaining({
         operation: 'catalog.product.created',

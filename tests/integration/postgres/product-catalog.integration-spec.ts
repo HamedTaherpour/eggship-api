@@ -8,6 +8,8 @@ import { PrismaModule } from '../../../src/infrastructure/database/prisma/prisma
 import { PrismaService } from '../../../src/infrastructure/database/prisma/prisma.service';
 import { CategoryService } from '../../../src/modules/categories/application/category.service';
 import { CategoryRepository } from '../../../src/modules/categories/infrastructure/category.repository';
+import { InventoryModule } from '../../../src/modules/inventory/inventory.module';
+import { InventoryService } from '../../../src/modules/inventory/application/inventory.service';
 import { ProductService } from '../../../src/modules/products/application/product.service';
 import { ProductRepository } from '../../../src/modules/products/infrastructure/product.repository';
 import { assertDestructiveOperationsAllowed } from '../support/integration-environment';
@@ -15,7 +17,7 @@ import { assertDestructiveOperationsAllowed } from '../support/integration-envir
 async function truncateProductTables(prisma: PrismaService): Promise<void> {
   assertDestructiveOperationsAllowed();
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "Product", "Category" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "InventoryLedger", "InventoryReservation", "Inventory", "Product", "Category" RESTART IDENTITY CASCADE',
   );
 }
 
@@ -25,6 +27,7 @@ describe('Product catalog persistence (integration)', () => {
   let categories: CategoryRepository;
   let products: ProductRepository;
   let productService: ProductService;
+  let inventory: InventoryService;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -32,6 +35,7 @@ describe('Product catalog persistence (integration)', () => {
         ConfigModule.forRoot(createConfigModuleOptions()),
         ObservabilityModule,
         PrismaModule,
+        InventoryModule,
       ],
       providers: [
         CategoryRepository,
@@ -46,6 +50,7 @@ describe('Product catalog persistence (integration)', () => {
     categories = moduleRef.get(CategoryRepository);
     products = moduleRef.get(ProductRepository);
     productService = moduleRef.get(ProductService);
+    inventory = moduleRef.get(InventoryService);
     await app.init();
   });
 
@@ -260,5 +265,22 @@ describe('Product catalog persistence (integration)', () => {
       prisma.product.findMany = originalFindMany;
       prisma.product.count = originalCount;
     }
+  });
+
+  it('creates a 0/0 Inventory row in the same transaction as Product create', async () => {
+    const category = await categories.create({ name: 'Eggs' });
+    const created = await productService.create({
+      name: 'Stocked',
+      price: 1000,
+      categoryId: category.id,
+    });
+
+    const balance = await inventory.getBalance(created.id);
+    expect(balance).toMatchObject({
+      productId: created.id,
+      onHand: 0,
+      reserved: 0,
+      available: 0,
+    });
   });
 });

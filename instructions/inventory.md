@@ -1,6 +1,6 @@
 # Inventory
 
-Durable Inventory quantity, ledger, concurrency, and cross-module rules for EggShip. Field-level HTTP contracts belong in OpenAPI; persistence details belong to INV-01B+. Architecture decisions live in [ADR 0012](../docs/adr/0012-inventory-quantity-ledger-concurrency.md).
+Durable Inventory quantity, ledger, concurrency, and cross-module rules for EggShip. Field-level HTTP contracts belong in OpenAPI; persistence rules for INV-01B live below. Architecture decisions live in [ADR 0012](../docs/adr/0012-inventory-quantity-ledger-concurrency.md).
 
 Inventory quantities are **not** Product fields ([catalog.md](catalog.md)). PostgreSQL is authoritative ([database.md](database.md), [ADR 0002](../docs/adr/0002-postgresql-prisma.md)).
 
@@ -98,6 +98,20 @@ When order creation and reservation integrate, they share one PostgreSQL transac
 ## Redis
 
 Redis is **not** authoritative for Inventory balances, reservations, or stock locks ([redis.md](redis.md), [ADR 0003](../docs/adr/0003-redis-bullmq.md)). Do not add inventory caches or Redis locks for correctness.
+
+## Persistence (INV-01B)
+
+- One `Inventory` row per Product. `productId` is the primary key. `available` is derived in mapping and is never a column.
+- Database CHECKs enforce `onHand >= 0`, `reserved >= 0`, and `reserved <= onHand`. Reservation `quantity > 0`. Ledger after-balances obey the same non-negative/`reserved <= onHand` rules. Quantities are PostgreSQL `integer` whole units (int4); overflow is rejected.
+- `ensureForProduct` uses `INSERT ... ON CONFLICT ("productId") DO NOTHING` (then select). Product create and `ensureForProduct` share one PostgreSQL transaction via the opaque `TransactionContext` / `TransactionRunner` (Prisma stays in infrastructure). Migration backfill inserts `onHand=0, reserved=0` for existing Products.
+- Conditional stock updates live in Inventory infrastructure as tagged `Prisma.sql`. Success is exactly one returning row. Zero rows are classified as missing inventory versus insufficient/invalid without exposing SQL. Multi-SKU locks are sequential `SELECT ... WHERE "productId" = $id FOR UPDATE` in sorted id order so PostgreSQL cannot lock in heap-scan order.
+- Repeat RESERVE uses `INSERT ... ON CONFLICT ("orderId", "productId") DO NOTHING` so a joined Orders transaction is not aborted by `23505`. The conflict path `SELECT ... FOR UPDATE`s the existing reservation so a retry cannot return a stale `ACTIVE` after a concurrent RELEASE/SHIP. Matching ACTIVE rows are idempotent; mismatched quantity/status conflict.
+- Reserve/release/ship lock the Inventory row (`FOR UPDATE`) before writing `InventoryReservation`. That matches `lockBalances` / `lockAndInspectAvailability` (inventory first, then reservation) and avoids deadlocks with multi-SKU composition. Callers that mutate several SKUs must still lock all Inventory rows in sorted `productId` order before any reservation write.
+- `InventoryReservation.orderId` is an opaque UUID with **no** FK to Orders. `UNIQUE(orderId, productId)` is the V1 idempotency key. Status moves with `UPDATE ... WHERE status = 'ACTIVE'`. Repeat RELEASE/SHIP of an already-terminal row is idempotent; cross-status retries conflict.
+- `InventoryLedger` is append-only. Repositories expose append/query only. `reason` is required at the application layer for `ADJUST` and `WRITE_OFF` (not a per-type database CHECK). Actor CHECK: `SYSTEM` has null `actorId`; `USER`/`ADMIN` require `actorId`. No FK from `actorId` to User/Admin.
+- Ledger uniqueness is a **partial** unique index on `(type, referenceType, referenceId, productId)` for `RESERVE`/`RELEASE`/`SHIP` with `referenceType = ORDER` and non-null `referenceId`. Manual `RECEIVE`/`ADJUST` events are not covered so operators may reuse a reference. A universal unique on those four columns would false-conflict legitimate adjustments.
+- Multi-SKU work deduplicates and sorts ids in application code, then locks each Inventory row with `SELECT ... WHERE "productId" = $id FOR UPDATE` in that order (not a client-controlled `ORDER BY`). Inspections report all shortages and write nothing.
+- Inventory HTTP, Redis stock, BullMQ workers, reservation TTL, and partial fulfillment remain later tasks.
 
 ## Authorization
 

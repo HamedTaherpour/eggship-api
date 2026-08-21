@@ -157,7 +157,7 @@ model Category {
 
 /// Sellable catalog item (CAT-03). Owns identity, Category link, and current
 /// selling price in integer Toman. Inventory quantities are not Product fields
-/// (INV-01). Media attachment is later work; CAT-04 owns reusable Media
+/// (INV-01B). Media attachment is later work; CAT-04 owns reusable Media
 /// records independently. No SKU/description until
 /// MIG-01 evidences them. Prefer `isActive = false` over hard delete.
 model Product {
@@ -173,7 +173,10 @@ model Product {
   createdAt  DateTime @default(now()) @db.Timestamptz(3)
   updatedAt  DateTime @updatedAt @db.Timestamptz(3)
 
-  category Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  category              Category               @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  inventory             Inventory?
+  inventoryReservations InventoryReservation[]
+  inventoryLedger       InventoryLedger[]
 
   /// Category filter + active visibility.
   @@index([categoryId, isActive])
@@ -203,6 +206,96 @@ model Media {
   /// Admin library recency and mime filter.
   @@index([createdAt])
   @@index([mimeType, createdAt])
+}
+
+/// Per-product aggregate sellable balances (INV-01B). `productId` is the natural
+/// identity — one Inventory row per Product. `available` is derived, never stored.
+/// CHECK constraints live in the SQL migration (`onHand >= 0`, `reserved >= 0`,
+/// `reserved <= onHand`). No optimistic `version` column in V1.
+model Inventory {
+  productId String   @id @db.Uuid
+  onHand    Int      @default(0)
+  reserved  Int      @default(0)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+}
+
+/// Per-order reservation row (INV-01B). `orderId` is an opaque domain UUID —
+/// Orders do not exist yet and must not be referenced by FK. V1 allows one row
+/// per (orderId, productId); status transitions ACTIVE → RELEASED | SHIPPED.
+enum InventoryReservationStatus {
+  ACTIVE
+  RELEASED
+  SHIPPED
+}
+
+model InventoryReservation {
+  id        String                     @id @default(uuid()) @db.Uuid
+  orderId   String                     @db.Uuid
+  productId String                     @db.Uuid
+  quantity  Int
+  status    InventoryReservationStatus
+  createdAt DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime                   @updatedAt @db.Timestamptz(3)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([orderId, productId])
+  @@index([productId, status])
+}
+
+/// Append-only business stock movement history (INV-01B). Not AuditLog and not
+/// the live availability store. No `updatedAt`; application must not update or
+/// delete rows. Order-lifecycle uniqueness (one RESERVE/RELEASE/SHIP per
+/// ORDER+product) is a partial unique index in the SQL migration.
+enum InventoryLedgerType {
+  RECEIVE
+  ADJUST
+  RESERVE
+  RELEASE
+  SHIP
+  RETURN_TO_STOCK
+  WRITE_OFF
+}
+
+enum InventoryLedgerReferenceType {
+  ORDER
+  RECEIVE
+  ADJUSTMENT
+  RETURN
+  RECONCILIATION
+}
+
+enum InventoryLedgerActorType {
+  USER
+  ADMIN
+  SYSTEM
+}
+
+model InventoryLedger {
+  id            String                       @id @default(uuid()) @db.Uuid
+  productId     String                       @db.Uuid
+  type          InventoryLedgerType
+  /// Positive magnitude. Direction lives in the delta columns.
+  quantity      Int
+  onHandDelta   Int
+  reservedDelta Int
+  onHandAfter   Int
+  reservedAfter Int
+  referenceType InventoryLedgerReferenceType
+  referenceId   String?                      @db.Uuid
+  reason        String?                      @db.VarChar(500)
+  actorType     InventoryLedgerActorType
+  /// Polymorphic; no FK to User/Admin. Null only when actorType is SYSTEM.
+  actorId       String?                      @db.Uuid
+  correlationId String?                      @db.Uuid
+  createdAt     DateTime                     @default(now()) @db.Timestamptz(3)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([productId, createdAt])
 }
 
 /// Geographic/service region reference (CAT-02). No shipping or pricing fields

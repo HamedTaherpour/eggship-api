@@ -378,6 +378,17 @@ describe('Category and Region reference APIs (e2e)', () => {
       true,
     );
     expect(publicCategories.map((row) => row.name)).not.toContain('Hidden');
+    for (const row of publicCategories) {
+      expect(row).not.toHaveProperty('isActive');
+      expect(row).not.toHaveProperty('createdAt');
+      expect(row).not.toHaveProperty('updatedAt');
+    }
+
+    const rejected = await request(server())
+      .get('/api/v1/categories')
+      .query({ page: 1 })
+      .expect(400);
+    expect(asApiErrorBody(rejected.body).error.code).toBe('BAD_REQUEST');
   });
 
   it('public region list hides inactive regions', async () => {

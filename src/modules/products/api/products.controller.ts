@@ -26,10 +26,11 @@ export class ProductsController {
     summary: 'List public products',
     description: [
       'Paginated storefront list of active products whose Category is also active.',
-      'Supports `page`, `pageSize`, `search` (name), `sortBy`/`sortOrder` (`name`, `price`, `createdAt`, `updatedAt`; default `name`/`asc`), and optional `categoryId`.',
+      'Supports `page`, `pageSize`, `search` (name only), `sortBy`/`sortOrder` allowlist (`name`, `price`, `createdAt`, `updatedAt`; default `name`/`asc`), and optional `categoryId` filter.',
       'Inactive products and products under inactive categories are never included.',
       '`isActive` is not a public filter. Unknown query parameters are rejected.',
-      'Price is integer Toman. No inventory quantities are exposed.',
+      'Response fields are limited to id, name, price (integer Toman), and categoryId.',
+      'No inventory quantities, Admin lifecycle fields, or nested Category hydration (N+1-safe).',
     ].join(' '),
   })
   @ApiOkResponse({
@@ -52,8 +53,9 @@ export class ProductsController {
     summary: 'Get a public product by id',
     description: [
       'Returns an active product whose Category is also active.',
-      'Inactive products, missing ids, and products under inactive categories return PRODUCT_NOT_FOUND.',
-      'Price is integer Toman. No inventory quantities are exposed.',
+      'Inactive products, missing ids, and products under inactive categories return PRODUCT_NOT_FOUND (no existence leak).',
+      'Response fields are limited to id, name, price (integer Toman), and categoryId.',
+      'No inventory quantities or Admin lifecycle fields are exposed.',
     ].join(' '),
   })
   @ApiParam({ name: 'id', format: 'uuid' })

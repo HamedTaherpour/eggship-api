@@ -607,12 +607,26 @@ describe('Product catalog APIs (e2e)', () => {
     });
     expect(pageBody.data[0]).not.toHaveProperty('isActive');
     expect(pageBody.data[0]).not.toHaveProperty('stock');
+    expect(pageBody.data[0]).not.toHaveProperty('createdAt');
+    expect(pageBody.data[0]).not.toHaveProperty('updatedAt');
 
-    const rejected = await request(server())
+    const rejectedFilter = await request(server())
       .get('/api/v1/products')
       .query({ isActive: 'false' })
       .expect(400);
-    expect(asApiErrorBody(rejected.body).error.code).toBe('BAD_REQUEST');
+    expect(asApiErrorBody(rejectedFilter.body).error.code).toBe('BAD_REQUEST');
+
+    const rejectedUnknown = await request(server())
+      .get('/api/v1/products')
+      .query({ unknown: 'x' })
+      .expect(400);
+    expect(asApiErrorBody(rejectedUnknown.body).error.code).toBe('BAD_REQUEST');
+
+    const rejectedSort = await request(server())
+      .get('/api/v1/products')
+      .query({ sortBy: 'stock' })
+      .expect(400);
+    expect(asApiErrorBody(rejectedSort.body).error.code).toBe('BAD_REQUEST');
   });
 
   it('public detail returns active products and hides inactive / inactive-category', async () => {
@@ -631,10 +645,15 @@ describe('Product catalog APIs (e2e)', () => {
     const ok = await request(server())
       .get(`/api/v1/products/${visible.id}`)
       .expect(200);
-    expect(asPublicProductBody(ok.body).data).toMatchObject({
+    const publicDetail = asPublicProductBody(ok.body).data;
+    expect(publicDetail).toMatchObject({
       id: visible.id,
       price: 5000,
     });
+    expect(publicDetail).not.toHaveProperty('isActive');
+    expect(publicDetail).not.toHaveProperty('createdAt');
+    expect(publicDetail).not.toHaveProperty('updatedAt');
+    expect(publicDetail).not.toHaveProperty('stock');
 
     const missingInactive = await request(server())
       .get(`/api/v1/products/${inactive.id}`)

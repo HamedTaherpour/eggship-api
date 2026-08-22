@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |    95 |
-| DONE        |    37 |
+| DONE        |    38 |
 | IN_PROGRESS |     0 |
 | READY       |     2 |
 | BLOCKED     |     0 |
-| PLANNED     |    57 |
+| PLANNED     |    56 |
 
-- Current task: none in progress. Next recommended: `PRC-05 — Public pricing and order snapshot integration`, `CAT-05 — Admin product media attachment`, or `CAT-06` as dependencies allow. `ORD-03` stays PLANNED on `PRC-05`; `ORD-05`/`ORD-06` stay PLANNED on `ORD-03`.
+- Current task: none in progress. Next recommended: `PRC-05 — Public pricing and order snapshot integration` or `CAT-05 — Admin catalog APIs` as dependencies allow. `ORD-03` stays PLANNED on `PRC-05`; `ORD-05`/`ORD-06` stay PLANNED on `ORD-03`.
 - Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
@@ -316,11 +316,13 @@ Explicitly out of scope: Inventory mutations, re-implementing Media upload/stora
 
 ### CAT-06 — Public catalog APIs
 
-Status: READY | Depends on: CAT-03, CAT-04 | Primary: Codex | Review: Claude/Cursor
+Status: DONE | Depends on: CAT-03, CAT-04 | Primary: Codex | Review: Claude/Cursor
 
 Scope: Implement public category/product list and detail contracts with explicit visibility, pagination, search, filters, and sorting.
 
 Acceptance criteria: Only public/active records and safe fields are returned; query plans avoid N+1 behavior; legacy contract differences are recorded for migration.
+
+Delivered: Closed public storefront contract on CAT-02/CAT-03 foundations — active-only Category full list (`id`/`name`, no query params, unknown queries rejected); paginated public Product list/detail with active Product + active Category visibility, CAT-01 pagination/search(name)/`categoryId`/sort allowlist (`name`/`price`/`createdAt`/`updatedAt`, default `name`/`asc`), safe public DTOs (no Admin lifecycle or inventory), N+1-safe Category activity filter without nested hydration, OpenAPI `Categories_list` / `Products_list` / `Products_get`, and MIG-01 public-contract deltas in `instructions/catalog.md`. No Product↔Media, inventory authority, personalized pricing, or Redis caching.
 
 Explicitly out of scope: Inventory authority, personalized pricing, and Redis caching.
 
@@ -558,7 +560,7 @@ Explicitly out of scope: Public catalog calculation and order creation.
 
 ### PRC-05 — Public pricing and order snapshot integration
 
-Status: PLANNED | Depends on: PRC-03, CAT-06, ORD-01 | Primary: Codex | Review: Claude/Cursor concurrency review
+Status: READY | Depends on: PRC-03, CAT-06, ORD-01 | Primary: Codex | Review: Claude/Cursor concurrency review
 
 Scope: Expose calculated public pricing and provide the Order-owned creation flow with immutable calculation evidence/snapshot inputs.
 

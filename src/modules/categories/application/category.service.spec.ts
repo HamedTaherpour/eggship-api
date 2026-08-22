@@ -12,6 +12,7 @@ import {
   toPublicCategoryDto,
 } from '../api/dto/category-response.dto';
 import { CreateCategoryBodyDto } from '../api/dto/create-category.dto';
+import { PublicCategoryListQueryDto } from '../api/dto/public-category-list-query.dto';
 import { UpdateCategoryBodyDto } from '../api/dto/update-category.dto';
 import { CategoryService } from './category.service';
 
@@ -163,6 +164,27 @@ describe('CategoryService', () => {
       createdAt: '2026-08-21T12:00:00.000Z',
       updatedAt: '2026-08-21T12:00:00.000Z',
     });
+  });
+});
+
+describe('PublicCategoryListQueryDto validation', () => {
+  it('rejects any query parameter under Nest ValidationPipe options', async () => {
+    // Nest ValidationPipe sets forbidUnknownValues: false so empty decorated
+    // classes remain valid; forbidNonWhitelisted still rejects smuggled keys.
+    const nestOptions = {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      forbidUnknownValues: false,
+    } as const;
+
+    const withUnknown = plainToInstance(PublicCategoryListQueryDto, {
+      page: '1',
+    });
+    const violations = await validate(withUnknown, nestOptions);
+    expect(violations.length).toBeGreaterThan(0);
+
+    const empty = plainToInstance(PublicCategoryListQueryDto, {});
+    expect(await validate(empty, nestOptions)).toHaveLength(0);
   });
 });
 

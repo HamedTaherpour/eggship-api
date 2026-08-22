@@ -48,6 +48,12 @@ class ImmediateTransactionRunner extends TransactionRunner {
   ): Promise<T> {
     return this.run(fn);
   }
+
+  override runRepeatableRead<T>(
+    fn: (tx: TransactionContext) => Promise<T>,
+  ): Promise<T> {
+    return this.run(fn);
+  }
 }
 
 function balance(overrides: Partial<InventoryBalance> = {}): InventoryBalance {

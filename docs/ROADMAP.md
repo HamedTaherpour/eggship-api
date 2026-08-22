@@ -13,7 +13,7 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | BLOCKED     |     0 |
 | PLANNED     |    55 |
 
-- Current task: none in progress. Next recommended: `ORD-03 — Transactional order creation and idempotency` or `CAT-05 — Admin catalog APIs` as dependencies allow. `ORD-05`/`ORD-06` stay PLANNED on `ORD-03`.
+- Current task: none in progress. Next recommended: `ORD-04 — Customer order list and detail`, `ORD-05 — Customer cancellation and stock release` (after ORD-03 HTTP binding), or `CAT-05 — Admin catalog APIs` as dependencies allow.
 - Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
@@ -452,13 +452,15 @@ Delivered: Internal `OrderTransitionService` commands `confirmOrder`, `cancelPen
 
 ### ORD-03 — Transactional order creation and idempotency
 
-Status: READY | Depends on: ORD-01, ORD-02A, INV-03, PRC-05 | Primary: Codex | Review: Claude/Cursor concurrency review
+Status: DONE | Depends on: ORD-01, ORD-02A, INV-03, PRC-05 | Primary: Codex | Review: Claude/Cursor concurrency review
 
 Scope: Implement multi-item order creation, price/discount snapshots, idempotency keys, and inventory reservation through module-owned contracts in one controlled transaction.
 
 Acceptance criteria: Duplicate requests yield one logical order; SKU locks use deterministic ordering; partial reservation/order creation cannot persist; concurrency tests cover hot inventory.
 
-Explicitly out of scope: Asynchronous side effects and payment collection.
+Explicitly out of scope: Asynchronous side effects and payment collection. HTTP create/list/detail (ORD-04–ORD-06), returns, and payments.
+
+Delivered: `OrderCreationService.createOrder` (no HTTP) in one REPEATABLE READ transaction — create idempotency advisory lock, PRC-05 `priceOrderLines`, trusted snapshot persistence (`createWithTrustedSnapshots`), `reserveForOrder`; bounded retry on RR serialization failures; inactive User/Region rejected; Order/OrderLine migration for discounted money + applied-discount evidence + `pricingEvaluatedAt` + payload hash; unit + PostgreSQL integration/concurrency specs (live `TEST_DATABASE_URL` run environment-dependent). Security/concurrency/migration reviews recorded in task handoff.
 
 ### ORD-04 — Customer order list and detail
 

@@ -15,6 +15,6 @@ import { RegionRepository } from './infrastructure/region.repository';
   imports: [PrismaModule, forwardRef(() => AuthModule)],
   controllers: [RegionsController, AdminRegionsController],
   providers: [RegionRepository, RegionService],
-  exports: [RegionService],
+  exports: [RegionService, RegionRepository],
 })
 export class RegionsModule {}

@@ -26,12 +26,13 @@ Alternatives considered:
 - Application code computes all money with **bigint** helpers; rejects overflow above BIGINT max.
 - HTTP layers (ORD-04+) emit JSON numbers when `<= Number.MAX_SAFE_INTEGER`, otherwise exact decimal strings.
 - Optional `Order.idempotencyKey` with `UNIQUE(userId, idempotencyKey)` prepares ORD-03; Inventory keeps opaque `orderId` without an Order FK.
-- Address/profile snapshots and discount totals remain deferred until evidenced profile/pricing tasks land.
+- ORD-03 extends snapshots with discounted money columns (`grossLineTotal` / `finalLineTotal`, order aggregates) and applied-discount evidence columns **without FK** to `Discount`, plus `pricingEvaluatedAt` and `idempotencyPayloadHash`.
+- Address/profile snapshots remain deferred until evidenced profile/pricing tasks land.
 
 ## Consequences
 
-- Product/User/Region mutations never rewrite historical order display data.
+- Product/User/Region/Discount mutations never rewrite historical order display data.
 - Large wholesale totals remain exact without float drift.
 - API mappers must handle bigint → JSON explicitly.
-- PRC discount snapshots will extend order money fields in a later task without changing the snapshot principle.
+- ORD-03 persists PRC-05 LINE-then-ORDER snapshots into explicit columns (not JSON blobs).
 - Shipping address columns will be added when User/profile address fields exist — documented as deferred in `instructions/orders.md`.

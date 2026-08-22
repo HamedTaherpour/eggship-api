@@ -83,7 +83,7 @@ export class OrderInvalidProductError extends ApplicationError {
 }
 
 export class OrderIdempotencyConflictError extends ApplicationError {
-  constructor(message = 'An order already exists for this idempotency key.') {
+  constructor(message = OrderMessage.IDEMPOTENCY_CONFLICT) {
     super(OrderErrorCode.IDEMPOTENCY_CONFLICT, message, HttpStatus.CONFLICT);
     this.name = 'OrderIdempotencyConflictError';
   }

@@ -32,4 +32,13 @@ export abstract class TransactionRunner {
   abstract runSnapshotRead<T>(
     fn: (tx: TransactionContext) => Promise<T>,
   ): Promise<T>;
+
+  /**
+   * Read/write transaction at PostgreSQL REPEATABLE READ (ORD-03).
+   * Used when pricing and persistence must share one coherent Product/Discount
+   * snapshot inside the same create transaction.
+   */
+  abstract runRepeatableRead<T>(
+    fn: (tx: TransactionContext) => Promise<T>,
+  ): Promise<T>;
 }

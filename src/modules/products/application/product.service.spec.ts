@@ -48,6 +48,12 @@ class ImmediateTransactionRunner extends TransactionRunner {
   ): Promise<T> {
     return this.run(fn);
   }
+
+  override runRepeatableRead<T>(
+    fn: (tx: TransactionContext) => Promise<T>,
+  ): Promise<T> {
+    return this.run(fn);
+  }
 }
 
 const CATEGORY_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';

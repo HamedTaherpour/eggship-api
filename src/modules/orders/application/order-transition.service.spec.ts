@@ -50,6 +50,12 @@ class ImmediateTransactionRunner extends TransactionRunner {
   ): Promise<T> {
     return this.run(fn);
   }
+
+  override runRepeatableRead<T>(
+    fn: (tx: TransactionContext) => Promise<T>,
+  ): Promise<T> {
+    return this.run(fn);
+  }
 }
 
 function order(overrides: Partial<OrderRecord> = {}): OrderRecord {
@@ -60,9 +66,15 @@ function order(overrides: Partial<OrderRecord> = {}): OrderRecord {
     customerPhone: '+989121234567',
     regionId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
     regionName: 'Tehran',
-    subtotal: 2000n,
+    grossSubtotal: 2000n,
+    lineDiscountTotal: 0n,
+    subtotalAfterLineDiscounts: 2000n,
+    orderDiscountAmount: 0n,
     total: 2000n,
+    pricingEvaluatedAt: NOW,
+    appliedOrderDiscount: null,
     idempotencyKey: null,
+    idempotencyPayloadHash: null,
     deliveryAt: null,
     confirmedAt: null,
     shippedAt: null,
@@ -79,7 +91,10 @@ function order(overrides: Partial<OrderRecord> = {}): OrderRecord {
         productName: 'Eggs',
         unitPrice: 1000,
         quantity: 2,
-        lineTotal: 2000n,
+        grossLineTotal: 2000n,
+        lineDiscountAmount: 0n,
+        finalLineTotal: 2000n,
+        appliedLineDiscount: null,
         createdAt: NOW,
       },
     ],

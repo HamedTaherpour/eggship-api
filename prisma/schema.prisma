@@ -434,34 +434,51 @@ enum OrderStatus {
   RETURNED
 }
 
-/// Customer/store order with immutable historical snapshots (ORD-01).
+/// Customer/store order with immutable historical snapshots (ORD-01 / ORD-03).
 /// V1 has no online payment gateway — settlement occurs outside EggShip.
 /// Prefer User deactivation over hard delete; Orders survive account lifecycle.
 model Order {
-  id             String      @id @default(uuid()) @db.Uuid
-  userId         String      @db.Uuid
-  status         OrderStatus @default(PENDING_REVIEW)
+  id                               String        @id @default(uuid()) @db.Uuid
+  userId                           String        @db.Uuid
+  status                           OrderStatus   @default(PENDING_REVIEW)
   /// Canonical customer phone at order time (E.164). Immutable after creation.
-  customerPhone  String      @db.VarChar(16)
+  customerPhone                    String        @db.VarChar(16)
   /// Region traceability + historical display name. Immutable after creation.
-  regionId       String      @db.Uuid
-  regionName     String      @db.VarChar(100)
-  /// Sum of line totals in integer Toman (BIGINT — may exceed int4).
-  subtotal       BigInt
-  /// Order-time total in integer Toman. Equals subtotal until PRC discount snapshots land.
-  total          BigInt
+  regionId                         String        @db.Uuid
+  regionName                       String        @db.VarChar(100)
+  /// Sum of gross line totals in integer Toman (BIGINT — may exceed int4).
+  grossSubtotal                    BigInt
+  /// Sum of line discount amounts in integer Toman.
+  lineDiscountTotal                BigInt
+  /// Sum of final line totals after LINE discounts (ORDER discount base).
+  subtotalAfterLineDiscounts       BigInt
+  /// ORDER-scope discount amount in integer Toman (0 when none applied).
+  orderDiscountAmount              BigInt
+  /// Payable total after LINE then ORDER composition (ADR 0015).
+  total                            BigInt
+  /// Shared pricing evaluation instant (PRC-05 evaluatedAt). Immutable.
+  pricingEvaluatedAt               DateTime      @db.Timestamptz(3)
+  /// Applied ORDER discount evidence (null when none). No FK — historical only.
+  appliedOrderDiscountId           String?       @db.Uuid
+  appliedOrderDiscountName         String?       @db.VarChar(100)
+  appliedOrderDiscountType         DiscountType?
+  appliedOrderDiscountPercentValue Int?
+  appliedOrderDiscountFixedAmount  Int?
+  appliedOrderDiscountPrecedence   Int?
   /// Optional HTTP retry identity for ORD-03; immutable when set. Scoped per user.
-  idempotencyKey String?     @db.Uuid
+  idempotencyKey                   String?       @db.Uuid
+  /// SHA-256 of normalized create payload for same-key conflict detection.
+  idempotencyPayloadHash           String?       @db.VarChar(64)
   /// Scheduled/expected delivery when workflow supports it (ORD-02).
-  deliveryAt     DateTime?   @db.Timestamptz(3)
-  confirmedAt    DateTime?   @db.Timestamptz(3)
-  shippedAt      DateTime?   @db.Timestamptz(3)
-  deliveredAt    DateTime?   @db.Timestamptz(3)
-  cancelledAt    DateTime?   @db.Timestamptz(3)
+  deliveryAt                       DateTime?     @db.Timestamptz(3)
+  confirmedAt                      DateTime?     @db.Timestamptz(3)
+  shippedAt                        DateTime?     @db.Timestamptz(3)
+  deliveredAt                      DateTime?     @db.Timestamptz(3)
+  cancelledAt                      DateTime?     @db.Timestamptz(3)
   /// Human-readable cancellation reason when status is CANCELLED (ORD-05).
-  cancelReason   String?     @db.VarChar(500)
-  createdAt      DateTime    @default(now()) @db.Timestamptz(3)
-  updatedAt      DateTime    @updatedAt @db.Timestamptz(3)
+  cancelReason                     String?       @db.VarChar(500)
+  createdAt                        DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt                        DateTime      @updatedAt @db.Timestamptz(3)
 
   user   User        @relation(fields: [userId], references: [id], onDelete: Restrict)
   region Region      @relation(fields: [regionId], references: [id], onDelete: Restrict)
@@ -473,20 +490,34 @@ model Order {
   @@index([createdAt])
 }
 
-/// Immutable order line with product/price snapshots (ORD-01).
-/// Historical display uses snapshot columns, not live Product fields.
+/// Immutable order line with product/price/discount snapshots (ORD-01 / ORD-03).
+/// Historical display uses snapshot columns, not live Product/Discount fields.
 model OrderLine {
-  id          String   @id @default(uuid()) @db.Uuid
-  orderId     String   @db.Uuid
-  productId   String   @db.Uuid
+  id                              String          @id @default(uuid()) @db.Uuid
+  orderId                         String          @db.Uuid
+  productId                       String          @db.Uuid
   /// Customer-visible product title at order time. Immutable after creation.
-  productName String   @db.VarChar(100)
+  productName                     String          @db.VarChar(100)
   /// Unit price in integer Toman (int4 — matches Product.price at order time).
-  unitPrice   Int
-  quantity    Int
+  unitPrice                       Int
+  quantity                        Int
   /// Persisted unitPrice × quantity in integer Toman (BIGINT). Server-computed.
-  lineTotal   BigInt
-  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  grossLineTotal                  BigInt
+  /// LINE-scope discount amount in integer Toman (0 when none applied).
+  lineDiscountAmount              BigInt
+  /// grossLineTotal − lineDiscountAmount. Server-computed.
+  finalLineTotal                  BigInt
+  /// Applied LINE discount evidence (null when none). No FK — historical only.
+  appliedLineDiscountId           String?         @db.Uuid
+  appliedLineDiscountName         String?         @db.VarChar(100)
+  appliedLineDiscountType         DiscountType?
+  appliedLineDiscountTarget       DiscountTarget?
+  appliedLineDiscountPercentValue Int?
+  appliedLineDiscountFixedAmount  Int?
+  appliedLineDiscountPrecedence   Int?
+  appliedLineDiscountProductId    String?         @db.Uuid
+  appliedLineDiscountCategoryId   String?         @db.Uuid
+  createdAt                       DateTime        @default(now()) @db.Timestamptz(3)
 
   order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product @relation(fields: [productId], references: [id], onDelete: Restrict)

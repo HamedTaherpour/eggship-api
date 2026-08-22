@@ -32,6 +32,11 @@ class SnapshotTransactionRunner extends TransactionRunner {
   ): Promise<T> {
     return fn({ [TRANSACTION_CONTEXT_BRAND]: true });
   }
+  override runRepeatableRead<T>(
+    fn: (tx: TransactionContext) => Promise<T>,
+  ): Promise<T> {
+    return this.runSnapshotRead(fn);
+  }
 }
 
 function balance(overrides: Partial<InventoryBalance> = {}): InventoryBalance {

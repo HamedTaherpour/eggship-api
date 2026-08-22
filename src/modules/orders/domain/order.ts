@@ -1,4 +1,7 @@
+import type { AppliedDiscountSnapshot } from '../../pricing/domain/discount-calculation';
 import type { OrderStatus } from './order-status';
+
+export type { AppliedDiscountSnapshot };
 
 export interface OrderLineRecord {
   id: string;
@@ -7,7 +10,11 @@ export interface OrderLineRecord {
   productName: string;
   unitPrice: number;
   quantity: number;
-  lineTotal: bigint;
+  /** unitPrice × quantity (ORD-01 gross; renamed from lineTotal in ORD-03). */
+  grossLineTotal: bigint;
+  lineDiscountAmount: bigint;
+  finalLineTotal: bigint;
+  appliedLineDiscount: AppliedDiscountSnapshot | null;
   createdAt: Date;
 }
 
@@ -18,9 +25,15 @@ export interface OrderRecord {
   customerPhone: string;
   regionId: string;
   regionName: string;
-  subtotal: bigint;
+  grossSubtotal: bigint;
+  lineDiscountTotal: bigint;
+  subtotalAfterLineDiscounts: bigint;
+  orderDiscountAmount: bigint;
   total: bigint;
+  pricingEvaluatedAt: Date;
+  appliedOrderDiscount: AppliedDiscountSnapshot | null;
   idempotencyKey: string | null;
+  idempotencyPayloadHash: string | null;
   deliveryAt: Date | null;
   confirmedAt: Date | null;
   shippedAt: Date | null;
@@ -32,23 +45,38 @@ export interface OrderRecord {
   lines: OrderLineRecord[];
 }
 
-/** Input for one order line at creation — snapshots supplied by caller (ORD-03 reads Product). */
-export interface CreateOrderLineInput {
+/**
+ * Trusted server-built line snapshot for persistence (ORD-03).
+ * Built from PRC-05 output — never from client money/name/discount fields.
+ */
+export interface TrustedOrderLineSnapshot {
   productId: string;
   productName: string;
   unitPrice: number;
   quantity: number;
+  grossLineTotal: bigint;
+  lineDiscountAmount: bigint;
+  finalLineTotal: bigint;
+  appliedLineDiscount: AppliedDiscountSnapshot | null;
 }
 
 /**
- * Persistence primitive for ORD-01 / future ORD-03 creation.
- * Money totals are computed server-side; lineTotal is never trusted from input.
+ * Trusted server-built order create payload for the repository boundary.
+ * Application service owns validation; repository re-checks money invariants.
  */
-export interface CreateOrderInput {
+export interface TrustedCreateOrderInput {
   userId: string;
   customerPhone: string;
   regionId: string;
   regionName: string;
-  lines: CreateOrderLineInput[];
-  idempotencyKey?: string;
+  idempotencyKey: string;
+  idempotencyPayloadHash: string;
+  pricingEvaluatedAt: Date;
+  grossSubtotal: bigint;
+  lineDiscountTotal: bigint;
+  subtotalAfterLineDiscounts: bigint;
+  orderDiscountAmount: bigint;
+  total: bigint;
+  appliedOrderDiscount: AppliedDiscountSnapshot | null;
+  lines: TrustedOrderLineSnapshot[];
 }

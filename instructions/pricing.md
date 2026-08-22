@@ -136,13 +136,13 @@ Returned for ORD-03 persistence later. Explicit fields — not a generic JSON bl
 
 **Order:** `grossSubtotal`, `lineDiscountTotal`, `subtotalAfterLineDiscounts`, `orderDiscountAmount`, `total`, `appliedOrderDiscount` (or null), `evaluatedAt`.
 
-PRC-05 does **not** migrate Order/OrderLine schema and does **not** relax `OrderLine.lineTotal = unitPrice × quantity`. ORD-03 owns the minimal migration to store discounted amounts and applied-discount evidence.
+PRC-05 does **not** migrate Order/OrderLine schema. ORD-03 persists discounted amounts and applied-discount evidence into explicit columns (`grossLineTotal` / `finalLineTotal`, order aggregates, applied-discount snapshot fields, `pricingEvaluatedAt`) without re-reading mutable Product/Discount state after pricing.
 
 ### Reads, transactions, and concurrency
 
 - Batch-load Products (`findPublicByIds`) and Discount candidates (`findCandidatesForOrderPricing`) — no N+1.
 - Standalone calls use `TransactionRunner.runSnapshotRead` (PostgreSQL **REPEATABLE READ**) so Product price/name/category and eligible Discounts share one coherent snapshot without broad row locks.
-- Optional `tx` joins an outer ORD-03 transaction via `runIn` (inherits caller isolation). **ORD-03 must open that create transaction at REPEATABLE READ** (or price standalone then persist the frozen snapshot without re-reading Product/Discount). Joining a default READ COMMITTED transaction can observe Product@S1 and Discount@S2 under concurrent Admin updates.
+- Optional `tx` joins an outer ORD-03 transaction via `runIn` (inherits caller isolation). **ORD-03 opens create at REPEATABLE READ** (`TransactionRunner.runRepeatableRead`) so Product@S1 and Discount@S1 stay coherent with persistence. Joining a default READ COMMITTED transaction can observe Product@S1 and Discount@S2 under concurrent Admin updates.
 - Concurrent Admin price/discount updates must not produce a hybrid mutable view within one pricing attempt; repeated calculation with the same snapshot inputs is deterministic.
 
 ### Out of scope in PRC-05

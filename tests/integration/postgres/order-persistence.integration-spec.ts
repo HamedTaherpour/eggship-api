@@ -13,10 +13,12 @@ import { ProductRepository } from '../../../src/modules/products/infrastructure/
 import type { RegionRecord } from '../../../src/modules/regions/domain/region';
 import type { UserRecord } from '../../../src/modules/users/domain/user';
 import { RegionRepository } from '../../../src/modules/regions/infrastructure/region.repository';
+import { hashOrderCreatePayload } from '../../../src/modules/orders/domain/order-create-idempotency';
 import {
   OrderIdempotencyConflictError,
   OrderInvalidInputError,
 } from '../../../src/modules/orders/domain/order-errors';
+import type { TrustedCreateOrderInput } from '../../../src/modules/orders/domain/order';
 import { OrderRepository } from '../../../src/modules/orders/infrastructure/order.repository';
 import { OrdersModule } from '../../../src/modules/orders/orders.module';
 import { UserRepository } from '../../../src/modules/users/infrastructure/user.repository';
@@ -33,6 +35,48 @@ async function truncateOrderTables(prisma: PrismaService): Promise<void> {
   await prisma.$executeRawUnsafe(
     'TRUNCATE TABLE "OrderLine", "Order", "Product", "Category", "Region", "User" RESTART IDENTITY CASCADE',
   );
+}
+
+function trustedCreate(input: {
+  user: UserRecord;
+  region: RegionRecord;
+  product: ProductRecord;
+  quantity?: number;
+  idempotencyKey?: string;
+}): TrustedCreateOrderInput {
+  const quantity = input.quantity ?? 1;
+  const gross = BigInt(input.product.price) * BigInt(quantity);
+  const idempotencyKey = input.idempotencyKey ?? randomUUID();
+  return {
+    userId: input.user.id,
+    customerPhone: input.user.phone,
+    regionId: input.region.id,
+    regionName: input.region.name,
+    idempotencyKey,
+    idempotencyPayloadHash: hashOrderCreatePayload({
+      regionId: input.region.id,
+      lines: [{ productId: input.product.id, quantity }],
+    }),
+    pricingEvaluatedAt: new Date('2026-08-22T12:00:00.000Z'),
+    grossSubtotal: gross,
+    lineDiscountTotal: 0n,
+    subtotalAfterLineDiscounts: gross,
+    orderDiscountAmount: 0n,
+    total: gross,
+    appliedOrderDiscount: null,
+    lines: [
+      {
+        productId: input.product.id,
+        productName: input.product.name,
+        unitPrice: input.product.price,
+        quantity,
+        grossLineTotal: gross,
+        lineDiscountAmount: 0n,
+        finalLineTotal: gross,
+        appliedLineDiscount: null,
+      },
+    ],
+  };
 }
 
 describe('Order persistence (integration)', () => {
@@ -105,30 +149,22 @@ describe('Order persistence (integration)', () => {
     return { user, region, product };
   }
 
-  it('creates an order with server-computed line totals and subtotal', async () => {
+  it('creates an order with trusted gross/final snapshots', async () => {
     const { user, region, product } = await seedOrderContext();
 
-    const created = await orders.createWithLines({
-      userId: user.id,
-      customerPhone: user.phone,
-      regionId: region.id,
-      regionName: region.name,
-      lines: [
-        {
-          productId: product.id,
-          productName: product.name,
-          unitPrice: product.price,
-          quantity: 2,
-        },
-      ],
-    });
+    const created = await orders.createWithTrustedSnapshots(
+      trustedCreate({ user, region, product, quantity: 2 }),
+    );
 
     expect(created).toMatchObject({
       userId: user.id,
       customerPhone: user.phone,
       regionId: region.id,
       regionName: region.name,
-      subtotal: 1_250_000n,
+      grossSubtotal: 1_250_000n,
+      lineDiscountTotal: 0n,
+      subtotalAfterLineDiscounts: 1_250_000n,
+      orderDiscountAmount: 0n,
       total: 1_250_000n,
       status: 'PENDING_REVIEW',
     });
@@ -138,7 +174,8 @@ describe('Order persistence (integration)', () => {
         productName: 'تخم مرغ ممتاز',
         unitPrice: 625_000,
         quantity: 2,
-        lineTotal: 1_250_000n,
+        grossLineTotal: 1_250_000n,
+        finalLineTotal: 1_250_000n,
       }),
     ]);
   });
@@ -146,20 +183,9 @@ describe('Order persistence (integration)', () => {
   it('keeps product name and price snapshots when Product changes later', async () => {
     const { user, region, product } = await seedOrderContext();
 
-    const created = await orders.createWithLines({
-      userId: user.id,
-      customerPhone: user.phone,
-      regionId: region.id,
-      regionName: region.name,
-      lines: [
-        {
-          productId: product.id,
-          productName: product.name,
-          unitPrice: product.price,
-          quantity: 1,
-        },
-      ],
-    });
+    const created = await orders.createWithTrustedSnapshots(
+      trustedCreate({ user, region, product }),
+    );
 
     await products.update(product.id, {
       name: 'تخم مرغ ویژه',
@@ -174,27 +200,16 @@ describe('Order persistence (integration)', () => {
     expect(reloaded?.lines[0]).toMatchObject({
       productName: 'تخم مرغ ممتاز',
       unitPrice: 625_000,
-      lineTotal: 625_000n,
+      grossLineTotal: 625_000n,
     });
   });
 
   it('keeps customer phone and region snapshots when User and Region change later', async () => {
     const { user, region, product } = await seedOrderContext();
 
-    const created = await orders.createWithLines({
-      userId: user.id,
-      customerPhone: user.phone,
-      regionId: region.id,
-      regionName: region.name,
-      lines: [
-        {
-          productId: product.id,
-          productName: product.name,
-          unitPrice: product.price,
-          quantity: 1,
-        },
-      ],
-    });
+    const created = await orders.createWithTrustedSnapshots(
+      trustedCreate({ user, region, product }),
+    );
 
     await regions.update(region.id, {
       name: 'Renamed Region',
@@ -206,26 +221,16 @@ describe('Order persistence (integration)', () => {
       customerPhone: user.phone,
       regionName: 'Tehran North',
     });
+    expect(created.id).toBe(reloaded?.id);
   });
 
   it('findOwnedById returns null for another user without existence leakage', async () => {
     const { user, region, product } = await seedOrderContext();
     const other = await users.create({ phone: nextPhone() });
 
-    const created = await orders.createWithLines({
-      userId: user.id,
-      customerPhone: user.phone,
-      regionId: region.id,
-      regionName: region.name,
-      lines: [
-        {
-          productId: product.id,
-          productName: product.name,
-          unitPrice: product.price,
-          quantity: 1,
-        },
-      ],
-    });
+    const created = await orders.createWithTrustedSnapshots(
+      trustedCreate({ user, region, product }),
+    );
 
     expect(await orders.findOwnedById(created.id, user.id)).not.toBeNull();
     expect(await orders.findOwnedById(created.id, other.id)).toBeNull();
@@ -233,20 +238,9 @@ describe('Order persistence (integration)', () => {
 
   it('enforces UNIQUE(orderId, productId) and positive quantity CHECK', async () => {
     const { user, region, product } = await seedOrderContext();
-    const order = await orders.createWithLines({
-      userId: user.id,
-      customerPhone: user.phone,
-      regionId: region.id,
-      regionName: region.name,
-      lines: [
-        {
-          productId: product.id,
-          productName: product.name,
-          unitPrice: product.price,
-          quantity: 1,
-        },
-      ],
-    });
+    const order = await orders.createWithTrustedSnapshots(
+      trustedCreate({ user, region, product }),
+    );
 
     await expect(
       prisma.orderLine.create({
@@ -257,7 +251,9 @@ describe('Order persistence (integration)', () => {
           productName: 'Duplicate',
           unitPrice: 1000,
           quantity: 1,
-          lineTotal: 1000n,
+          grossLineTotal: 1000n,
+          lineDiscountAmount: 0n,
+          finalLineTotal: 1000n,
         },
       }),
     ).rejects.toThrow();
@@ -271,7 +267,9 @@ describe('Order persistence (integration)', () => {
           productName: 'Bad qty',
           unitPrice: 1000,
           quantity: 0,
-          lineTotal: 0n,
+          grossLineTotal: 0n,
+          lineDiscountAmount: 0n,
+          finalLineTotal: 0n,
         },
       }),
     ).rejects.toThrow();
@@ -279,20 +277,9 @@ describe('Order persistence (integration)', () => {
 
   it('blocks User hard delete while Orders exist (RESTRICT)', async () => {
     const { user, region, product } = await seedOrderContext();
-    await orders.createWithLines({
-      userId: user.id,
-      customerPhone: user.phone,
-      regionId: region.id,
-      regionName: region.name,
-      lines: [
-        {
-          productId: product.id,
-          productName: product.name,
-          unitPrice: product.price,
-          quantity: 1,
-        },
-      ],
-    });
+    await orders.createWithTrustedSnapshots(
+      trustedCreate({ user, region, product }),
+    );
 
     await expect(
       prisma.user.delete({ where: { id: user.id } }),
@@ -303,63 +290,25 @@ describe('Order persistence (integration)', () => {
     const { user, region, product } = await seedOrderContext();
     const idempotencyKey = randomUUID();
 
-    await orders.createWithLines({
-      userId: user.id,
-      customerPhone: user.phone,
-      regionId: region.id,
-      regionName: region.name,
-      idempotencyKey,
-      lines: [
-        {
-          productId: product.id,
-          productName: product.name,
-          unitPrice: product.price,
-          quantity: 1,
-        },
-      ],
-    });
+    await orders.createWithTrustedSnapshots(
+      trustedCreate({ user, region, product, idempotencyKey }),
+    );
 
     await expect(
-      orders.createWithLines({
-        userId: user.id,
-        customerPhone: user.phone,
-        regionId: region.id,
-        regionName: region.name,
-        idempotencyKey,
-        lines: [
-          {
-            productId: product.id,
-            productName: product.name,
-            unitPrice: product.price,
-            quantity: 1,
-          },
-        ],
-      }),
+      orders.createWithTrustedSnapshots(
+        trustedCreate({ user, region, product, idempotencyKey }),
+      ),
     ).rejects.toBeInstanceOf(OrderIdempotencyConflictError);
   });
 
   it('rolls back order creation when a line violates constraints', async () => {
-    const { user, region } = await seedOrderContext();
+    const { user, region, product } = await seedOrderContext();
+    const payload = trustedCreate({ user, region, product });
+    payload.lines[0]!.productId = randomUUID();
 
     await expect(
       transactions.run(async (tx) =>
-        orders.createWithLines(
-          {
-            userId: user.id,
-            customerPhone: user.phone,
-            regionId: region.id,
-            regionName: region.name,
-            lines: [
-              {
-                productId: randomUUID(),
-                productName: 'Missing product',
-                unitPrice: 1000,
-                quantity: 1,
-              },
-            ],
-          },
-          tx,
-        ),
+        orders.createWithTrustedSnapshots(payload, tx),
       ),
     ).rejects.toThrow();
 
@@ -368,16 +317,12 @@ describe('Order persistence (integration)', () => {
   });
 
   it('rejects empty line lists at the repository boundary', async () => {
-    const { user, region } = await seedOrderContext();
+    const { user, region, product } = await seedOrderContext();
+    const payload = trustedCreate({ user, region, product });
+    payload.lines = [];
 
     await expect(
-      orders.createWithLines({
-        userId: user.id,
-        customerPhone: user.phone,
-        regionId: region.id,
-        regionName: region.name,
-        lines: [],
-      }),
+      orders.createWithTrustedSnapshots(payload),
     ).rejects.toBeInstanceOf(OrderInvalidInputError);
   });
 });

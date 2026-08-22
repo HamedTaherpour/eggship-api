@@ -141,17 +141,32 @@ describe('Order transitions (integration)', () => {
         actor: SYSTEM_ACTOR,
       });
     }
-    const created = await orders.createWithLines({
+    const gross = BigInt(product.price) * BigInt(quantity);
+    const idempotencyKey = randomUUID();
+    const created = await orders.createWithTrustedSnapshots({
       userId: user.id,
       customerPhone: user.phone,
       regionId: region.id,
       regionName: region.name,
+      idempotencyKey,
+      idempotencyPayloadHash: 'b'.repeat(64),
+      pricingEvaluatedAt: new Date('2026-08-22T12:00:00.000Z'),
+      grossSubtotal: gross,
+      lineDiscountTotal: 0n,
+      subtotalAfterLineDiscounts: gross,
+      orderDiscountAmount: 0n,
+      total: gross,
+      appliedOrderDiscount: null,
       lines: [
         {
           productId: product.id,
           productName: product.name,
           unitPrice: product.price,
           quantity,
+          grossLineTotal: gross,
+          lineDiscountAmount: 0n,
+          finalLineTotal: gross,
+          appliedLineDiscount: null,
         },
       ],
     });

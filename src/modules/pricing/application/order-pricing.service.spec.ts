@@ -40,6 +40,11 @@ class ImmediateTransactionRunner extends TransactionRunner {
     this.snapshotReadCalls += 1;
     return fn(fakeTx);
   }
+  override runRepeatableRead<T>(
+    fn: (tx: TransactionContext) => Promise<T>,
+  ): Promise<T> {
+    return this.runSnapshotRead(fn);
+  }
 }
 
 function product(overrides: Partial<ProductRecord> = {}): ProductRecord {

@@ -13,5 +13,9 @@ Business migrations live here and are applied with `prisma migrate deploy`.
 | `20260821240000_media_library`                  | CAT-04 Media library metadata                                |
 | `20260822120000_inventory_persistence`          | INV-01B Inventory, reservation, and ledger tables            |
 | `20260822140000_inventory_command_idempotency`  | INV-02 Admin inventory command idempotency claims            |
+| `20260822150000_order_persistence`              | ORD-01 Order / OrderLine historical snapshots                |
+| `20260822160000_price_history`                  | PRC-01 Product price history                                 |
+| `20260822170000_discount_persistence`           | PRC-02 Discount model                                        |
+| `20260822180000_order_pricing_snapshots`        | ORD-03 Order pricing / discount snapshot columns             |
 
 Integration suites apply migrations with `prisma migrate deploy` against `TEST_DATABASE_URL`. Do not use `prisma db push` as the canonical path.

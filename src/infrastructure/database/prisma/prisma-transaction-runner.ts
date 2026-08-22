@@ -34,4 +34,13 @@ export class PrismaTransactionRunner extends TransactionRunner {
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
   }
+
+  override runRepeatableRead<T>(
+    fn: (tx: TransactionContext) => Promise<T>,
+  ): Promise<T> {
+    return this.prisma.$transaction(
+      async (client) => fn(new PrismaTransactionContext(client)),
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+  }
 }

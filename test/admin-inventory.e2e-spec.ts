@@ -352,6 +352,12 @@ class PassThroughTransactionRunner extends TransactionRunner {
   ): Promise<T> {
     return this.run(fn);
   }
+
+  override runRepeatableRead<T>(
+    fn: (tx: TransactionContext) => Promise<T>,
+  ): Promise<T> {
+    return this.run(fn);
+  }
 }
 
 class InMemoryInventoryBalanceRepository {

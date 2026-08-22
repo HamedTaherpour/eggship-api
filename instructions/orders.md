@@ -4,48 +4,108 @@ EggShip V1 has **no online payment gateway**. Warehouse/operations ships goods; 
 
 ## Historical snapshot principle
 
-Orders are durable business records. **Historical display must not depend on mutable Product, User/profile, or Region state.**
+Orders are durable business records. **Historical display must not depend on mutable Product, User/profile, Region, or Discount state.**
 
 At order creation the backend persists immutable snapshots:
 
-| Field                            | Source at creation              | Mutable later? |
-| -------------------------------- | ------------------------------- | -------------- |
-| `OrderLine.productName`          | `Product.name`                  | No             |
-| `OrderLine.unitPrice`            | `Product.price` (integer Toman) | No             |
-| `OrderLine.lineTotal`            | server `unitPrice × quantity`   | No             |
-| `Order.customerPhone`            | canonical `User.phone`          | No             |
-| `Order.regionName`               | `Region.name`                   | No             |
-| `Order.subtotal` / `Order.total` | server sum of line totals       | No             |
+| Field                                                                                                        | Source at creation              | Mutable later? |
+| ------------------------------------------------------------------------------------------------------------ | ------------------------------- | -------------- |
+| `OrderLine.productName`                                                                                      | `Product.name`                  | No             |
+| `OrderLine.unitPrice`                                                                                        | `Product.price` (integer Toman) | No             |
+| `OrderLine.grossLineTotal`                                                                                   | server `unitPrice × quantity`   | No             |
+| `OrderLine.lineDiscountAmount` / `finalLineTotal`                                                            | PRC-05 LINE composition         | No             |
+| `OrderLine` applied LINE discount columns                                                                    | PRC-05 `appliedLineDiscount`    | No             |
+| `Order.customerPhone`                                                                                        | canonical `User.phone`          | No             |
+| `Order.regionName`                                                                                           | `Region.name`                   | No             |
+| `Order.grossSubtotal` / `lineDiscountTotal` / `subtotalAfterLineDiscounts` / `orderDiscountAmount` / `total` | PRC-05 order aggregates         | No             |
+| `Order.pricingEvaluatedAt`                                                                                   | PRC-05 `evaluatedAt`            | No             |
+| `Order` applied ORDER discount columns                                                                       | PRC-05 `appliedOrderDiscount`   | No             |
 
-`OrderLine.productId` and `Order.regionId` retain traceability (`ON DELETE RESTRICT`). Deactivated Products/Regions must not alter historical snapshot columns.
+`OrderLine.productId` and `Order.regionId` retain traceability (`ON DELETE RESTRICT`). Applied discount columns store historical evidence **without FK** to `Discount` — deactivated or changed Discount rows must not be required to reconstruct totals.
 
 Repositories must not expose generic updates for snapshot fields. ORD-02 owns explicit status/lifecycle mutations.
 
 ## Server-authoritative money
 
-Future order creation receives conceptually `productId` + `quantity`. The backend reads current catalog/pricing state via PRC-05 `OrderPricingService`, computes snapshots, and persists them in ORD-03. **Clients must never submit authoritative `unitPrice`, `lineTotal`, discount ids, or order totals.**
+Order creation (ORD-03 `OrderCreationService.createOrder`) receives only trusted `USER` actor identity, `regionId`, idempotency key, and `productId` + `quantity` lines. The backend:
+
+1. Normalizes/collapses lines (same V1 policy as Inventory / PRC-05).
+2. Loads `customerPhone` and `regionName` server-side (never from the client).
+3. Prices via `OrderPricingService.priceOrderLines` inside the create transaction.
+4. Persists trusted snapshots through `OrderRepository.createWithTrustedSnapshots`.
+5. Reserves via `InventoryService.reserveForOrder` in the same transaction.
+
+**Clients must never submit authoritative `unitPrice`, line totals, discount ids, product names, phone, or order totals.**
 
 - Currency: **integer Toman** ([ADR 0010](../docs/adr/0010-integer-toman-money.md)).
 - `OrderLine.unitPrice`: PostgreSQL `INTEGER` (int4), same bounds as `Product.price`.
-- `OrderLine.lineTotal`, `Order.subtotal`, `Order.total`: PostgreSQL `BIGINT` / Prisma `BigInt` because `unitPrice × quantity` and multi-line sums can exceed int4 ([ADR 0013](../docs/adr/0013-order-historical-snapshots.md)).
-- `lineTotal` is **persisted** (not derived at read time) for audit integrity.
-- Use `src/modules/orders/domain/order-money.ts` for safe bigint multiplication/summing; never use floating point.
-- **Discount composition** for create-time money is owned by Pricing PRC-05 ([ADR 0015](../docs/adr/0015-line-then-order-discount-composition.md), [pricing.md](pricing.md)): LINE then ORDER on the discounted subtotal. ORD-03 must persist the PRC-05 snapshot without re-reading mutable Product/Discount state.
+- Gross and discounted money columns use PostgreSQL `BIGINT` / Prisma `BigInt` ([ADR 0013](../docs/adr/0013-order-historical-snapshots.md)).
+- Use `src/modules/orders/domain/order-money.ts` and `order-money-invariants.ts` for safe bigint math and reconciliation; never use floating point.
+- **Discount composition** is owned by Pricing PRC-05 ([ADR 0015](../docs/adr/0015-line-then-order-discount-composition.md), [pricing.md](pricing.md)). ORD-03 persists the PRC-05 snapshot without re-deriving discount math.
+
+### Money invariants (persisted)
+
+Per line:
+
+- `grossLineTotal = unitPrice × quantity`
+- `finalLineTotal = grossLineTotal − lineDiscountAmount`
+
+Per order:
+
+- `grossSubtotal = Σ grossLineTotal`
+- `lineDiscountTotal = Σ lineDiscountAmount`
+- `subtotalAfterLineDiscounts = Σ finalLineTotal`
+- `total = subtotalAfterLineDiscounts − orderDiscountAmount`
+
+No negatives. Application service owns cross-line aggregate equality; DB CHECKs cover per-row facts where practical.
 
 ### PRC-05 → ORD-03 snapshot contract
 
-PRC-05 returns a persistence-neutral snapshot. ORD-01 columns today store gross `lineTotal = unitPrice × quantity` only. ORD-03 owns the minimal migration to persist discounted amounts and applied-discount evidence. Until that migration lands, do not write discounted `finalLineTotal` into `OrderLine.lineTotal`.
+| Area  | Fields                                                                                                                                                    |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Line  | `productId`, `productName`, `unitPrice`, `quantity`, `grossLineTotal`, `lineDiscountAmount`, `finalLineTotal`, applied LINE discount evidence             |
+| Order | `grossSubtotal`, `lineDiscountTotal`, `subtotalAfterLineDiscounts`, `orderDiscountAmount`, `total`, applied ORDER discount evidence, `pricingEvaluatedAt` |
 
-Required snapshot facts ORD-03 must be able to consume:
-
-| Area  | Fields                                                                                                                                             |
-| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Line  | `productId`, `productName`, `categoryId`, `unitPrice`, `quantity`, `grossLineTotal`, `lineDiscountAmount`, `finalLineTotal`, `appliedLineDiscount` |
-| Order | `grossSubtotal`, `lineDiscountTotal`, `subtotalAfterLineDiscounts`, `orderDiscountAmount`, `total`, `appliedOrderDiscount`, `evaluatedAt`          |
-
-**Transaction isolation:** when ORD-03 calls `priceOrderLines({ tx })` inside the create transaction, that transaction **must** use PostgreSQL **REPEATABLE READ** (or equivalent) so Product and Discount reads share one snapshot. Alternatively, price via standalone `runSnapshotRead` and persist the frozen snapshot in the write transaction without re-reading mutable catalog/discount state.
+- Transaction isolation: when ORD-03 calls `priceOrderLines({ tx })` inside the create transaction, that transaction **must** use PostgreSQL **REPEATABLE READ** (or equivalent) so Product and Discount reads share one snapshot. ORD-03 uses `TransactionRunner.runRepeatableRead` for the full create (price → persist → reserve). Concurrent Inventory updates under RR can raise serialization failures; `OrderCreationService` applies a bounded retry before surfacing a stable create-conflict message.
 
 JSON: totals within `Number.MAX_SAFE_INTEGER` may serialize as numbers; larger exact values serialize as decimal strings — never floats.
+
+## Order creation (ORD-03)
+
+Application entry: `OrderCreationService.createOrder` (no HTTP in ORD-03).
+
+Conceptual input:
+
+- trusted `USER` actor (`actor.id` = `userId`)
+- `idempotencyKey` (UUID)
+- `regionId`
+- lines: `{ productId, quantity }[]`
+
+Flow in one RR transaction:
+
+1. Advisory-lock create idempotency scope `(userId, idempotencyKey)`
+2. Replay or conflict on existing Order for that key + payload hash
+3. Resolve User phone / Region name
+4. `priceOrderLines({ tx })`
+5. `createWithTrustedSnapshots`
+6. `reserveForOrder(orderId, normalized lines, USER actor, tx)`
+7. Commit — status is always `PENDING_REVIEW`
+
+Failure at any step rolls back Order, lines, and reservation. No Order without reservation; no reservation without Order.
+
+### Idempotency
+
+`UNIQUE(userId, idempotencyKey)` plus `idempotencyPayloadHash` (SHA-256 of normalized `regionId` + collapsed lines).
+
+- Same user + key + same logical payload → return the existing Order (no second reserve)
+- Same key + materially different payload → `ORDER_IDEMPOTENCY_CONFLICT`
+- Concurrent duplicates serialize on the advisory lock before Inventory side effects
+
+Do not rely on frontend button disabling.
+
+### Visibility / sale eligibility
+
+Inactive Product or Product under inactive Category cannot be newly ordered (`PRODUCT_NOT_FOUND` / `ORDER_INVALID_PRODUCT` mapping). Existing historical Orders remain unaffected. Ownership of visibility rules remains with PRC-05 / CAT-06.
 
 ## Customer ownership
 
@@ -160,7 +220,7 @@ RETURNING ...;
 
 Zero rows updated → treat as invalid transition unless idempotent replay applies (see below).
 
-## Idempotent replay
+## Idempotent replay (transitions)
 
 Same command when already in the target state → **idempotent success**:
 
@@ -194,7 +254,7 @@ All Orders+Inventory flows that mutate both domains run in **one PostgreSQL tran
 
 ```text
 PostgreSQL transaction
-  → conditional Order row UPDATE / Order row lock
+  → Order create idempotency advisory lock (ORD-03) / conditional Order row UPDATE (transitions)
   → Inventory orderId advisory lock
   → Inventory rows FOR UPDATE sorted by productId
   → Reservation rows in the same order
@@ -205,6 +265,8 @@ PostgreSQL transaction
 Every Orders+Inventory flow must use this order.
 
 Admin Inventory errors during ship/cancel may surface as Inventory errors after rollback. Customer cancel maps `INVENTORY_RESERVATION_NOT_FOUND` and `INVENTORY_RESERVATION_CONFLICT` to `ORDER_INVALID_TRANSITION` with the customer-cancel message. Other Inventory `ApplicationError`s on that path are treated as internal failures (not remapped to `ORDER_INVALID_TRANSITION` and not returned as Inventory codes or details). Unexpected persistence failures are not remapped.
+
+On create, insufficient stock surfaces as stable Inventory `INVENTORY_INSUFFICIENT_STOCK` after full rollback.
 
 ## Inactive source entities
 
@@ -224,25 +286,24 @@ Keep a small stable set:
 - `ORDER_INVALID_TRANSITION`
 - `ORDER_CANCELLATION_REASON_REQUIRED`
 - `ORDER_INVALID_INPUT`
+- `ORDER_INVALID_MONEY`
+- `ORDER_INVALID_USER` / `ORDER_INVALID_REGION` / `ORDER_INVALID_PRODUCT`
+- `ORDER_IDEMPOTENCY_CONFLICT`
 
-Do not add per-command status-error explosion.
+Do not add per-command status-error explosion. Pricing unavailability maps to `ORDER_INVALID_PRODUCT` (displayable product-not-found). Inventory shortage may surface as Inventory codes on the create path.
 
 ## Mutable vs immutable Order fields
 
-**Immutable after creation:** `id`, `userId`, customer/region/line snapshots, order-time money, `idempotencyKey` (when set), `createdAt`.
+**Immutable after creation:** `id`, `userId`, customer/region/line/money/discount snapshots, `pricingEvaluatedAt`, `idempotencyKey` / `idempotencyPayloadHash`, `createdAt`.
 
 **Mutable through explicit domain transitions (ORD-02+):** `status`, lifecycle timestamps (`confirmedAt`, `shippedAt`, `deliveredAt`, `deliveryAt`), cancellation metadata (`cancelledAt`, `cancelReason`).
 
-Return inspection workflow persistence belongs to ORD-07 — do not model full return semantics on `Order` in ORD-01/ORD-02.
+Return inspection workflow persistence belongs to ORD-07 — do not model full return semantics on `Order` in ORD-01/ORD-02/ORD-03.
 
 ## Inventory boundary
 
 - `InventoryReservation.orderId` remains an **opaque UUID** with **no FK** to `Order`.
 - V1 collapses duplicate `productId` lines before persistence: `UNIQUE(orderId, productId)` aligns with Inventory reservation identity.
-
-## Idempotency foundation
-
-`Order.idempotencyKey` (optional UUID) with `UNIQUE(userId, idempotencyKey)` prepares ORD-03 HTTP `Idempotency-Key` → one logical order. The key is immutable retry identity only — not the Inventory reservation idempotency surface (that uses `Order.id`).
 
 ## Deferred snapshot extensions (MIG-01 / profile tasks)
 
@@ -252,14 +313,13 @@ No in-repo legacy Order contract exists yet (`MIG-01` PLANNED). The following re
 - Store name, manager name, coordinates, and profile `regionId` FK.
 - Human-readable order numbers/codes.
 - Order notes, invoice metadata.
-- Discount **persistence columns** on Order/OrderLine (calculation + snapshot contract delivered in PRC-05; ORD-03 owns the minimal migration to store them).
 - Payment/settlement recording.
 
 When profile/address support lands, Orders must snapshot address at creation — **never reference a mutable User address directly** for historical display.
 
 ## Module layout
 
-`src/modules/orders/` — domain types, money helpers, `OrderTransitionService` (`confirmOrder`, `cancelPendingOrderByCustomer`, `cancelOrderByAdmin`, `shipOrder`, `deliverOrder`), `OrderRepository` (`createWithLines`, `findById`, `findOwnedById`, closed conditional status updates). HTTP in ORD-04–ORD-06. Orders imports Inventory application contracts; Inventory must not import Orders.
+`src/modules/orders/` — domain types, money helpers, `OrderCreationService` (`createOrder`), `OrderTransitionService` (confirm/cancel/ship/deliver), `OrderRepository` (`createWithTrustedSnapshots`, `findById`, `findOwnedById`, idempotency lookup/lock, closed conditional status updates). HTTP in ORD-04–ORD-06. Orders imports Pricing + Inventory application contracts; Inventory must not import Orders.
 
 ## Related ADRs
 

@@ -7,30 +7,32 @@ import {
 } from '../../../infrastructure/database/prisma/prisma-transaction-context';
 import { PrismaService } from '../../../infrastructure/database/prisma/prisma.service';
 import type { TransactionContext } from '../../../infrastructure/database/transaction';
-import { assertPositiveQuantity } from '../../inventory/domain/inventory-quantity';
+import type { AppliedDiscountSnapshot } from '../../pricing/domain/discount-calculation';
+import { DiscountTarget, DiscountType } from '../../pricing/domain/discount';
 import { normalizeOrderLineProductName } from '../domain/order-line-name';
-import { computeLineTotal, sumOrderLineTotals } from '../domain/order-money';
+import { assertTrustedCreateOrderMoney } from '../domain/order-money-invariants';
 import {
   OrderIdempotencyConflictError,
   OrderInvalidInputError,
-  OrderInvalidLineError,
   OrderInvalidProductError,
   OrderInvalidRegionError,
   OrderInvalidUserError,
 } from '../domain/order-errors';
+import { OrderMessage } from '../domain/order-messages';
 import {
-  assertOptionalIdempotencyKey,
   assertOrderUuid,
   normalizeCustomerPhoneSnapshot,
   normalizeRegionNameSnapshot,
 } from '../domain/order-snapshot';
 import { OrderStatus } from '../domain/order-status';
 import type {
-  CreateOrderInput,
-  CreateOrderLineInput,
   OrderLineRecord,
   OrderRecord,
+  TrustedCreateOrderInput,
 } from '../domain/order';
+
+/** Advisory lock class for ORD-03 create idempotency (distinct from Inventory). */
+const ORDER_CREATE_IDEMPOTENCY_LOCK_CLASS = 120_400;
 
 type PrismaOrderWithLines = {
   id: string;
@@ -39,9 +41,20 @@ type PrismaOrderWithLines = {
   customerPhone: string;
   regionId: string;
   regionName: string;
-  subtotal: bigint;
+  grossSubtotal: bigint;
+  lineDiscountTotal: bigint;
+  subtotalAfterLineDiscounts: bigint;
+  orderDiscountAmount: bigint;
   total: bigint;
+  pricingEvaluatedAt: Date;
+  appliedOrderDiscountId: string | null;
+  appliedOrderDiscountName: string | null;
+  appliedOrderDiscountType: string | null;
+  appliedOrderDiscountPercentValue: number | null;
+  appliedOrderDiscountFixedAmount: number | null;
+  appliedOrderDiscountPrecedence: number | null;
   idempotencyKey: string | null;
+  idempotencyPayloadHash: string | null;
   deliveryAt: Date | null;
   confirmedAt: Date | null;
   shippedAt: Date | null;
@@ -57,7 +70,18 @@ type PrismaOrderWithLines = {
     productName: string;
     unitPrice: number;
     quantity: number;
-    lineTotal: bigint;
+    grossLineTotal: bigint;
+    lineDiscountAmount: bigint;
+    finalLineTotal: bigint;
+    appliedLineDiscountId: string | null;
+    appliedLineDiscountName: string | null;
+    appliedLineDiscountType: string | null;
+    appliedLineDiscountTarget: string | null;
+    appliedLineDiscountPercentValue: number | null;
+    appliedLineDiscountFixedAmount: number | null;
+    appliedLineDiscountPrecedence: number | null;
+    appliedLineDiscountProductId: string | null;
+    appliedLineDiscountCategoryId: string | null;
     createdAt: Date;
   }>;
 };
@@ -94,6 +118,7 @@ type ClosedOrderTransition =
  * Narrow persistence boundary for Order + OrderLine. Prisma types stay here.
  * Snapshot fields have no generic update. Status changes only through the
  * closed conditional UPDATE primitives below — never a generic status setter.
+ * Create accepts trusted server-built snapshots only (ORD-03).
  */
 @Injectable()
 export class OrderRepository {
@@ -109,7 +134,9 @@ export class OrderRepository {
   ): Promise<OrderRecord | null> {
     const found = await this.db(tx).order.findUnique({
       where: { id },
-      include: { lines: { orderBy: { createdAt: 'asc' } } },
+      include: {
+        lines: { orderBy: [{ productId: 'asc' }, { createdAt: 'asc' }] },
+      },
     });
     return found === null ? null : mapOrder(found);
   }
@@ -128,9 +155,51 @@ export class OrderRepository {
         id: assertOrderUuid(orderId, 'orderId'),
         userId: assertOrderUuid(userId, 'userId'),
       },
-      include: { lines: { orderBy: { createdAt: 'asc' } } },
+      include: {
+        lines: { orderBy: [{ productId: 'asc' }, { createdAt: 'asc' }] },
+      },
     });
     return found === null ? null : mapOrder(found);
+  }
+
+  async findByUserIdAndIdempotencyKey(
+    userId: string,
+    idempotencyKey: string,
+    tx?: TransactionContext,
+  ): Promise<OrderRecord | null> {
+    const found = await this.db(tx).order.findUnique({
+      where: {
+        userId_idempotencyKey: {
+          userId: assertOrderUuid(userId, 'userId'),
+          idempotencyKey: assertOrderUuid(idempotencyKey, 'idempotencyKey'),
+        },
+      },
+      include: {
+        lines: { orderBy: [{ productId: 'asc' }, { createdAt: 'asc' }] },
+      },
+    });
+    return found === null ? null : mapOrder(found);
+  }
+
+  /**
+   * Transaction-scoped advisory lock for (userId, idempotencyKey) create races.
+   * Taken before pricing/create/reserve so unique violations are not the
+   * primary concurrency control after Inventory side effects.
+   */
+  async lockCreateIdempotencyScope(
+    userId: string,
+    idempotencyKey: string,
+    tx: TransactionContext,
+  ): Promise<void> {
+    const user = assertOrderUuid(userId, 'userId');
+    const key = assertOrderUuid(idempotencyKey, 'idempotencyKey');
+    const lockIdentity = user + ':' + key;
+    await this.db(tx).$queryRaw(Prisma.sql`
+      SELECT pg_advisory_xact_lock(
+        ${ORDER_CREATE_IDEMPOTENCY_LOCK_CLASS},
+        hashtext(${lockIdentity})
+      )
+    `);
   }
 
   async transitionPendingToConfirmed(
@@ -235,13 +304,14 @@ export class OrderRepository {
   }
 
   /**
-   * Atomic order + line creation. Computes lineTotal/subtotal/total server-side.
+   * Persist trusted PRC-05 snapshots + customer/region snapshots.
+   * Does not accept client money/name/discount fields as authority.
    */
-  async createWithLines(
-    input: CreateOrderInput,
+  async createWithTrustedSnapshots(
+    input: TrustedCreateOrderInput,
     tx?: TransactionContext,
   ): Promise<OrderRecord> {
-    const normalized = normalizeCreateOrderInput(input);
+    const normalized = normalizeTrustedCreateInput(input);
     const db = resolvePrismaConnection(this.prisma, tx);
 
     try {
@@ -249,15 +319,19 @@ export class OrderRepository {
         data: {
           id: randomUUID(),
           userId: normalized.userId,
-          status: normalized.status,
+          status: OrderStatus.PENDING_REVIEW,
           customerPhone: normalized.customerPhone,
           regionId: normalized.regionId,
           regionName: normalized.regionName,
-          subtotal: normalized.subtotal,
+          grossSubtotal: normalized.grossSubtotal,
+          lineDiscountTotal: normalized.lineDiscountTotal,
+          subtotalAfterLineDiscounts: normalized.subtotalAfterLineDiscounts,
+          orderDiscountAmount: normalized.orderDiscountAmount,
           total: normalized.total,
-          ...(normalized.idempotencyKey === undefined
-            ? {}
-            : { idempotencyKey: normalized.idempotencyKey }),
+          pricingEvaluatedAt: normalized.pricingEvaluatedAt,
+          ...mapOrderDiscountColumns(normalized.appliedOrderDiscount),
+          idempotencyKey: normalized.idempotencyKey,
+          idempotencyPayloadHash: normalized.idempotencyPayloadHash,
           lines: {
             create: normalized.lines.map((line) => ({
               id: randomUUID(),
@@ -265,11 +339,16 @@ export class OrderRepository {
               productName: line.productName,
               unitPrice: line.unitPrice,
               quantity: line.quantity,
-              lineTotal: line.lineTotal,
+              grossLineTotal: line.grossLineTotal,
+              lineDiscountAmount: line.lineDiscountAmount,
+              finalLineTotal: line.finalLineTotal,
+              ...mapLineDiscountColumns(line.appliedLineDiscount),
             })),
           },
         },
-        include: { lines: { orderBy: { createdAt: 'asc' } } },
+        include: {
+          lines: { orderBy: [{ productId: 'asc' }, { createdAt: 'asc' }] },
+        },
       });
       return mapOrder(created);
     } catch (error: unknown) {
@@ -279,106 +358,121 @@ export class OrderRepository {
   }
 }
 
-interface NormalizedCreateOrderLine {
-  productId: string;
-  productName: string;
-  unitPrice: number;
-  quantity: number;
-  lineTotal: bigint;
-}
-
-interface NormalizedCreateOrderInput {
-  userId: string;
-  status: typeof OrderStatus.PENDING_REVIEW;
-  customerPhone: string;
-  regionId: string;
-  regionName: string;
-  subtotal: bigint;
-  total: bigint;
-  idempotencyKey?: string;
-  lines: NormalizedCreateOrderLine[];
-}
-
-function normalizeCreateOrderInput(
-  input: CreateOrderInput,
-): NormalizedCreateOrderInput {
-  if (!Array.isArray(input.lines) || input.lines.length === 0) {
-    throw new OrderInvalidInputError('Order must have at least one line.');
-  }
+function normalizeTrustedCreateInput(
+  input: TrustedCreateOrderInput,
+): TrustedCreateOrderInput {
+  assertTrustedCreateOrderMoney(input);
 
   const userId = assertOrderUuid(input.userId, 'userId');
   const regionId = assertOrderUuid(input.regionId, 'regionId');
+  const idempotencyKey = assertOrderUuid(
+    input.idempotencyKey,
+    'idempotencyKey',
+  );
   const customerPhone = normalizeCustomerPhoneSnapshot(input.customerPhone);
   const regionName = normalizeRegionNameSnapshot(input.regionName);
-  const idempotencyKey = assertOptionalIdempotencyKey(input.idempotencyKey);
 
-  const lines = collapseAndNormalizeLines(input.lines);
-  const lineTotals = lines.map((line) => line.lineTotal);
-  const subtotal = sumOrderLineTotals(lineTotals);
+  if (
+    typeof input.idempotencyPayloadHash !== 'string' ||
+    !/^[0-9a-f]{64}$/u.test(input.idempotencyPayloadHash)
+  ) {
+    throw new OrderInvalidInputError(
+      'idempotencyPayloadHash must be a 64-character lowercase hex SHA-256.',
+    );
+  }
+
+  const seen = new Set<string>();
+  const lines = [...input.lines]
+    .map((line) => {
+      const productId = assertOrderUuid(line.productId, 'productId');
+      if (seen.has(productId)) {
+        throw new OrderInvalidInputError(
+          'Trusted order lines must already be collapsed by productId.',
+        );
+      }
+      seen.add(productId);
+      return {
+        ...line,
+        productId,
+        productName: normalizeOrderLineProductName(line.productName),
+      };
+    })
+    .sort((left, right) => left.productId.localeCompare(right.productId));
 
   return {
+    ...input,
     userId,
-    status: OrderStatus.PENDING_REVIEW,
-    customerPhone,
     regionId,
+    customerPhone,
     regionName,
-    subtotal,
-    total: subtotal,
-    ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
+    idempotencyKey,
     lines,
   };
 }
 
-/**
- * V1 collapses duplicate productId lines before persistence (matches Inventory).
- */
-function collapseAndNormalizeLines(
-  lines: CreateOrderLineInput[],
-): NormalizedCreateOrderLine[] {
-  const byProduct = new Map<string, NormalizedCreateOrderLine>();
-
-  for (const line of lines) {
-    const productId = assertOrderUuid(line.productId, 'productId');
-    const productName = normalizeOrderLineProductName(line.productName);
-    const unitPrice = line.unitPrice;
-    const quantity = assertPositiveQuantity(line.quantity, 'quantity');
-    const lineTotal = computeLineTotal(unitPrice, quantity);
-
-    const existing = byProduct.get(productId);
-    if (existing === undefined) {
-      byProduct.set(productId, {
-        productId,
-        productName,
-        unitPrice,
-        quantity,
-        lineTotal,
-      });
-      continue;
-    }
-
-    if (
-      existing.unitPrice !== unitPrice ||
-      existing.productName !== productName
-    ) {
-      throw new OrderInvalidLineError(
-        'Duplicate product lines must share the same unit price and product name snapshot.',
-      );
-    }
-
-    const mergedQuantity = existing.quantity + quantity;
-    assertPositiveQuantity(mergedQuantity, 'quantity');
-    byProduct.set(productId, {
-      productId,
-      productName,
-      unitPrice,
-      quantity: mergedQuantity,
-      lineTotal: computeLineTotal(unitPrice, mergedQuantity),
-    });
+function mapOrderDiscountColumns(applied: AppliedDiscountSnapshot | null): {
+  appliedOrderDiscountId: string | null;
+  appliedOrderDiscountName: string | null;
+  appliedOrderDiscountType: DiscountType | null;
+  appliedOrderDiscountPercentValue: number | null;
+  appliedOrderDiscountFixedAmount: number | null;
+  appliedOrderDiscountPrecedence: number | null;
+} {
+  if (applied === null) {
+    return {
+      appliedOrderDiscountId: null,
+      appliedOrderDiscountName: null,
+      appliedOrderDiscountType: null,
+      appliedOrderDiscountPercentValue: null,
+      appliedOrderDiscountFixedAmount: null,
+      appliedOrderDiscountPrecedence: null,
+    };
   }
+  return {
+    appliedOrderDiscountId: applied.discountId,
+    appliedOrderDiscountName: applied.name,
+    appliedOrderDiscountType: applied.type,
+    appliedOrderDiscountPercentValue: applied.percentValue,
+    appliedOrderDiscountFixedAmount: applied.fixedAmount,
+    appliedOrderDiscountPrecedence: applied.precedence,
+  };
+}
 
-  return [...byProduct.values()].sort((left, right) =>
-    left.productId.localeCompare(right.productId),
-  );
+function mapLineDiscountColumns(applied: AppliedDiscountSnapshot | null): {
+  appliedLineDiscountId: string | null;
+  appliedLineDiscountName: string | null;
+  appliedLineDiscountType: DiscountType | null;
+  appliedLineDiscountTarget: DiscountTarget | null;
+  appliedLineDiscountPercentValue: number | null;
+  appliedLineDiscountFixedAmount: number | null;
+  appliedLineDiscountPrecedence: number | null;
+  appliedLineDiscountProductId: string | null;
+  appliedLineDiscountCategoryId: string | null;
+} {
+  if (applied === null) {
+    return {
+      appliedLineDiscountId: null,
+      appliedLineDiscountName: null,
+      appliedLineDiscountType: null,
+      appliedLineDiscountTarget: null,
+      appliedLineDiscountPercentValue: null,
+      appliedLineDiscountFixedAmount: null,
+      appliedLineDiscountPrecedence: null,
+      appliedLineDiscountProductId: null,
+      appliedLineDiscountCategoryId: null,
+    };
+  }
+  return {
+    appliedLineDiscountId: applied.discountId,
+    appliedLineDiscountName: applied.name,
+    appliedLineDiscountType: applied.type,
+    appliedLineDiscountTarget: applied.target,
+    appliedLineDiscountPercentValue: applied.percentValue,
+    appliedLineDiscountFixedAmount: applied.fixedAmount,
+    appliedLineDiscountPrecedence: applied.precedence,
+    appliedLineDiscountProductId: applied.productId,
+    appliedLineDiscountCategoryId: applied.categoryId,
+  };
 }
 
 function mapOrder(row: PrismaOrderWithLines): OrderRecord {
@@ -389,9 +483,15 @@ function mapOrder(row: PrismaOrderWithLines): OrderRecord {
     customerPhone: row.customerPhone,
     regionId: row.regionId,
     regionName: row.regionName,
-    subtotal: row.subtotal,
+    grossSubtotal: row.grossSubtotal,
+    lineDiscountTotal: row.lineDiscountTotal,
+    subtotalAfterLineDiscounts: row.subtotalAfterLineDiscounts,
+    orderDiscountAmount: row.orderDiscountAmount,
     total: row.total,
+    pricingEvaluatedAt: row.pricingEvaluatedAt,
+    appliedOrderDiscount: mapAppliedOrderDiscount(row),
     idempotencyKey: row.idempotencyKey,
+    idempotencyPayloadHash: row.idempotencyPayloadHash,
     deliveryAt: row.deliveryAt,
     confirmedAt: row.confirmedAt,
     shippedAt: row.shippedAt,
@@ -414,8 +514,49 @@ function mapOrderLine(
     productName: row.productName,
     unitPrice: row.unitPrice,
     quantity: row.quantity,
-    lineTotal: row.lineTotal,
+    grossLineTotal: row.grossLineTotal,
+    lineDiscountAmount: row.lineDiscountAmount,
+    finalLineTotal: row.finalLineTotal,
+    appliedLineDiscount: mapAppliedLineDiscount(row),
     createdAt: row.createdAt,
+  };
+}
+
+function mapAppliedOrderDiscount(
+  row: PrismaOrderWithLines,
+): AppliedDiscountSnapshot | null {
+  if (row.appliedOrderDiscountId === null) {
+    return null;
+  }
+  return {
+    discountId: row.appliedOrderDiscountId,
+    name: row.appliedOrderDiscountName!,
+    type: row.appliedOrderDiscountType as DiscountType,
+    target: DiscountTarget.ORDER,
+    percentValue: row.appliedOrderDiscountPercentValue,
+    fixedAmount: row.appliedOrderDiscountFixedAmount,
+    precedence: row.appliedOrderDiscountPrecedence!,
+    productId: null,
+    categoryId: null,
+  };
+}
+
+function mapAppliedLineDiscount(
+  row: PrismaOrderWithLines['lines'][number],
+): AppliedDiscountSnapshot | null {
+  if (row.appliedLineDiscountId === null) {
+    return null;
+  }
+  return {
+    discountId: row.appliedLineDiscountId,
+    name: row.appliedLineDiscountName!,
+    type: row.appliedLineDiscountType as DiscountType,
+    target: row.appliedLineDiscountTarget as DiscountTarget,
+    percentValue: row.appliedLineDiscountPercentValue,
+    fixedAmount: row.appliedLineDiscountFixedAmount,
+    precedence: row.appliedLineDiscountPrecedence!,
+    productId: row.appliedLineDiscountProductId,
+    categoryId: row.appliedLineDiscountCategoryId,
   };
 }
 
@@ -432,17 +573,13 @@ function throwTranslatedCreateError(error: unknown): void {
           ? String(fieldMeta)
           : '';
     if (field.includes('userId')) {
-      throw new OrderInvalidUserError('User does not exist for this order.');
+      throw new OrderInvalidUserError(OrderMessage.INVALID_USER);
     }
     if (field.includes('regionId')) {
-      throw new OrderInvalidRegionError(
-        'Region does not exist for this order.',
-      );
+      throw new OrderInvalidRegionError(OrderMessage.INVALID_REGION);
     }
     if (field.includes('productId')) {
-      throw new OrderInvalidProductError(
-        'Product does not exist for this order line.',
-      );
+      throw new OrderInvalidProductError(OrderMessage.PRODUCT_UNAVAILABLE);
     }
   }
 
@@ -545,11 +682,4 @@ function buildTransitionSql(
       throw new Error('Unsupported order transition: ' + String(exhaustive));
     }
   }
-}
-
-/** Exported for unit tests of line collapse behavior. */
-export function collapseOrderLinesForTest(
-  lines: CreateOrderLineInput[],
-): NormalizedCreateOrderLine[] {
-  return collapseAndNormalizeLines(lines);
 }

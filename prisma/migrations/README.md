@@ -12,5 +12,6 @@ Business migrations live here and are applied with `prisma migrate deploy`.
 | `20260821230000_product_catalog`                | CAT-03 Product catalog table                                 |
 | `20260821240000_media_library`                  | CAT-04 Media library metadata                                |
 | `20260822120000_inventory_persistence`          | INV-01B Inventory, reservation, and ledger tables            |
+| `20260822140000_inventory_command_idempotency`  | INV-02 Admin inventory command idempotency claims            |
 
 Integration suites apply migrations with `prisma migrate deploy` against `TEST_DATABASE_URL`. Do not use `prisma db push` as the canonical path.

@@ -8,6 +8,9 @@ export const InventoryErrorCode = {
   INVALID_ADJUSTMENT: 'INVENTORY_INVALID_ADJUSTMENT',
   RESERVATION_NOT_FOUND: 'INVENTORY_RESERVATION_NOT_FOUND',
   RESERVATION_CONFLICT: 'INVENTORY_RESERVATION_CONFLICT',
+  IDEMPOTENCY_CONFLICT: 'IDEMPOTENCY_CONFLICT',
+  IDEMPOTENCY_KEY_REQUIRED: 'IDEMPOTENCY_KEY_REQUIRED',
+  IDEMPOTENCY_KEY_INVALID: 'IDEMPOTENCY_KEY_INVALID',
 } as const;
 
 export type InventoryErrorCode =
@@ -95,5 +98,20 @@ export class InventoryReservationConflictError extends ApplicationError {
       details,
     );
     this.name = 'InventoryReservationConflictError';
+  }
+}
+
+export class IdempotencyConflictError extends ApplicationError {
+  constructor(
+    message = 'This operation was already recorded with different details.',
+    details: Record<string, unknown> = {},
+  ) {
+    super(
+      InventoryErrorCode.IDEMPOTENCY_CONFLICT,
+      message,
+      HttpStatus.CONFLICT,
+      details,
+    );
+    this.name = 'IdempotencyConflictError';
   }
 }

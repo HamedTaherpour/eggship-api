@@ -298,6 +298,33 @@ model InventoryLedger {
   @@index([productId, createdAt])
 }
 
+/// Idempotency claims for Admin inventory command mutations (INV-02).
+/// One row per caller-provided idempotency key; payload hash detects conflicts.
+enum InventoryCommandOperation {
+  RECEIVE
+  ADJUST
+}
+
+enum InventoryCommandIdempotencyStatus {
+  PENDING
+  COMPLETED
+}
+
+model InventoryCommandIdempotency {
+  id             String                            @id @default(uuid()) @db.Uuid
+  idempotencyKey String                            @unique @db.Uuid
+  operation      InventoryCommandOperation
+  productId      String                            @db.Uuid
+  payloadHash    String                            @db.VarChar(64)
+  status         InventoryCommandIdempotencyStatus
+  onHandAfter    Int?
+  reservedAfter  Int?
+  ledgerId       String?                           @db.Uuid
+  createdAt      DateTime                          @default(now()) @db.Timestamptz(3)
+
+  @@index([productId, createdAt])
+}
+
 /// Geographic/service region reference (CAT-02). No shipping or pricing fields
 /// until evidenced. Prefer `isActive = false` over hard delete; future profile
 /// or delivery FKs should use Restrict and revisit deletion rules.

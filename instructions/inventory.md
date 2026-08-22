@@ -111,7 +111,8 @@ Redis is **not** authoritative for Inventory balances, reservations, or stock lo
 - `InventoryLedger` is append-only. Repositories expose append/query only. `reason` is required at the application layer for `ADJUST` and `WRITE_OFF` (not a per-type database CHECK). Actor CHECK: `SYSTEM` has null `actorId`; `USER`/`ADMIN` require `actorId`. No FK from `actorId` to User/Admin.
 - Ledger uniqueness is a **partial** unique index on `(type, referenceType, referenceId, productId)` for `RESERVE`/`RELEASE`/`SHIP` with `referenceType = ORDER` and non-null `referenceId`. Manual `RECEIVE`/`ADJUST` events are not covered so operators may reuse a reference. A universal unique on those four columns would false-conflict legitimate adjustments.
 - Multi-SKU work deduplicates and sorts ids in application code, then locks each Inventory row with `SELECT ... WHERE "productId" = $id FOR UPDATE` in that order (not a client-controlled `ORDER BY`). Inspections report all shortages and write nothing.
-- Inventory HTTP, Redis stock, BullMQ workers, reservation TTL, and partial fulfillment remain later tasks.
+- Admin warehouse commands (INV-02): `POST /api/v1/admin/inventory/:productId/receive` and `POST /api/v1/admin/inventory/:productId/adjust` (delta + required reason) gated by `INVENTORY_ADJUST`; `GET /api/v1/admin/inventory/:productId` gated by `INVENTORY_READ`. Mutations require a UUID `Idempotency-Key` header; identical key + payload replays the committed result, conflicting payload returns `IDEMPOTENCY_CONFLICT`. Idempotency claims persist in `InventoryCommandIdempotency` inside the same PostgreSQL transaction as balance mutation and ledger append. Inactive products remain inventory-correctable; catalog visibility stays separate. `WRITE_OFF` HTTP remains later work.
+- Inventory HTTP list pagination, Redis stock, BullMQ workers, reservation TTL, and partial fulfillment remain later tasks.
 
 ## Authorization
 

@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |    94 |
-| DONE        |    26 |
+| DONE        |    27 |
 | IN_PROGRESS |     0 |
 | READY       |     6 |
 | BLOCKED     |     0 |
 | PLANNED     |    62 |
 
-- Current task: none in progress. Next recommended: `INV-02 — Stock receiving and adjustments` (READY after INV-01B; also `INV-03 — Reservation and release semantics`). `CAT-05 — Admin catalog APIs` and `CAT-06 — Public catalog APIs` remain READY. `PRC-01 — Pricing rules and price history` is READY (depends on CAT-03; starts with human architecture approval). `ORD-01 — Order schema and historical snapshots` is now READY (AUTH-07, CAT-03, INV-01B). `INV-04` stays PLANNED until INV-03 is DONE. `ADM-01 — Admin account management` when back-office operator administration is prioritized over catalog work; it depends on `ADM-AUTH-01` so disablement can revoke Admin sessions.
+- Current task: none in progress. Next recommended: `INV-03 — Reservation and release semantics` (READY after INV-02). `CAT-05 — Admin catalog APIs` and `CAT-06 — Public catalog APIs` remain READY. `CAT-05 — Admin catalog APIs` and `CAT-06 — Public catalog APIs` remain READY. `PRC-01 — Pricing rules and price history` is READY (depends on CAT-03; starts with human architecture approval). `ORD-01 — Order schema and historical snapshots` is now READY (AUTH-07, CAT-03, INV-01B). `INV-04` stays PLANNED until INV-03 is DONE. `ADM-01 — Admin account management` when back-office operator administration is prioritized over catalog work; it depends on `ADM-AUTH-01` so disablement can revoke Admin sessions.
 - Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
@@ -352,13 +352,15 @@ Delivered: `Inventory` (`productId` PK, int4 `onHand`/`reserved`, CHECKs, Produc
 
 ### INV-02 — Stock receiving and adjustments
 
-Status: READY | Depends on: INV-01B, AUTH-08 | Primary: Codex | Review: Claude/Cursor
+Status: DONE | Depends on: INV-01B, AUTH-08 | Primary: Codex | Review: Claude/Cursor
 
 Scope: Implement transactional receiving and authorized adjustment application services with reason and actor metadata.
 
 Acceptance criteria: State and ledger change atomically; invalid/overflowing adjustments fail safely; idempotency expectations and audit integration are explicit and tested.
 
 Explicitly out of scope: Reservations and order transitions.
+
+Delivered: Admin `POST /api/v1/admin/inventory/:productId/receive` and `/adjust` (signed delta + required reason) with UUID `Idempotency-Key` replay/conflict via `InventoryCommandIdempotency`; `GET /api/v1/admin/inventory/:productId`; `AdminInventoryOperationsService` orchestrating atomic balance+ledger+idempotency in one PostgreSQL transaction; `INVENTORY_READ` / `INVENTORY_ADJUST`; Persian displayable errors; unit/e2e/integration coverage. No write-off HTTP, reservation orchestration, or inventory list (INV-06). Live `TEST_DATABASE_URL` concurrency run is environment-dependent.
 
 ### INV-03 — Reservation and release semantics
 

@@ -1,10 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { INestApplicationContext } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
-import { ObservabilityModule } from '../../../src/common/observability/observability.module';
-import { createConfigModuleOptions } from '../../../src/config/config-module.options';
-import { PrismaModule } from '../../../src/infrastructure/database/prisma/prisma.module';
+import { postgresIntegrationImports } from '../support/postgres-testing-module';
 import { PrismaService } from '../../../src/infrastructure/database/prisma/prisma.service';
 import type { AuthenticatedPrincipal } from '../../../src/modules/auth/domain/authenticated-principal';
 import { AuthSubjectType } from '../../../src/modules/auth/domain/subject-type';
@@ -28,6 +25,7 @@ import {
 import { ProductService } from '../../../src/modules/products/application/product.service';
 import { ProductRepository } from '../../../src/modules/products/infrastructure/product.repository';
 import { ProductsModule } from '../../../src/modules/products/products.module';
+import { PricingModule } from '../../../src/modules/pricing/pricing.module';
 import { assertDestructiveOperationsAllowed } from '../support/integration-environment';
 
 const ADMIN_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
@@ -57,11 +55,11 @@ describe('Product price history (integration)', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [
-        ConfigModule.forRoot(createConfigModuleOptions()),
-        ObservabilityModule,
-        PrismaModule,
-        InventoryModule,
-        ProductsModule,
+        ...postgresIntegrationImports([
+          InventoryModule,
+          ProductsModule,
+          PricingModule,
+        ]),
       ],
       providers: [CategoryRepository, CategoryService],
     }).compile();

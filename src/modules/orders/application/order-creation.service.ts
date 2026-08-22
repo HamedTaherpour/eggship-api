@@ -35,8 +35,12 @@ import type {
   CreateOrderResult,
 } from './order-creation.commands';
 
-/** Bounded retries when RR + Inventory row updates hit SQLSTATE 40001 / P2034. */
-const CREATE_SERIALIZATION_MAX_ATTEMPTS = 3;
+/**
+ * Bounded retries when RR + Inventory row updates hit SQLSTATE 40001 / P2034,
+ * or when an advisory-lock waiter inherits a pre-lock RR snapshot and misses
+ * the winner's committed idempotency row (unique / conflict → fresh tx).
+ */
+const CREATE_SERIALIZATION_MAX_ATTEMPTS = 5;
 
 /**
  * ORD-03 transactional order creation.
@@ -92,6 +96,39 @@ export class OrderCreationService {
         });
       } catch (error: unknown) {
         lastError = error;
+
+        // REPEATABLE READ takes its snapshot at the first statement. A waiter
+        // blocked on pg_advisory_xact_lock can therefore miss the winner's
+        // committed Order row and hit the unique index. Recover with a fresh
+        // read outside the aborted transaction, or retry createOnce so a new
+        // RR snapshot is taken after the lock wait completes.
+        if (
+          error instanceof OrderIdempotencyConflictError ||
+          isUniqueConstraintFailure(error)
+        ) {
+          const existing = await this.orders.findByUserIdAndIdempotencyKey(
+            userId,
+            idempotencyKey,
+          );
+          if (existing !== null) {
+            return this.replayOrConflict(existing, payloadHash);
+          }
+          if (attempt < CREATE_SERIALIZATION_MAX_ATTEMPTS) {
+            this.logger.info(
+              {
+                module: 'orders',
+                operation: 'order.create.idempotency_retry',
+                attempt,
+              },
+              'Retrying order create after idempotency unique miss under RR',
+            );
+            continue;
+          }
+          if (error instanceof OrderIdempotencyConflictError) {
+            throw error;
+          }
+        }
+
         if (
           isSerializationFailure(error) &&
           attempt < CREATE_SERIALIZATION_MAX_ATTEMPTS
@@ -160,22 +197,13 @@ export class OrderCreationService {
         priced,
       });
 
-      let created: OrderRecord;
-      try {
-        created = await this.orders.createWithTrustedSnapshots(createInput, tx);
-      } catch (error: unknown) {
-        if (error instanceof OrderIdempotencyConflictError) {
-          const raced = await this.orders.findByUserIdAndIdempotencyKey(
-            input.userId,
-            input.idempotencyKey,
-            tx,
-          );
-          if (raced !== null) {
-            return this.replayOrConflict(raced, input.payloadHash);
-          }
-        }
-        throw error;
-      }
+      // Do not re-read inside this transaction after a unique violation:
+      // PostgreSQL aborts the tx (25P02) and further commands fail with P2039.
+      // Outer createOrder recovers via a fresh read / retry after rollback.
+      const created = await this.orders.createWithTrustedSnapshots(
+        createInput,
+        tx,
+      );
 
       await this.inventory.reserveForOrder(
         {
@@ -286,6 +314,11 @@ export class OrderCreationService {
     if (error instanceof OrderInvalidMoneyError) {
       return new OrderInvalidMoneyError(OrderMessage.INVALID_INPUT);
     }
+    if (isUniqueConstraintFailure(error)) {
+      return new OrderIdempotencyConflictError(
+        OrderMessage.IDEMPOTENCY_CONFLICT,
+      );
+    }
     if (isSerializationFailure(error)) {
       return new OrderInvalidInputError(OrderMessage.CREATE_CONFLICT);
     }
@@ -313,6 +346,33 @@ function isSerializationFailure(error: unknown): boolean {
       message.includes('serialization failure') ||
       message.includes('40001')
     );
+  }
+  return false;
+}
+
+function isUniqueConstraintFailure(error: unknown): boolean {
+  if (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === 'P2002'
+  ) {
+    return true;
+  }
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+  const record = error as {
+    code?: unknown;
+    message?: unknown;
+    meta?: { driverAdapterError?: { cause?: { code?: unknown } } };
+  };
+  if (record.code === '23505' || record.code === 'P2002') {
+    return true;
+  }
+  if (record.meta?.driverAdapterError?.cause?.code === '23505') {
+    return true;
+  }
+  if (typeof record.message === 'string') {
+    return /unique constraint|23505|p2002/i.test(record.message);
   }
   return false;
 }

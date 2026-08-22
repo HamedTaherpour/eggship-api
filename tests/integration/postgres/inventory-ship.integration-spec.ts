@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { INestApplicationContext } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
-import { ObservabilityModule } from '../../../src/common/observability/observability.module';
-import { createConfigModuleOptions } from '../../../src/config/config-module.options';
-import { PrismaModule } from '../../../src/infrastructure/database/prisma/prisma.module';
+import {
+  postgresIntegrationImports,
+  unusedPricingServiceProvider,
+} from '../support/postgres-testing-module';
 import { PrismaService } from '../../../src/infrastructure/database/prisma/prisma.service';
 import { TransactionRunner } from '../../../src/infrastructure/database/transaction';
 import { CategoryRepository } from '../../../src/modules/categories/infrastructure/category.repository';
@@ -21,6 +21,7 @@ import { InventoryHttpMessage } from '../../../src/modules/inventory/domain/inve
 import { InventoryLedgerReferenceType } from '../../../src/modules/inventory/domain/inventory-ledger';
 import { InventoryModule } from '../../../src/modules/inventory/inventory.module';
 import { ProductService } from '../../../src/modules/products/application/product.service';
+import { ProductRepository } from '../../../src/modules/products/infrastructure/product.repository';
 import { assertDestructiveOperationsAllowed } from '../support/integration-environment';
 
 async function truncateInventoryTables(prisma: PrismaService): Promise<void> {
@@ -40,13 +41,14 @@ describe('Inventory ship (integration)', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [
-        ConfigModule.forRoot(createConfigModuleOptions()),
-        ObservabilityModule,
-        PrismaModule,
-        InventoryModule,
+      imports: [...postgresIntegrationImports([InventoryModule])],
+      providers: [
+        CategoryRepository,
+        CategoryService,
+        ProductRepository,
+        ProductService,
+        unusedPricingServiceProvider(),
       ],
-      providers: [CategoryRepository, CategoryService, ProductService],
     }).compile();
 
     app = moduleRef;
@@ -464,10 +466,12 @@ describe('Inventory ship (integration)', () => {
 
     expect(outcomes.every((row) => row.status === 'fulfilled')).toBe(true);
     const finalBalance = await inventory.getBalance(productId);
+    // Ship(8) then reserve(2) or reserve(2) then ship(8) both end at
+    // onHand=2, reserved=2 under ADR ship (onHand and reserved both drop).
     expect(finalBalance).toMatchObject({
-      onHand: 6,
+      onHand: 2,
       reserved: 2,
-      available: 4,
+      available: 0,
     });
     expect(finalBalance!.reserved).toBeLessThanOrEqual(finalBalance!.onHand);
   });
@@ -515,10 +519,13 @@ describe('Inventory ship (integration)', () => {
       ],
     });
 
-    await prisma.inventory.update({
-      where: { productId: second },
-      data: { onHand: 1 },
-    });
+    // Cannot set onHand < reserved (DB CHECK). Inflate the reservation
+    // quantity instead so ship fails the reserved-balance predicate.
+    await prisma.$executeRawUnsafe(
+      `UPDATE "InventoryReservation" SET quantity = 100 WHERE "orderId" = $1::uuid AND "productId" = $2::uuid`,
+      orderId,
+      second,
+    );
 
     await expect(
       inventory.shipForOrder({ orderId, actor: SYSTEM_ACTOR }),
@@ -529,7 +536,7 @@ describe('Inventory ship (integration)', () => {
       reserved: 3,
     });
     expect(await inventory.getBalance(second)).toMatchObject({
-      onHand: 1,
+      onHand: 10,
       reserved: 2,
     });
     expect(

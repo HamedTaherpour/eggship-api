@@ -1,10 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { INestApplicationContext } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
-import { ObservabilityModule } from '../../../src/common/observability/observability.module';
-import { createConfigModuleOptions } from '../../../src/config/config-module.options';
-import { PrismaModule } from '../../../src/infrastructure/database/prisma/prisma.module';
+import { postgresIntegrationImports } from '../support/postgres-testing-module';
 import { PrismaService } from '../../../src/infrastructure/database/prisma/prisma.service';
 import { CategoryRepository } from '../../../src/modules/categories/infrastructure/category.repository';
 import { InventoryModule } from '../../../src/modules/inventory/inventory.module';
@@ -44,12 +41,11 @@ describe('Discount persistence (integration)', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [
-        ConfigModule.forRoot(createConfigModuleOptions()),
-        ObservabilityModule,
-        PrismaModule,
-        InventoryModule,
-        ProductsModule,
-        PricingModule,
+        ...postgresIntegrationImports([
+          InventoryModule,
+          ProductsModule,
+          PricingModule,
+        ]),
       ],
       providers: [CategoryRepository],
     }).compile();

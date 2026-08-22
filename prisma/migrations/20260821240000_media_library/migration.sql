@@ -29,12 +29,11 @@ CHECK (
     "storageKey" ~ '^media/[0-9]{4}/[0-9]{2}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp)$'
 );
 
+-- PostgreSQL text/varchar cannot store U+0000; CHR(0) is rejected by chr() and is
+-- redundant as a CHECK. Keep length bounds only.
 ALTER TABLE "Media"
 ADD CONSTRAINT "Media_originalFileName_length_check"
-CHECK (
-    char_length("originalFileName") BETWEEN 1 AND 255
-    AND position(CHR(0) IN "originalFileName") = 0
-);
+CHECK (char_length("originalFileName") BETWEEN 1 AND 255);
 
 ALTER TABLE "Media"
 ADD CONSTRAINT "Media_mimeType_check"

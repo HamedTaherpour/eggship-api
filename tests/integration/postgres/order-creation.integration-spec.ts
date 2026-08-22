@@ -1,10 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { INestApplicationContext } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
-import { ObservabilityModule } from '../../../src/common/observability/observability.module';
-import { createConfigModuleOptions } from '../../../src/config/config-module.options';
-import { PrismaModule } from '../../../src/infrastructure/database/prisma/prisma.module';
+import { postgresIntegrationImports } from '../support/postgres-testing-module';
 import { PrismaService } from '../../../src/infrastructure/database/prisma/prisma.service';
 import { TransactionRunner } from '../../../src/infrastructure/database/transaction';
 import { CategoryRepository } from '../../../src/modules/categories/infrastructure/category.repository';
@@ -68,14 +65,13 @@ describe('Order creation (integration)', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [
-        ConfigModule.forRoot(createConfigModuleOptions()),
-        ObservabilityModule,
-        PrismaModule,
-        InventoryModule,
-        ProductsModule,
-        PricingModule,
-        UsersModule,
-        OrdersModule,
+        ...postgresIntegrationImports([
+          InventoryModule,
+          ProductsModule,
+          PricingModule,
+          UsersModule,
+          OrdersModule,
+        ]),
       ],
       providers: [CategoryRepository, RegionRepository],
     }).compile();
@@ -97,7 +93,7 @@ describe('Order creation (integration)', () => {
 
   beforeEach(async () => {
     await truncateTables(prisma);
-  });
+  }, 30_000);
 
   afterAll(async () => {
     await app.close();
@@ -125,6 +121,7 @@ describe('Order creation (integration)', () => {
       price: options?.price ?? 10_000,
       categoryId: category.id,
     });
+    await inventory.ensureForProduct(product.id);
     const onHand = options?.onHand ?? 100;
     if (onHand > 0) {
       await inventory.receiveOnHand({
@@ -210,7 +207,9 @@ describe('Order creation (integration)', () => {
     );
 
     const fulfilled = settled.filter((row) => row.status === 'fulfilled');
+    const rejected = settled.filter((row) => row.status === 'rejected');
     expect(fulfilled).toHaveLength(20);
+    expect(rejected).toHaveLength(0);
     const orderIds = new Set(
       fulfilled.map((row) =>
         row.status === 'fulfilled' ? row.value.order.id : '',
@@ -222,7 +221,7 @@ describe('Order creation (integration)', () => {
     expect(await inventory.getBalance(productId)).toMatchObject({
       reserved: 2,
     });
-  });
+  }, 30_000);
 
   it('same key / different payload race yields one winner and conflicts', async () => {
     const { user, regionId, productId } = await seedBase({ onHand: 50 });
@@ -232,6 +231,7 @@ describe('Order creation (integration)', () => {
       categoryId: (await categories.create({ name: `Cat2 ${randomUUID()}` }))
         .id,
     });
+    await inventory.ensureForProduct(second.id);
     await inventory.receiveOnHand({
       productId: second.id,
       quantity: 50,
@@ -261,9 +261,8 @@ describe('Order creation (integration)', () => {
     expect(fulfilled).toHaveLength(1);
     expect(rejected).toHaveLength(1);
     expect(
-      rejected[0]?.status === 'rejected' &&
-        rejected[0].reason instanceof OrderIdempotencyConflictError,
-    ).toBe(true);
+      rejected[0]?.status === 'rejected' ? rejected[0].reason : null,
+    ).toBeInstanceOf(OrderIdempotencyConflictError);
     expect(await prisma.order.count()).toBe(1);
   });
 

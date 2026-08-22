@@ -194,7 +194,9 @@ export class OrderRepository {
     const user = assertOrderUuid(userId, 'userId');
     const key = assertOrderUuid(idempotencyKey, 'idempotencyKey');
     const lockIdentity = user + ':' + key;
-    await this.db(tx).$queryRaw(Prisma.sql`
+    // $executeRaw: pg_advisory_xact_lock returns void; $queryRaw cannot
+    // deserialize void columns under Prisma's PostgreSQL driver.
+    await this.db(tx).$executeRaw(Prisma.sql`
       SELECT pg_advisory_xact_lock(
         ${ORDER_CREATE_IDEMPOTENCY_LOCK_CLASS},
         hashtext(${lockIdentity})
@@ -353,6 +355,12 @@ export class OrderRepository {
       return mapOrder(created);
     } catch (error: unknown) {
       throwTranslatedCreateError(error);
+      if (
+        isPostgresUniqueViolation(error) ||
+        looksLikeUniqueConstraintViolation(error)
+      ) {
+        throw new OrderIdempotencyConflictError();
+      }
       throw error;
     }
   }
@@ -561,11 +569,12 @@ function mapAppliedLineDiscount(
 }
 
 function throwTranslatedCreateError(error: unknown): void {
-  if (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === 'P2003'
-  ) {
-    const fieldMeta = error.meta?.field_name;
+  if (!isPrismaKnownRequestError(error)) {
+    return;
+  }
+
+  if (error.code === 'P2003') {
+    const fieldMeta = error.meta?.['field_name'];
     const field =
       typeof fieldMeta === 'string'
         ? fieldMeta
@@ -583,22 +592,68 @@ function throwTranslatedCreateError(error: unknown): void {
     }
   }
 
-  if (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === 'P2002'
-  ) {
-    const target = error.meta?.target;
-    const fields = Array.isArray(target)
-      ? target.map(String)
-      : typeof target === 'string'
-        ? [target]
-        : [];
-    if (
-      fields.some((field) => field.includes('userId')) &&
-      fields.some((field) => field.includes('idempotencyKey'))
-    ) {
-      throw new OrderIdempotencyConflictError();
-    }
+  if (error.code === 'P2002') {
+    // Order create only has one business unique: (userId, idempotencyKey).
+    // Prisma/driver meta shapes vary across adapters; do not require field names.
+    throw new OrderIdempotencyConflictError();
+  }
+}
+
+function isPrismaKnownRequestError(
+  error: unknown,
+): error is Prisma.PrismaClientKnownRequestError {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    return true;
+  }
+  // Driver / duplicate @prisma/client copies can break instanceof.
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'name' in error &&
+    error.name === 'PrismaClientKnownRequestError' &&
+    'code' in error &&
+    typeof (error as { code: unknown }).code === 'string'
+  );
+}
+
+function isPostgresUniqueViolation(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+  const record = error as {
+    code?: unknown;
+    meta?: {
+      code?: unknown;
+      driverAdapterError?: { cause?: { code?: unknown } };
+    };
+    cause?: { code?: unknown };
+  };
+  if (record.code === '23505' || record.code === 'P2002') {
+    return true;
+  }
+  if (record.cause?.code === '23505') {
+    return true;
+  }
+  if (record.meta?.code === '23505') {
+    return true;
+  }
+  if (record.meta?.driverAdapterError?.cause?.code === '23505') {
+    return true;
+  }
+  return false;
+}
+
+function looksLikeUniqueConstraintViolation(error: unknown): boolean {
+  try {
+    const text = JSON.stringify(
+      error,
+      Object.getOwnPropertyNames(Object(error)),
+    );
+    return /23505|P2002|unique constraint|Unique constraint|idempotencyKey/i.test(
+      text,
+    );
+  } catch {
+    return false;
   }
 }
 

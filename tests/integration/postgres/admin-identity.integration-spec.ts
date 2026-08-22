@@ -1,19 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import type { INestApplicationContext } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
+import { postgresIntegrationImports } from '../support/postgres-testing-module';
 import { AdminRole } from '../../../src/common/authz/admin-role';
 import { AuthorizationService } from '../../../src/common/authz/authorization.service';
-import { AuthorizationModule } from '../../../src/common/authz/authorization.module';
-import { ADMIN_ROLE_RESOLVER } from '../../../src/common/authz/authorization.tokens';
 import { Permission } from '../../../src/common/authz/permission';
-import { createConfigModuleOptions } from '../../../src/config/config-module.options';
 import { PrismaService } from '../../../src/infrastructure/database/prisma/prisma.service';
 import { AdminsModule } from '../../../src/modules/admins/admins.module';
 import { AdminIdentityService } from '../../../src/modules/admins/application/admin-identity.service';
 import { AdminEmailAlreadyExistsError } from '../../../src/modules/admins/domain/admin-errors';
 import { AdminRepository } from '../../../src/modules/admins/infrastructure/admin.repository';
-import { PrismaAdminRoleResolver } from '../../../src/modules/admins/infrastructure/prisma-admin-role.resolver';
 import {
   digestRefreshToken,
   generateRefreshToken,
@@ -33,19 +29,7 @@ describe('Admin identity persistence (integration)', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [
-        ConfigModule.forRoot(createConfigModuleOptions()),
-        AdminsModule,
-        // Same wiring as the composition root: the real resolver reaches
-        // authorization only through the DI seam.
-        AuthorizationModule.forRoot({
-          imports: [AdminsModule],
-          adminRoleResolver: {
-            provide: ADMIN_ROLE_RESOLVER,
-            useExisting: PrismaAdminRoleResolver,
-          },
-        }),
-      ],
+      imports: [...postgresIntegrationImports([AdminsModule])],
     }).compile();
 
     app = moduleRef;

@@ -166,7 +166,9 @@ export class InventoryReservationRepository {
   async lockOrderScope(orderId: string, tx: TransactionContext): Promise<void> {
     const order = assertInventoryUuid(orderId, 'orderId');
     try {
-      await this.db(tx).$queryRaw(Prisma.sql`
+      // $executeRaw: pg_advisory_xact_lock returns void; $queryRaw cannot
+      // deserialize void columns under Prisma's PostgreSQL driver.
+      await this.db(tx).$executeRaw(Prisma.sql`
         SELECT pg_advisory_xact_lock(
           ${INVENTORY_ORDER_ADVISORY_LOCK_CLASS},
           hashtext(${order}::text)

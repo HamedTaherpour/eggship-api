@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { INestApplicationContext } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
-import { ObservabilityModule } from '../../../src/common/observability/observability.module';
-import { createConfigModuleOptions } from '../../../src/config/config-module.options';
-import { PrismaModule } from '../../../src/infrastructure/database/prisma/prisma.module';
+import {
+  postgresIntegrationImports,
+  unusedPricingServiceProvider,
+} from '../support/postgres-testing-module';
 import { PrismaService } from '../../../src/infrastructure/database/prisma/prisma.service';
 import { TransactionRunner } from '../../../src/infrastructure/database/transaction';
 import { CategoryService } from '../../../src/modules/categories/application/category.service';
@@ -31,7 +31,6 @@ import { ProductRepository } from '../../../src/modules/products/infrastructure/
 import { RegionRepository } from '../../../src/modules/regions/infrastructure/region.repository';
 import type { UserRecord } from '../../../src/modules/users/domain/user';
 import { UserRepository } from '../../../src/modules/users/infrastructure/user.repository';
-import { UsersModule } from '../../../src/modules/users/users.module';
 import { assertDestructiveOperationsAllowed } from '../support/integration-environment';
 
 function uniquePhone(suffix: number): string {
@@ -68,20 +67,14 @@ describe('Order transitions (integration)', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [
-        ConfigModule.forRoot(createConfigModuleOptions()),
-        ObservabilityModule,
-        PrismaModule,
-        InventoryModule,
-        UsersModule,
-        OrdersModule,
-      ],
+      imports: [...postgresIntegrationImports([InventoryModule, OrdersModule])],
       providers: [
         RegionRepository,
         CategoryRepository,
         CategoryService,
         ProductRepository,
         ProductService,
+        unusedPricingServiceProvider(),
       ],
     }).compile();
 

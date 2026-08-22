@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { INestApplicationContext } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
-import { ObservabilityModule } from '../../../src/common/observability/observability.module';
-import { createConfigModuleOptions } from '../../../src/config/config-module.options';
-import { PrismaModule } from '../../../src/infrastructure/database/prisma/prisma.module';
+import {
+  postgresIntegrationImports,
+  unusedPricingServiceProvider,
+} from '../support/postgres-testing-module';
 import { PrismaService } from '../../../src/infrastructure/database/prisma/prisma.service';
 import { TransactionRunner } from '../../../src/infrastructure/database/transaction';
 import { CategoryRepository } from '../../../src/modules/categories/infrastructure/category.repository';
@@ -44,17 +44,13 @@ describe('Inventory reservation and release (integration)', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [
-        ConfigModule.forRoot(createConfigModuleOptions()),
-        ObservabilityModule,
-        PrismaModule,
-        InventoryModule,
-      ],
+      imports: [...postgresIntegrationImports([InventoryModule])],
       providers: [
         CategoryRepository,
         CategoryService,
         ProductRepository,
         ProductService,
+        unusedPricingServiceProvider(),
       ],
     }).compile();
 

@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { INestApplicationContext } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
-import { createConfigModuleOptions } from '../../../src/config/config-module.options';
+import { postgresIntegrationImports } from '../support/postgres-testing-module';
 import {
   digestRefreshToken,
   generateRefreshToken,
@@ -28,11 +27,7 @@ describe('User and AuthSession persistence (integration)', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [
-        ConfigModule.forRoot(createConfigModuleOptions()),
-        UsersModule,
-        AuthModule,
-      ],
+      imports: [...postgresIntegrationImports([UsersModule, AuthModule])],
     }).compile();
 
     app = moduleRef;

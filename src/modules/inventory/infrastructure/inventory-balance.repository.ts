@@ -266,6 +266,9 @@ export class InventoryBalanceRepository {
   ): Promise<InventoryBalance> {
     const id = assertInventoryUuid(productId, 'productId');
     const qty = assertPositiveQuantity(quantity);
+    // Precompute in JS: Prisma binds bare params as `unknown`, so
+    // `${max} - ${qty}` becomes `unknown - unknown` and PostgreSQL 42725.
+    const onHandCeiling = INVENTORY_INT4_MAX - qty;
     const rows = await this.updateReturning(
       tx,
       Prisma.sql`
@@ -274,7 +277,7 @@ export class InventoryBalanceRepository {
             "updatedAt" = now()
         WHERE "productId" = ${id}::uuid
           AND ${qty} > 0
-          AND "onHand" <= ${INVENTORY_INT4_MAX} - ${qty}
+          AND "onHand" <= ${onHandCeiling}
         RETURNING "productId", "onHand", "reserved", "createdAt", "updatedAt"
       `,
     );
@@ -330,6 +333,10 @@ export class InventoryBalanceRepository {
   ): Promise<InventoryBalance> {
     const id = assertInventoryUuid(productId, 'productId');
     const signed = assertAdjustmentDelta(delta);
+    // Precompute ceiling in JS to avoid PostgreSQL `unknown - unknown` (42725)
+    // when Prisma parameterizes both operands of a SQL subtraction.
+    const onHandCeiling =
+      signed > 0 ? INVENTORY_INT4_MAX - signed : INVENTORY_INT4_MAX;
     const rows = await this.updateReturning(
       tx,
       Prisma.sql`
@@ -340,7 +347,7 @@ export class InventoryBalanceRepository {
           AND ${signed} <> 0
           AND CASE
             WHEN ${signed} > 0 THEN
-              "onHand" <= ${INVENTORY_INT4_MAX} - ${signed}
+              "onHand" <= ${onHandCeiling}
               AND "onHand" + ${signed} >= "reserved"
             ELSE
               "onHand" + ${signed} >= 0

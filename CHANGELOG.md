@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Native PostgreSQL 17 order-create concurrency (LOCAL-PG-01): recover identical/conflicted idempotent creates after REPEATABLE READ + advisory-lock waiters miss the winner without querying an aborted transaction (25P02); raise Prisma/`pg` pool capacity for stampede waiters; map unique violations to idempotency conflicts; remove invalid `CHR(0)` media migration check; fix Inventory SQL/`$executeRaw` advisory-lock and ship-suite expectations exposed on real PG 17.
+
 ### Added
 
 - Transactional order creation and idempotency (ORD-03): `OrderCreationService.createOrder` runs price → persist → `reserveForOrder` in one PostgreSQL **REPEATABLE READ** transaction with bounded serialization retry; server-authoritative User/Region snapshots (inactive rejected); PRC-05 pricing snapshot persistence (`grossLineTotal`/`finalLineTotal`, order discount aggregates, applied-discount evidence, `pricingEvaluatedAt`); `(userId, idempotencyKey)` replay/conflict via payload hash + advisory lock; status always `PENDING_REVIEW`; no HTTP. Minimal additive Order/OrderLine migration; unit + PostgreSQL concurrency/integration specs. No payments, returns, or list/detail APIs.

@@ -6,14 +6,14 @@ This is the authoritative execution plan for completing the standalone EggShip A
 
 | Measure     | Count |
 | ----------- | ----: |
-| Total       |    94 |
-| DONE        |    30 |
+| Total       |    95 |
+| DONE        |    32 |
 | IN_PROGRESS |     0 |
-| READY       |     5 |
+| READY       |     4 |
 | BLOCKED     |     0 |
-| PLANNED     |    60 |
+| PLANNED     |    59 |
 
-- Current task: none in progress. Next recommended: `ORD-02 — Order state machine and authorization matrix` (PLANNED; depends on ORD-01 + INV-04, now DONE) or `INV-05 — Inventory reconciliation` (READY after INV-04).
+- Current task: none in progress. Next recommended: `INV-05 — Inventory reconciliation` (READY). `ORD-03` stays PLANNED on `PRC-05`; `ORD-05`/`ORD-06` stay PLANNED on `ORD-03`. Other READY work: `CAT-05`, `CAT-06`, `PRC-01`.
 - Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
@@ -420,19 +420,33 @@ Explicitly out of scope: State transitions, reservation, and payment integration
 
 Delivered: Prisma `Order` / `OrderLine` with `OrderStatus` enum; immutable product/phone/region snapshots; int4 `unitPrice` and BIGINT persisted `lineTotal`/`subtotal`/`total`; server-computed money helpers; `UNIQUE(orderId, productId)`; optional `idempotencyKey` with `UNIQUE(userId, idempotencyKey)`; DB CHECKs including `lineTotal = unitPrice × quantity` and E.164 `customerPhone`; `OrderRepository` (`createWithLines`, `findById`, `findOwnedById`); ADR 0013; `instructions/orders.md`. No HTTP, payment models, or Inventory orchestration. Address/profile/discount snapshots deferred (MIG-01 / profile / PRC). PostgreSQL integration specs exist; live `TEST_DATABASE_URL` run not executed in this environment.
 
-### ORD-02 — Order state machine and authorization matrix
+### ORD-02A — Order state machine and authorization matrix
 
-Status: PLANNED | Depends on: ORD-01, INV-04 | Primary: Human + ChatGPT architecture process | Review: Claude/Cursor, Human approval
+Status: DONE | Depends on: ORD-01, INV-04 | Primary: Human + ChatGPT architecture process | Review: Claude/Cursor, Human approval
 
-Scope: Approve states, allowed transitions, actors, preconditions, cancellation/return boundaries, timestamps, and terminal states. Inventory quantity effects for those transitions must follow ADR 0012 / `instructions/inventory.md` rather than inventing alternate stock semantics.
+Scope: Approve states, allowed transitions, actors, preconditions, cancellation/return boundaries, timestamps, terminal states, concurrency strategy, Orders↔Inventory transaction orchestration, and error model. Inventory quantity effects must follow ADR 0012 / `instructions/inventory.md` rather than inventing alternate stock semantics.
 
-Acceptance criteria: Invalid transitions are enumerated; each inventory-affecting transition calls the Inventory-owned application contract; legacy compatibility decisions are recorded.
+Acceptance criteria: Locked V1 decisions recorded in ADR 0014 and `instructions/orders.md`; unresolved future decisions remain explicit; no transition runtime or HTTP is implemented in this task.
 
-Explicitly out of scope: Re-deciding V1 inventory quantity effects already locked in ADR 0012; inventing payment, carrier, or unapproved return-inspection HTTP details.
+Delivered: Accepted ADR 0014; durable Orders transition policy in `instructions/orders.md`; authorization notes for coarse `ORDER_TRANSITION`, ownership-based customer cancel, and WAREHOUSE read-only Orders access in `instructions/authorization.md`. V1 graph, conditional UPDATE concurrency, idempotent replay, canonical cross-domain lock order, customer BOLA 404 behavior, `deliveryAt` semantics, inactive-entity rules, and `RETURNED` deferred to ORD-07 are approved.
+
+Explicitly out of scope: Transition runtime, Prisma schema changes, HTTP endpoints, re-deciding ADR 0012 inventory effects, payment state, and ORD-07 return implementation.
+
+### ORD-02 — Order transition domain and Inventory orchestration
+
+Status: DONE | Depends on: ORD-01, ORD-02A, INV-04 | Primary: Codex | Review: Claude/Cursor concurrency review
+
+Scope: Implement domain transition commands (confirm, cancel, ship, deliver) with conditional status UPDATE, lifecycle timestamps, cancellation reason validation, idempotent replay, stable Order error codes, and Orders-owned PostgreSQL transactions that orchestrate Inventory contracts per ADR 0014.
+
+Acceptance criteria: Invalid transitions return stable errors; inventory-affecting transitions call Inventory-owned contracts inside the canonical lock order; concurrent competing transitions have exactly one winner; replay does not rewrite timestamps or repeat Inventory side effects; customer cancel maps Inventory failures to `ORDER_INVALID_TRANSITION`; unit and PostgreSQL integration/concurrency tests cover hot paths.
+
+Explicitly out of scope: HTTP endpoints (ORD-05/ORD-06), order creation (ORD-03), `DELIVERED → RETURNED` (ORD-07), payment, and generic status PATCH.
+
+Delivered: Internal `OrderTransitionService` commands `confirmOrder`, `cancelPendingOrderByCustomer`, `cancelOrderByAdmin`, `shipOrder`, `deliverOrder` (no HTTP/OpenAPI). Canonical graph in `order-transitions.ts` without a `RETURNED` runtime edge. Closed repository primitives (`transitionPendingToConfirmed`, `transitionPendingToCancelled`, `transitionPendingToCancelledForOwner`, `transitionConfirmedToCancelled`, `transitionConfirmedToShipped`, `transitionShippedToDelivered`) using `UPDATE ... WHERE status = expectedFrom RETURNING`. Zero-row re-read classification (replay / `ORDER_INVALID_TRANSITION` / `ORDER_NOT_FOUND`). Idempotent replay preserves lifecycle timestamps, `deliveryAt`, and `cancelReason` and skips Inventory. Cancel/ship run in one Orders-owned PostgreSQL transaction: Order row wins first, then `releaseForOrder` / `shipForOrder` join the same opaque `TransactionContext`. Customer cancel maps `INVENTORY_RESERVATION_NOT_FOUND` / `INVENTORY_RESERVATION_CONFLICT` to `ORDER_INVALID_TRANSITION`. Unit coverage plus a PostgreSQL integration/concurrency suite. Live `TEST_DATABASE_URL` run is environment-dependent (not executed here). No schema/migration change.
 
 ### ORD-03 — Transactional order creation and idempotency
 
-Status: PLANNED | Depends on: ORD-01, ORD-02, INV-03, PRC-05 | Primary: Codex | Review: Claude/Cursor concurrency review
+Status: PLANNED | Depends on: ORD-01, ORD-02A, INV-03, PRC-05 | Primary: Codex | Review: Claude/Cursor concurrency review
 
 Scope: Implement multi-item order creation, price/discount snapshots, idempotency keys, and inventory reservation through module-owned contracts in one controlled transaction.
 
@@ -608,7 +622,7 @@ Explicitly out of scope: Notification deletion and push delivery.
 
 ### NOT-03 — Order-status notification generation
 
-Status: PLANNED | Depends on: NOT-01, ORD-02, ASY-01 | Primary: Codex | Review: Claude/Cursor concurrency review
+Status: PLANNED | Depends on: NOT-01, ORD-02A, ASY-01 | Primary: Codex | Review: Claude/Cursor concurrency review
 
 Scope: Create durable inbox notifications from approved order transitions in the same transaction/outbox boundary where required.
 
@@ -774,7 +788,7 @@ Explicitly out of scope: Speculative cron jobs or using Redis as the sole durabl
 
 ### ANL-01 — Analytics contracts and business-time semantics
 
-Status: PLANNED | Depends on: ORD-02, PRC-01, INV-01B | Primary: Human + ChatGPT architecture process | Review: Claude/Cursor, Human approval
+Status: PLANNED | Depends on: ORD-02A, PRC-01, INV-01B | Primary: Human + ChatGPT architecture process | Review: Claude/Cursor, Human approval
 
 Scope: Define exact metrics, filters, authorization, freshness, source facts, and Tehran/business-day boundaries for product price chart, daily stock, sales overview, top products, and today pulse.
 
@@ -1136,7 +1150,7 @@ The following are not implementation assumptions:
 - Customer/store business profile fields required at registration vs later completion (store name, manager name, address, region, coordinates): no in-repo legacy inventory yet (`MIG-01`); AUTH-07 shipped Pattern A phone-only identity with empty profile update allowlist. Region **reference** rows exist (CAT-02); profile `regionId` FK remains deferred.
 - Category/Region legacy parity gaps (MIG-01): name uniqueness, public slug, sortOrder, category hierarchy/parent, shipping-related Region fields, and whether hard delete is ever allowed after Product/profile FKs land.
 - Product legacy parity gaps (MIG-01): SKU/code uniqueness, description, unit/package semantics, media/image attachment once CAT-04 exists, whether zero-price products should be allowed, and whether product name uniqueness is ever required.
-- Remaining Order state-machine details (ORD-02): non-inventory transition actors/preconditions, shipping/address snapshot fields, cancel/return HTTP design beyond ADR 0012 inventory effects, dispatch board, and any future payment/refund semantics. V1 inventory effects for create/confirm/ship/cancel-before-ship and inspected sellable returns are settled in ADR 0012 / [instructions/inventory.md](../instructions/inventory.md).
+- Order transition runtime (ORD-02) is implemented as internal application commands; HTTP surfaces (ORD-05/ORD-06) remain PLANNED. V1 state machine, actors, concurrency, and Inventory orchestration rules are settled in ADR 0014 / [instructions/orders.md](../instructions/orders.md). Shipping/address snapshot fields, dispatch board, return HTTP beyond ORD-07 scope, and payment/refund semantics remain deferred.
 - Whether a future `PACKED`/`PICKED` state should move the physical `onHand` decrement earlier than `SHIPPED`.
 - Whether partial fulfillment or split shipment is ever allowed after V1.
 - Public exposure of exact inventory `available`, and any preferred-customer allocation/fairness policy under contention.

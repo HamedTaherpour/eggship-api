@@ -1,6 +1,6 @@
 /**
  * Customer order lifecycle status vocabulary (ORD-01).
- * Transition rules and authorization belong to ORD-02.
+ * Legal V1 transitions live in `order-transitions.ts` (ADR 0014).
  */
 export const OrderStatus = {
   PENDING_REVIEW: 'PENDING_REVIEW',

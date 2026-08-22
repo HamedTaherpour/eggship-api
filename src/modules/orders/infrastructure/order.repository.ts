@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '../../../generated/prisma/client';
-import { resolvePrismaConnection } from '../../../infrastructure/database/prisma/prisma-transaction-context';
+import {
+  resolvePrismaConnection,
+  type PrismaConnection,
+} from '../../../infrastructure/database/prisma/prisma-transaction-context';
 import { PrismaService } from '../../../infrastructure/database/prisma/prisma.service';
 import type { TransactionContext } from '../../../infrastructure/database/transaction';
 import { assertPositiveQuantity } from '../../inventory/domain/inventory-quantity';
@@ -59,16 +62,52 @@ type PrismaOrderWithLines = {
   }>;
 };
 
+type OrderTransitionWin = { id: string };
+
+type ClosedOrderTransition =
+  | {
+      kind: 'pending_to_confirmed';
+      orderId: string;
+      deliveryAt: Date | undefined;
+    }
+  | {
+      kind: 'pending_to_cancelled';
+      orderId: string;
+      userId?: string;
+      cancelReason: string | null;
+    }
+  | {
+      kind: 'confirmed_to_cancelled';
+      orderId: string;
+      cancelReason: string | null;
+    }
+  | {
+      kind: 'confirmed_to_shipped';
+      orderId: string;
+    }
+  | {
+      kind: 'shipped_to_delivered';
+      orderId: string;
+    };
+
 /**
  * Narrow persistence boundary for Order + OrderLine. Prisma types stay here.
- * No generic update for snapshot fields — ORD-02 owns status transitions.
+ * Snapshot fields have no generic update. Status changes only through the
+ * closed conditional UPDATE primitives below — never a generic status setter.
  */
 @Injectable()
 export class OrderRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findById(id: string): Promise<OrderRecord | null> {
-    const found = await this.prisma.order.findUnique({
+  private db(tx?: TransactionContext): PrismaConnection {
+    return resolvePrismaConnection(this.prisma, tx);
+  }
+
+  async findById(
+    id: string,
+    tx?: TransactionContext,
+  ): Promise<OrderRecord | null> {
+    const found = await this.db(tx).order.findUnique({
       where: { id },
       include: { lines: { orderBy: { createdAt: 'asc' } } },
     });
@@ -76,13 +115,15 @@ export class OrderRepository {
   }
 
   /**
-   * Owner-scoped lookup for future customer reads (BOLA/IDOR-safe path).
+   * Owner-scoped lookup for customer reads and customer-cancel classification
+   * (BOLA/IDOR-safe path). Missing and other-owner both return null.
    */
   async findOwnedById(
     orderId: string,
     userId: string,
+    tx?: TransactionContext,
   ): Promise<OrderRecord | null> {
-    const found = await this.prisma.order.findFirst({
+    const found = await this.db(tx).order.findFirst({
       where: {
         id: assertOrderUuid(orderId, 'orderId'),
         userId: assertOrderUuid(userId, 'userId'),
@@ -90,6 +131,107 @@ export class OrderRepository {
       include: { lines: { orderBy: { createdAt: 'asc' } } },
     });
     return found === null ? null : mapOrder(found);
+  }
+
+  async transitionPendingToConfirmed(
+    orderId: string,
+    input: { deliveryAt?: Date },
+    tx?: TransactionContext,
+  ): Promise<OrderRecord | null> {
+    return this.transition(
+      {
+        kind: 'pending_to_confirmed',
+        orderId,
+        deliveryAt: input.deliveryAt,
+      },
+      tx,
+    );
+  }
+
+  async transitionPendingToCancelled(
+    orderId: string,
+    input: { cancelReason: string | null },
+    tx?: TransactionContext,
+  ): Promise<OrderRecord | null> {
+    return this.transition(
+      {
+        kind: 'pending_to_cancelled',
+        orderId,
+        cancelReason: input.cancelReason,
+      },
+      tx,
+    );
+  }
+
+  /**
+   * Customer cancel primitive: PENDING_REVIEW → CANCELLED for this owner only.
+   * Cannot cancel CONFIRMED even if the caller is the owner.
+   */
+  async transitionPendingToCancelledForOwner(
+    orderId: string,
+    userId: string,
+    tx?: TransactionContext,
+  ): Promise<OrderRecord | null> {
+    return this.transition(
+      {
+        kind: 'pending_to_cancelled',
+        orderId,
+        userId: assertOrderUuid(userId, 'userId'),
+        cancelReason: null,
+      },
+      tx,
+    );
+  }
+
+  async transitionConfirmedToCancelled(
+    orderId: string,
+    input: { cancelReason: string | null },
+    tx?: TransactionContext,
+  ): Promise<OrderRecord | null> {
+    return this.transition(
+      {
+        kind: 'confirmed_to_cancelled',
+        orderId,
+        cancelReason: input.cancelReason,
+      },
+      tx,
+    );
+  }
+
+  async transitionConfirmedToShipped(
+    orderId: string,
+    tx?: TransactionContext,
+  ): Promise<OrderRecord | null> {
+    return this.transition({ kind: 'confirmed_to_shipped', orderId }, tx);
+  }
+
+  async transitionShippedToDelivered(
+    orderId: string,
+    tx?: TransactionContext,
+  ): Promise<OrderRecord | null> {
+    return this.transition({ kind: 'shipped_to_delivered', orderId }, tx);
+  }
+
+  /**
+   * Atomic `UPDATE ... WHERE status = expectedFrom RETURNING`. Zero rows means
+   * the caller must re-read and classify (replay vs invalid vs missing).
+   */
+  private async transition(
+    spec: ClosedOrderTransition,
+    tx?: TransactionContext,
+  ): Promise<OrderRecord | null> {
+    const orderId = assertOrderUuid(spec.orderId, 'orderId');
+    const rows = await this.db(tx).$queryRaw<OrderTransitionWin[]>(
+      buildTransitionSql(orderId, spec),
+    );
+    if (rows.length === 0) {
+      return null;
+    }
+    const loaded = await this.findById(orderId, tx);
+    if (loaded === null) {
+      throw new Error('Order disappeared after a winning conditional update.');
+    }
+    return loaded;
   }
 
   /**
@@ -319,6 +461,88 @@ function throwTranslatedCreateError(error: unknown): void {
       fields.some((field) => field.includes('idempotencyKey'))
     ) {
       throw new OrderIdempotencyConflictError();
+    }
+  }
+}
+
+function buildTransitionSql(
+  orderId: string,
+  spec: ClosedOrderTransition,
+): Prisma.Sql {
+  const ownerPredicate =
+    spec.kind === 'pending_to_cancelled' && spec.userId !== undefined
+      ? Prisma.sql`AND "userId" = ${spec.userId}::uuid`
+      : Prisma.sql``;
+
+  switch (spec.kind) {
+    case 'pending_to_confirmed': {
+      const applyDelivery = spec.deliveryAt !== undefined;
+      const deliveryAt = spec.deliveryAt ?? null;
+      return Prisma.sql`
+        UPDATE "Order"
+        SET
+          "status" = ${OrderStatus.CONFIRMED}::"OrderStatus",
+          "confirmedAt" = COALESCE("confirmedAt", now()),
+          "deliveryAt" = CASE
+            WHEN ${applyDelivery}::boolean THEN COALESCE("deliveryAt", ${deliveryAt}::timestamptz)
+            ELSE "deliveryAt"
+          END,
+          "updatedAt" = now()
+        WHERE "id" = ${orderId}::uuid
+          AND "status" = ${OrderStatus.PENDING_REVIEW}::"OrderStatus"
+        RETURNING "id"
+      `;
+    }
+    case 'pending_to_cancelled':
+      return Prisma.sql`
+        UPDATE "Order"
+        SET
+          "status" = ${OrderStatus.CANCELLED}::"OrderStatus",
+          "cancelledAt" = COALESCE("cancelledAt", now()),
+          "cancelReason" = COALESCE("cancelReason", ${spec.cancelReason}),
+          "updatedAt" = now()
+        WHERE "id" = ${orderId}::uuid
+          AND "status" = ${OrderStatus.PENDING_REVIEW}::"OrderStatus"
+          ${ownerPredicate}
+        RETURNING "id"
+      `;
+    case 'confirmed_to_cancelled':
+      return Prisma.sql`
+        UPDATE "Order"
+        SET
+          "status" = ${OrderStatus.CANCELLED}::"OrderStatus",
+          "cancelledAt" = COALESCE("cancelledAt", now()),
+          "cancelReason" = COALESCE("cancelReason", ${spec.cancelReason}),
+          "updatedAt" = now()
+        WHERE "id" = ${orderId}::uuid
+          AND "status" = ${OrderStatus.CONFIRMED}::"OrderStatus"
+        RETURNING "id"
+      `;
+    case 'confirmed_to_shipped':
+      return Prisma.sql`
+        UPDATE "Order"
+        SET
+          "status" = ${OrderStatus.SHIPPED}::"OrderStatus",
+          "shippedAt" = COALESCE("shippedAt", now()),
+          "updatedAt" = now()
+        WHERE "id" = ${orderId}::uuid
+          AND "status" = ${OrderStatus.CONFIRMED}::"OrderStatus"
+        RETURNING "id"
+      `;
+    case 'shipped_to_delivered':
+      return Prisma.sql`
+        UPDATE "Order"
+        SET
+          "status" = ${OrderStatus.DELIVERED}::"OrderStatus",
+          "deliveredAt" = COALESCE("deliveredAt", now()),
+          "updatedAt" = now()
+        WHERE "id" = ${orderId}::uuid
+          AND "status" = ${OrderStatus.SHIPPED}::"OrderStatus"
+        RETURNING "id"
+      `;
+    default: {
+      const exhaustive: never = spec;
+      throw new Error('Unsupported order transition: ' + String(exhaustive));
     }
   }
 }

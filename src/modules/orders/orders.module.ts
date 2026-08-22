@@ -1,14 +1,17 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../infrastructure/database/prisma/prisma.module';
+import { InventoryModule } from '../inventory/inventory.module';
+import { OrderTransitionService } from './application/order-transition.service';
 import { OrderRepository } from './infrastructure/order.repository';
 
 /**
- * Order persistence with immutable historical snapshots (ORD-01).
- * State transitions and HTTP belong to ORD-02+; Inventory orchestration to ORD-03.
+ * Order persistence, historical snapshots, and transition orchestration (ORD-02).
+ * HTTP belongs to ORD-04–ORD-06. Inventory tables are mutated only through
+ * InventoryService contracts.
  */
 @Module({
-  imports: [PrismaModule],
-  providers: [OrderRepository],
-  exports: [OrderRepository],
+  imports: [PrismaModule, InventoryModule],
+  providers: [OrderRepository, OrderTransitionService],
+  exports: [OrderRepository, OrderTransitionService],
 })
 export class OrdersModule {}

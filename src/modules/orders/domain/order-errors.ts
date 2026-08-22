@@ -1,5 +1,6 @@
 import { HttpStatus } from '@nestjs/common';
 import { ApplicationError } from '../../../common/errors/application-error';
+import { OrderMessage } from './order-messages';
 
 export const OrderErrorCode = {
   INVALID_INPUT: 'ORDER_INVALID_INPUT',
@@ -10,6 +11,8 @@ export const OrderErrorCode = {
   INVALID_REGION: 'ORDER_INVALID_REGION',
   INVALID_PRODUCT: 'ORDER_INVALID_PRODUCT',
   IDEMPOTENCY_CONFLICT: 'ORDER_IDEMPOTENCY_CONFLICT',
+  INVALID_TRANSITION: 'ORDER_INVALID_TRANSITION',
+  CANCELLATION_REASON_REQUIRED: 'ORDER_CANCELLATION_REASON_REQUIRED',
 } as const;
 
 export class OrderInvalidInputError extends ApplicationError {
@@ -34,9 +37,27 @@ export class OrderInvalidLineError extends ApplicationError {
 }
 
 export class OrderNotFoundError extends ApplicationError {
-  constructor(message = 'Order not found.') {
+  constructor(message = OrderMessage.NOT_FOUND) {
     super(OrderErrorCode.NOT_FOUND, message, HttpStatus.NOT_FOUND);
     this.name = 'OrderNotFoundError';
+  }
+}
+
+export class OrderInvalidTransitionError extends ApplicationError {
+  constructor(message: string = OrderMessage.INVALID_TRANSITION) {
+    super(OrderErrorCode.INVALID_TRANSITION, message, HttpStatus.CONFLICT);
+    this.name = 'OrderInvalidTransitionError';
+  }
+}
+
+export class OrderCancellationReasonRequiredError extends ApplicationError {
+  constructor(message = OrderMessage.CANCELLATION_REASON_REQUIRED) {
+    super(
+      OrderErrorCode.CANCELLATION_REASON_REQUIRED,
+      message,
+      HttpStatus.BAD_REQUEST,
+    );
+    this.name = 'OrderCancellationReasonRequiredError';
   }
 }
 

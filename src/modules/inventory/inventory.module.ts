@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { PrismaModule } from '../../infrastructure/database/prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
 import { AdminInventoryOperationsService } from './application/admin-inventory-operations.service';
+import { InventoryReconciliationService } from './application/inventory-reconciliation.service';
 import { InventoryService } from './application/inventory.service';
 import { AdminInventoryController } from './api/admin-inventory.controller';
 import { InventoryBalanceRepository } from './infrastructure/inventory-balance.repository';
@@ -23,7 +24,8 @@ import { InventoryReservationRepository } from './infrastructure/inventory-reser
     InventoryCommandIdempotencyRepository,
     InventoryService,
     AdminInventoryOperationsService,
+    InventoryReconciliationService,
   ],
-  exports: [InventoryService],
+  exports: [InventoryService, InventoryReconciliationService],
 })
 export class InventoryModule {}

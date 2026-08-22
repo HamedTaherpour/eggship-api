@@ -79,6 +79,24 @@ export class InventoryReservationRepository {
     return this.loadByOrderId(orderId, false, tx);
   }
 
+  async listByProduct(
+    productId: string,
+    tx?: TransactionContext,
+  ): Promise<InventoryReservation[]> {
+    const product = assertInventoryUuid(productId, 'productId');
+    try {
+      const rows = await this.db(tx).$queryRaw<PrismaReservation[]>(Prisma.sql`
+        SELECT "id", "orderId", "productId", "quantity", "status", "createdAt", "updatedAt"
+        FROM "InventoryReservation"
+        WHERE "productId" = ${product}::uuid
+        ORDER BY "orderId" ASC, "id" ASC
+      `);
+      return rows.map(mapReservation);
+    } catch (error: unknown) {
+      translateInventoryPersistenceError(error);
+    }
+  }
+
   /**
    * Lock reservation rows for an order in productId order. Callers must already
    * hold Inventory row locks for those products (inventory first).

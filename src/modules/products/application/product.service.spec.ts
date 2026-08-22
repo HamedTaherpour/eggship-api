@@ -39,6 +39,12 @@ class ImmediateTransactionRunner extends TransactionRunner {
   ): Promise<T> {
     return fn(existing ?? { [TRANSACTION_CONTEXT_BRAND]: true });
   }
+
+  override runSnapshotRead<T>(
+    fn: (tx: TransactionContext) => Promise<T>,
+  ): Promise<T> {
+    return this.run(fn);
+  }
 }
 
 const CATEGORY_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';

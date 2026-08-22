@@ -281,6 +281,12 @@ class PassThroughTransactionRunner extends TransactionRunner {
   ): Promise<T> {
     return fn(existing ?? { [TRANSACTION_CONTEXT_BRAND]: true });
   }
+
+  override runSnapshotRead<T>(
+    fn: (tx: TransactionContext) => Promise<T>,
+  ): Promise<T> {
+    return this.run(fn);
+  }
 }
 
 const stubInventoryService = {

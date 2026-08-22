@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |    95 |
-| DONE        |    32 |
+| DONE        |    33 |
 | IN_PROGRESS |     0 |
-| READY       |     4 |
+| READY       |     3 |
 | BLOCKED     |     0 |
 | PLANNED     |    59 |
 
-- Current task: none in progress. Next recommended: `INV-05 — Inventory reconciliation` (READY). `ORD-03` stays PLANNED on `PRC-05`; `ORD-05`/`ORD-06` stay PLANNED on `ORD-03`. Other READY work: `CAT-05`, `CAT-06`, `PRC-01`.
+- Current task: none in progress. Next recommended: `INV-06 — Admin inventory APIs and verification suite` (PLANNED on INV-05 completion). Other READY work: `CAT-05`, `CAT-06`, `PRC-01`. `ORD-03` stays PLANNED on `PRC-05`; `ORD-05`/`ORD-06` stay PLANNED on `ORD-03`.
 - Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
@@ -388,7 +388,7 @@ Delivered: Internal `shipForOrder({ orderId, actor }, tx?)` application contract
 
 ### INV-05 — Inventory reconciliation
 
-Status: READY | Depends on: INV-02, INV-03, INV-04 | Primary: Codex | Review: Claude/Cursor, Human operations review
+Status: DONE | Depends on: INV-02, INV-03, INV-04 | Primary: Codex | Review: Claude/Cursor, Human operations review
 
 Scope: Implement safe discrepancy detection between current balances, reservations, and ledger history, with an approved correction workflow.
 
@@ -396,9 +396,11 @@ Acceptance criteria: Reconciliation is repeatable, observable, and cannot silent
 
 Explicitly out of scope: Automatic destructive repair and analytics snapshots.
 
+Delivered: Internal read-only `InventoryReconciliationService.reconcileProduct(productId)` comparing aggregate balances, ACTIVE reservation totals, and append-only ledger reconstruction/lifecycle checks with stable issue codes; PostgreSQL **REPEATABLE READ** snapshot reads via `TransactionRunner.runSnapshotRead` (no row-level write locks over history); observability events `inventory.reconciliation.completed` / `inventory.reconciliation.inconsistent`; no HTTP (Admin reconciliation endpoint deferred to INV-06); no auto-repair. Unit coverage plus PostgreSQL integration suite (including corruption detection, missing lifecycle events, large ledger history, and concurrent-mutation snapshot proof). Live `TEST_DATABASE_URL` run is environment-dependent.
+
 ### INV-06 — Admin inventory APIs and verification suite
 
-Status: PLANNED | Depends on: INV-02, INV-03, INV-05, AUTH-08 | Primary: Codex | Review: Claude/Cursor concurrency/security review
+Status: READY | Depends on: INV-02, INV-03, INV-05, AUTH-08 | Primary: Codex | Review: Claude/Cursor concurrency/security review
 
 Scope: Add admin balances, ledger, receiving, adjustment, reservation diagnostics, and reconciliation APIs plus real integration/concurrency coverage.
 

@@ -23,4 +23,13 @@ export abstract class TransactionRunner {
     existing: TransactionContext | undefined,
     fn: (tx: TransactionContext) => Promise<T>,
   ): Promise<T>;
+
+  /**
+   * Read-only diagnostic snapshot (INV-05). Uses PostgreSQL REPEATABLE READ so
+   * Inventory, reservations, and ledger reads share one coherent view without
+   * row-level write locks over history scans.
+   */
+  abstract runSnapshotRead<T>(
+    fn: (tx: TransactionContext) => Promise<T>,
+  ): Promise<T>;
 }

@@ -146,7 +146,7 @@ export class InventoryLedgerRepository {
     const id = assertInventoryUuid(productId, 'productId');
     const rows = await this.db(tx).inventoryLedger.findMany({
       where: { productId: id },
-      orderBy: { createdAt: 'asc' },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
     return rows.map(mapLedger);
   }

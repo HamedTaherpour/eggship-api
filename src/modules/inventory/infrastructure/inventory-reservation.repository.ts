@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
+import { toSkipTake, type PageResult } from '../../../common/list';
 import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../infrastructure/database/prisma/prisma.service';
 import {
@@ -12,6 +13,7 @@ import {
   InventoryReservationStatus,
   type InventoryReservation,
 } from '../domain/inventory-reservation';
+import type { InventoryReservationListQuery } from '../domain/inventory-list';
 import {
   assertInventoryUuid,
   assertPositiveQuantity,
@@ -92,6 +94,54 @@ export class InventoryReservationRepository {
         ORDER BY "orderId" ASC, "id" ASC
       `);
       return rows.map(mapReservation);
+    } catch (error: unknown) {
+      translateInventoryPersistenceError(error);
+    }
+  }
+
+  async listByProductPaginated(
+    query: InventoryReservationListQuery,
+    tx?: TransactionContext,
+  ): Promise<PageResult<InventoryReservation>> {
+    const productId = assertInventoryUuid(query.productId, 'productId');
+    const { skip, take } = toSkipTake({
+      page: query.page,
+      pageSize: query.pageSize,
+    });
+    const filters: Prisma.Sql[] = [
+      Prisma.sql`
+        "productId" = ${productId}::uuid
+      `,
+    ];
+    if (query.status !== undefined) {
+      filters.push(
+        Prisma.sql`
+          "status" = ${query.status}::"InventoryReservationStatus"
+        `,
+      );
+    }
+    const whereClause = Prisma.join(filters, ' AND ');
+
+    try {
+      const [countRows, rows] = await this.db(tx).$transaction([
+        this.db(tx).$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
+          SELECT COUNT(*)::bigint AS count
+          FROM "InventoryReservation"
+          WHERE ${whereClause}
+        `),
+        this.db(tx).$queryRaw<PrismaReservation[]>(Prisma.sql`
+          SELECT "id", "orderId", "productId", "quantity", "status", "createdAt", "updatedAt"
+          FROM "InventoryReservation"
+          WHERE ${whereClause}
+          ORDER BY "createdAt" DESC, "id" DESC
+          OFFSET ${skip}
+          LIMIT ${take}
+        `),
+      ]);
+      return {
+        total: Number(countRows[0]?.count ?? 0n),
+        items: rows.map(mapReservation),
+      };
     } catch (error: unknown) {
       translateInventoryPersistenceError(error);
     }

@@ -6,7 +6,6 @@ import { ObservabilityModule } from '../../../src/common/observability/observabi
 import { createConfigModuleOptions } from '../../../src/config/config-module.options';
 import { PrismaModule } from '../../../src/infrastructure/database/prisma/prisma.module';
 import { PrismaService } from '../../../src/infrastructure/database/prisma/prisma.service';
-import { TransactionRunner } from '../../../src/infrastructure/database/transaction';
 import { CategoryRepository } from '../../../src/modules/categories/infrastructure/category.repository';
 import { CategoryService } from '../../../src/modules/categories/application/category.service';
 import { InventoryReconciliationService } from '../../../src/modules/inventory/application/inventory-reconciliation.service';
@@ -17,7 +16,6 @@ import {
 import {
   InventoryReconciliationIssueCode,
   InventoryReconciliationStatus,
-  reconcileInventorySnapshot,
 } from '../../../src/modules/inventory/domain/inventory-reconciliation';
 import { InventoryNotFoundError } from '../../../src/modules/inventory/domain/inventory-errors';
 import {
@@ -26,8 +24,6 @@ import {
 } from '../../../src/modules/inventory/domain/inventory-ledger';
 import { InventoryModule } from '../../../src/modules/inventory/inventory.module';
 import { InventoryBalanceRepository } from '../../../src/modules/inventory/infrastructure/inventory-balance.repository';
-import { InventoryLedgerRepository } from '../../../src/modules/inventory/infrastructure/inventory-ledger.repository';
-import { InventoryReservationRepository } from '../../../src/modules/inventory/infrastructure/inventory-reservation.repository';
 import { ProductService } from '../../../src/modules/products/application/product.service';
 import { ProductRepository } from '../../../src/modules/products/infrastructure/product.repository';
 import { assertDestructiveOperationsAllowed } from '../support/integration-environment';
@@ -46,10 +42,7 @@ describe('Inventory reconciliation (integration)', () => {
   let productService: ProductService;
   let inventory: InventoryService;
   let reconciliation: InventoryReconciliationService;
-  let transactions: TransactionRunner;
   let balances: InventoryBalanceRepository;
-  let reservations: InventoryReservationRepository;
-  let ledger: InventoryLedgerRepository;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -73,10 +66,7 @@ describe('Inventory reconciliation (integration)', () => {
     productService = moduleRef.get(ProductService);
     inventory = moduleRef.get(InventoryService);
     reconciliation = moduleRef.get(InventoryReconciliationService);
-    transactions = moduleRef.get(TransactionRunner);
     balances = moduleRef.get(InventoryBalanceRepository);
-    reservations = moduleRef.get(InventoryReservationRepository);
-    ledger = moduleRef.get(InventoryLedgerRepository);
     await app.init();
   });
 
@@ -334,52 +324,30 @@ describe('Inventory reconciliation (integration)', () => {
     expect(result.current.onHand).toBe(120);
   });
 
-  it('uses runSnapshotRead for a coherent snapshot during concurrent mutation', async () => {
+  it('uses reconcileProduct for a coherent snapshot during concurrent mutation', async () => {
     const productId = await stockProduct(100);
-    let releaseConcurrent!: () => void;
-    const snapshotReady = new Promise<void>((resolve) => {
-      releaseConcurrent = resolve;
-    });
-    let concurrentCommitted!: () => void;
-    const concurrentDone = new Promise<void>((resolve) => {
-      concurrentCommitted = resolve;
-    });
 
-    const snapshotPromise = transactions.runSnapshotRead(async (ctx) => {
-      const balance = await balances.findByProductId(productId, ctx);
-      expect(balance!.onHand).toBe(100);
-      releaseConcurrent();
-      await concurrentDone;
-
-      const [reservationRows, ledgerRows] = await Promise.all([
-        reservations.listByProduct(productId, ctx),
-        ledger.listByProduct(productId, ctx),
-      ]);
-      const tail = ledgerRows[ledgerRows.length - 1];
-      expect(tail?.onHandAfter).toBe(100);
-
-      return reconcileInventorySnapshot({
-        productId,
-        onHand: balance!.onHand,
-        reserved: balance!.reserved,
-        reservations: reservationRows,
-        ledger: ledgerRows,
-        checkedAt: new Date(),
+    const originalFind = balances.findByProductId.bind(balances);
+    let paused = false;
+    jest
+      .spyOn(balances, 'findByProductId')
+      .mockImplementation(async (id, ctx) => {
+        const result = await originalFind(id, ctx);
+        if (!paused) {
+          paused = true;
+          await inventory.receiveOnHand({
+            productId,
+            quantity: 50,
+            referenceType: InventoryLedgerReferenceType.RECEIVE,
+            referenceId: randomUUID(),
+            actor: SYSTEM_ACTOR,
+          });
+        }
+        return result;
       });
-    });
 
-    void snapshotReady.then(async () => {
-      await inventory.receiveOnHand({
-        productId,
-        quantity: 50,
-        referenceType: InventoryLedgerReferenceType.RECEIVE,
-        referenceId: randomUUID(),
-        actor: SYSTEM_ACTOR,
-      });
-      concurrentCommitted();
-    });
+    const snapshotResult = await reconciliation.reconcileProduct(productId);
 
-    const snapshotResult = await snapshotPromise;
     expect(snapshotResult.status).toBe(
       InventoryReconciliationStatus.CONSISTENT,
     );
@@ -391,6 +359,8 @@ describe('Inventory reconciliation (integration)', () => {
     const postMutation = await reconciliation.reconcileProduct(productId);
     expect(postMutation.status).toBe(InventoryReconciliationStatus.CONSISTENT);
     expect(postMutation.current.onHand).toBe(150);
+
+    jest.restoreAllMocks();
   });
 
   it('keeps reconcileProduct internally coherent while receive races', async () => {

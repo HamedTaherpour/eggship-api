@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |    95 |
-| DONE        |    33 |
+| DONE        |    34 |
 | IN_PROGRESS |     0 |
 | READY       |     3 |
 | BLOCKED     |     0 |
 | PLANNED     |    59 |
 
-- Current task: none in progress. Next recommended: `INV-06 — Admin inventory APIs and verification suite` (PLANNED on INV-05 completion). Other READY work: `CAT-05`, `CAT-06`, `PRC-01`. `ORD-03` stays PLANNED on `PRC-05`; `ORD-05`/`ORD-06` stay PLANNED on `ORD-03`.
+- Current task: none in progress. Next recommended: `CAT-05 — Admin product media attachment` or `CAT-06` / `PRC-01` as dependencies allow. `ORD-03` stays PLANNED on `PRC-05`; `ORD-05`/`ORD-06` stay PLANNED on `ORD-03`.
 - Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
@@ -400,13 +400,15 @@ Delivered: Internal read-only `InventoryReconciliationService.reconcileProduct(p
 
 ### INV-06 — Admin inventory APIs and verification suite
 
-Status: READY | Depends on: INV-02, INV-03, INV-05, AUTH-08 | Primary: Codex | Review: Claude/Cursor concurrency/security review
+Status: DONE | Depends on: INV-02, INV-03, INV-05, AUTH-08 | Primary: Codex | Review: Claude/Cursor concurrency/security review
 
 Scope: Add admin balances, ledger, receiving, adjustment, reservation diagnostics, and reconciliation APIs plus real integration/concurrency coverage.
 
 Acceptance criteria: Permissions and structured errors are explicit; concurrent receive/reserve/release/commit scenarios preserve invariants; query indexes and OpenAPI are verified.
 
 Explicitly out of scope: Customer inventory mutation and Redis caching.
+
+Delivered: Admin `GET /api/v1/admin/inventory` (paginated list with Product join, search, filters, sort allowlist), `GET .../:productId/ledger`, `GET .../:productId/reservations`, `GET .../:productId/reconciliation` (HTTP 200 on inconsistency; no repair), existing balance/receive/adjust from INV-02; `AdminInventoryQueryService` and read repository methods; `INVENTORY_READ` gating; unit/e2e/integration coverage including reconciliation snapshot concurrency via `reconcileProduct()`. No Redis, no ledger mutation HTTP, no automatic repair. Live `TEST_DATABASE_URL` run is environment-dependent.
 
 ## Phase 4 — Orders
 

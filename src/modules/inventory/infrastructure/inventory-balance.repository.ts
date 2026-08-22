@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { toSkipTake, type PageResult } from '../../../common/list';
 import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../infrastructure/database/prisma/prisma.service';
 import {
@@ -25,6 +26,12 @@ import {
   assertNonEmptyProductIds,
   normalizeProductIdsForLock,
 } from '../domain/lock-product-ids';
+import {
+  toInventoryListRecord,
+  type InventoryListQuery,
+  type InventoryListRecord,
+  type InventoryListSortField,
+} from '../domain/inventory-list';
 import { translateInventoryPersistenceError } from './inventory-persistence-errors';
 
 type RawBalanceRow = {
@@ -43,6 +50,50 @@ type RawBalanceRow = {
 @Injectable()
 export class InventoryBalanceRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Paginated Admin inventory list. Starts from Inventory rows (every Product
+   * should have one after backfill) and joins Product name/isActive in one query.
+   */
+  async listAdmin(
+    query: InventoryListQuery,
+  ): Promise<PageResult<InventoryListRecord>> {
+    if (query.sortBy === 'available') {
+      return this.listAdminByAvailableSort(query);
+    }
+
+    const where = buildInventoryListWhere(query);
+    const { skip, take } = toSkipTake({
+      page: query.page,
+      pageSize: query.pageSize,
+    });
+    const orderBy = buildInventoryListOrderBy(query.sortBy, query.sortOrder);
+
+    const [total, rows] = await this.prisma.$transaction([
+      this.prisma.inventory.count({ where }),
+      this.prisma.inventory.findMany({
+        where,
+        include: { product: { select: { name: true, isActive: true } } },
+        orderBy,
+        skip,
+        take,
+      }),
+    ]);
+
+    return {
+      items: rows.map((row) =>
+        toInventoryListRecord({
+          productId: row.productId,
+          productName: row.product.name,
+          isActive: row.product.isActive,
+          onHand: row.onHand,
+          reserved: row.reserved,
+          updatedAt: row.updatedAt,
+        }),
+      ),
+      total,
+    };
+  }
 
   async findByProductId(
     productId: string,
@@ -311,6 +362,12 @@ export class InventoryBalanceRepository {
     );
   }
 
+  private async listAdminByAvailableSort(
+    query: InventoryListQuery,
+  ): Promise<PageResult<InventoryListRecord>> {
+    return listAdminByAvailableSortImpl(this.prisma, query);
+  }
+
   private db(tx?: TransactionContext): PrismaConnection {
     return resolvePrismaConnection(this.prisma, tx);
   }
@@ -362,6 +419,137 @@ export class InventoryBalanceRepository {
     }
     throw invalid;
   }
+}
+
+type InventoryListRow = {
+  productId: string;
+  onHand: number | bigint;
+  reserved: number | bigint;
+  updatedAt: Date;
+  productName: string;
+  isActive: boolean;
+};
+
+function buildInventoryListWhere(
+  query: InventoryListQuery,
+): Prisma.InventoryWhereInput {
+  const where: Prisma.InventoryWhereInput = {};
+  const productWhere: Prisma.ProductWhereInput = {};
+
+  if (query.isActive !== undefined) {
+    productWhere.isActive = query.isActive;
+  }
+  if (query.search !== undefined) {
+    productWhere.name = { contains: query.search, mode: 'insensitive' };
+  }
+  if (Object.keys(productWhere).length > 0) {
+    where.product = productWhere;
+  }
+  return where;
+}
+
+function buildInventoryListOrderBy(
+  sortBy: Exclude<InventoryListSortField, 'available'>,
+  sortOrder: 'asc' | 'desc',
+): Prisma.InventoryOrderByWithRelationInput {
+  switch (sortBy) {
+    case 'productName':
+      return { product: { name: sortOrder } };
+    case 'onHand':
+      return { onHand: sortOrder };
+    case 'reserved':
+      return { reserved: sortOrder };
+    case 'updatedAt':
+      return { updatedAt: sortOrder };
+    default: {
+      const exhaustive: never = sortBy;
+      throw new Error(
+        'Unsupported inventory list sort field: ' + String(exhaustive),
+      );
+    }
+  }
+}
+
+async function listAdminByAvailableSortImpl(
+  prisma: PrismaService,
+  query: InventoryListQuery,
+): Promise<PageResult<InventoryListRecord>> {
+  const { skip, take } = toSkipTake({
+    page: query.page,
+    pageSize: query.pageSize,
+  });
+  const filters: Prisma.Sql[] = [Prisma.sql`TRUE`];
+
+  if (query.isActive !== undefined) {
+    filters.push(
+      Prisma.sql`
+        p."isActive" = ${query.isActive}
+      `,
+    );
+  }
+  if (query.search !== undefined) {
+    const searchPattern = `%${query.search}%`;
+    filters.push(
+      Prisma.sql`
+        p."name" ILIKE ${searchPattern}
+      `,
+    );
+  }
+  const whereClause = Prisma.join(filters, ' AND ');
+
+  const [countRows, rows] = await prisma.$transaction([
+    prisma.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
+      SELECT COUNT(*)::bigint AS count
+      FROM "Inventory" i
+      INNER JOIN "Product" p ON p."id" = i."productId"
+      WHERE ${whereClause}
+    `),
+    query.sortOrder === 'asc'
+      ? prisma.$queryRaw<InventoryListRow[]>(Prisma.sql`
+          SELECT
+            i."productId",
+            i."onHand",
+            i."reserved",
+            i."updatedAt",
+            p."name" AS "productName",
+            p."isActive"
+          FROM "Inventory" i
+          INNER JOIN "Product" p ON p."id" = i."productId"
+          WHERE ${whereClause}
+          ORDER BY (i."onHand" - i."reserved") ASC, i."productId" ASC
+          OFFSET ${skip}
+          LIMIT ${take}
+        `)
+      : prisma.$queryRaw<InventoryListRow[]>(Prisma.sql`
+          SELECT
+            i."productId",
+            i."onHand",
+            i."reserved",
+            i."updatedAt",
+            p."name" AS "productName",
+            p."isActive"
+          FROM "Inventory" i
+          INNER JOIN "Product" p ON p."id" = i."productId"
+          WHERE ${whereClause}
+          ORDER BY (i."onHand" - i."reserved") DESC, i."productId" ASC
+          OFFSET ${skip}
+          LIMIT ${take}
+        `),
+  ]);
+
+  return {
+    total: Number(countRows[0]?.count ?? 0n),
+    items: rows.map((row) =>
+      toInventoryListRecord({
+        productId: row.productId,
+        productName: row.productName,
+        isActive: row.isActive,
+        onHand: asInt(row.onHand),
+        reserved: asInt(row.reserved),
+        updatedAt: row.updatedAt,
+      }),
+    ),
+  };
 }
 
 function mapRawBalance(row: RawBalanceRow): InventoryBalance {

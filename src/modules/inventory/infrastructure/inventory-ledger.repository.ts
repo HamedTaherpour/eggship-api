@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { toSkipTake, type PageResult } from '../../../common/list';
+import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../infrastructure/database/prisma/prisma.service';
 import {
   resolvePrismaConnection,
@@ -15,6 +17,7 @@ import {
   type InventoryLedgerReferenceType,
   type InventoryLedgerType,
 } from '../domain/inventory-ledger';
+import type { InventoryLedgerListQuery } from '../domain/inventory-list';
 import {
   assertInventoryUuid,
   assertPositiveQuantity,
@@ -150,6 +153,31 @@ export class InventoryLedgerRepository {
     });
     return rows.map(mapLedger);
   }
+
+  async listByProductPaginated(
+    query: InventoryLedgerListQuery,
+    tx?: TransactionContext,
+  ): Promise<PageResult<InventoryLedgerEntry>> {
+    const productId = assertInventoryUuid(query.productId, 'productId');
+    const where = buildLedgerListWhere(productId, query);
+    const { skip, take } = toSkipTake({
+      page: query.page,
+      pageSize: query.pageSize,
+    });
+    const db = this.db(tx);
+
+    const [total, rows] = await db.$transaction([
+      db.inventoryLedger.count({ where }),
+      db.inventoryLedger.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip,
+        take,
+      }),
+    ]);
+
+    return { items: rows.map(mapLedger), total };
+  }
 }
 
 function mapLedger(row: PrismaLedger): InventoryLedgerEntry {
@@ -170,4 +198,24 @@ function mapLedger(row: PrismaLedger): InventoryLedgerEntry {
     correlationId: row.correlationId,
     createdAt: row.createdAt,
   };
+}
+
+function buildLedgerListWhere(
+  productId: string,
+  query: InventoryLedgerListQuery,
+): Prisma.InventoryLedgerWhereInput {
+  const where: Prisma.InventoryLedgerWhereInput = { productId };
+
+  if (query.type !== undefined) {
+    where.type = query.type;
+  }
+
+  if (query.createdFrom !== undefined || query.createdTo !== undefined) {
+    where.createdAt = {
+      ...(query.createdFrom === undefined ? {} : { gte: query.createdFrom }),
+      ...(query.createdTo === undefined ? {} : { lte: query.createdTo }),
+    };
+  }
+
+  return where;
 }

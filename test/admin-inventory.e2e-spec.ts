@@ -43,6 +43,14 @@ import {
   InventoryNotFoundError,
 } from '../src/modules/inventory/domain/inventory-errors';
 import type { InventoryLedgerEntry } from '../src/modules/inventory/domain/inventory-ledger';
+import type {
+  InventoryListQuery,
+  InventoryListRecord,
+  InventoryLedgerListQuery,
+  InventoryReservationListQuery,
+} from '../src/modules/inventory/domain/inventory-list';
+import { toInventoryListRecord } from '../src/modules/inventory/domain/inventory-list';
+import type { InventoryReservation } from '../src/modules/inventory/domain/inventory-reservation';
 import {
   INVENTORY_INT4_MAX,
   assertAdjustmentDelta,
@@ -272,6 +280,7 @@ class PassThroughTransactionRunner extends TransactionRunner {
 }
 
 class InMemoryInventoryBalanceRepository {
+  products!: InMemoryProductRepository;
   private readonly rows = new Map<string, InventoryBalance>();
 
   clear(): void {
@@ -304,6 +313,64 @@ class InMemoryInventoryBalanceRepository {
     return Promise.resolve(
       this.rows.get(assertInventoryUuid(productId, 'productId')) ?? null,
     );
+  }
+
+  async listAdmin(
+    query: InventoryListQuery,
+  ): Promise<{ items: InventoryListRecord[]; total: number }> {
+    const items: InventoryListRecord[] = [];
+    for (const balance of this.rows.values()) {
+      const product = await this.products.findById(balance.productId);
+      if (product === null) {
+        continue;
+      }
+      if (query.isActive !== undefined && product.isActive !== query.isActive) {
+        continue;
+      }
+      if (query.search !== undefined) {
+        const needle = query.search.toLowerCase();
+        if (!product.name.toLowerCase().includes(needle)) {
+          continue;
+        }
+      }
+      items.push(
+        toInventoryListRecord({
+          productId: balance.productId,
+          productName: product.name,
+          isActive: product.isActive,
+          onHand: balance.onHand,
+          reserved: balance.reserved,
+          updatedAt: balance.updatedAt,
+        }),
+      );
+    }
+
+    items.sort((left, right) => {
+      const direction = query.sortOrder === 'asc' ? 1 : -1;
+      switch (query.sortBy) {
+        case 'productName':
+          return direction * left.productName.localeCompare(right.productName);
+        case 'onHand':
+          return direction * (left.onHand - right.onHand);
+        case 'reserved':
+          return direction * (left.reserved - right.reserved);
+        case 'available':
+          return direction * (left.available - right.available);
+        case 'updatedAt':
+          return (
+            direction * (left.updatedAt.getTime() - right.updatedAt.getTime())
+          );
+        default:
+          return 0;
+      }
+    });
+
+    const total = items.length;
+    const start = (query.page - 1) * query.pageSize;
+    return {
+      items: items.slice(start, start + query.pageSize),
+      total,
+    };
   }
 
   lockBalances(productIds: readonly string[]): Promise<InventoryBalance[]> {
@@ -398,6 +465,64 @@ class InMemoryInventoryLedgerRepository {
     return Promise.resolve(
       this.entries.filter((row) => row.productId === productId),
     );
+  }
+
+  listByProductPaginated(
+    query: InventoryLedgerListQuery,
+  ): Promise<{ items: InventoryLedgerEntry[]; total: number }> {
+    let items = this.entries.filter((row) => row.productId === query.productId);
+    if (query.type !== undefined) {
+      items = items.filter((row) => row.type === query.type);
+    }
+    items = [...items].sort((left, right) => {
+      const byTime = right.createdAt.getTime() - left.createdAt.getTime();
+      if (byTime !== 0) {
+        return byTime;
+      }
+      return right.id.localeCompare(left.id);
+    });
+    const total = items.length;
+    const start = (query.page - 1) * query.pageSize;
+    return Promise.resolve({
+      items: items.slice(start, start + query.pageSize),
+      total,
+    });
+  }
+}
+
+class InMemoryInventoryReservationRepository {
+  private readonly rows: InventoryReservation[] = [];
+
+  clear(): void {
+    this.rows.length = 0;
+  }
+
+  seed(row: InventoryReservation): void {
+    this.rows.push(row);
+  }
+
+  listByProduct(productId: string): Promise<InventoryReservation[]> {
+    return Promise.resolve(
+      this.rows.filter((row) => row.productId === productId),
+    );
+  }
+
+  listByProductPaginated(
+    query: InventoryReservationListQuery,
+  ): Promise<{ items: InventoryReservation[]; total: number }> {
+    let items = this.rows.filter((row) => row.productId === query.productId);
+    if (query.status !== undefined) {
+      items = items.filter((row) => row.status === query.status);
+    }
+    items = [...items].sort(
+      (left, right) => right.createdAt.getTime() - left.createdAt.getTime(),
+    );
+    const total = items.length;
+    const start = (query.page - 1) * query.pageSize;
+    return Promise.resolve({
+      items: items.slice(start, start + query.pageSize),
+      total,
+    });
   }
 }
 
@@ -508,6 +633,7 @@ describe('Admin inventory APIs (e2e)', () => {
   let products: InMemoryProductRepository;
   let balances: InMemoryInventoryBalanceRepository;
   let ledger: InMemoryInventoryLedgerRepository;
+  let reservations: InMemoryInventoryReservationRepository;
   let idempotency: InMemoryInventoryCommandIdempotencyRepository;
   let admins: ConfigurableAdminRoleResolver;
   let activeCategoryId: string;
@@ -517,7 +643,9 @@ describe('Admin inventory APIs (e2e)', () => {
     products = new InMemoryProductRepository();
     products.categories = categories;
     balances = new InMemoryInventoryBalanceRepository();
+    balances.products = products;
     ledger = new InMemoryInventoryLedgerRepository();
+    reservations = new InMemoryInventoryReservationRepository();
     idempotency = new InMemoryInventoryCommandIdempotencyRepository();
     admins = new ConfigurableAdminRoleResolver();
 
@@ -542,7 +670,7 @@ describe('Admin inventory APIs (e2e)', () => {
       .overrideProvider(InventoryCommandIdempotencyRepository)
       .useValue(idempotency)
       .overrideProvider(InventoryReservationRepository)
-      .useValue({})
+      .useValue(reservations)
       .overrideProvider(ADMIN_ROLE_RESOLVER)
       .useValue(admins)
       .compile();
@@ -561,6 +689,7 @@ describe('Admin inventory APIs (e2e)', () => {
     products.clear();
     balances.clear();
     ledger.clear();
+    reservations.clear();
     idempotency.clear();
     admins.reset();
 
@@ -605,6 +734,16 @@ describe('Admin inventory APIs (e2e)', () => {
 
   it('documents AdminInventory operations in OpenAPI', () => {
     const doc = createOpenApiDocument(app);
+    expect(doc.paths['/api/v1/admin/inventory']?.get).toBeDefined();
+    expect(
+      doc.paths['/api/v1/admin/inventory/{productId}/reconciliation']?.get,
+    ).toBeDefined();
+    expect(
+      doc.paths['/api/v1/admin/inventory/{productId}/ledger']?.get,
+    ).toBeDefined();
+    expect(
+      doc.paths['/api/v1/admin/inventory/{productId}/reservations']?.get,
+    ).toBeDefined();
     expect(
       doc.paths['/api/v1/admin/inventory/{productId}/receive']?.post,
     ).toBeDefined();
@@ -614,16 +753,14 @@ describe('Admin inventory APIs (e2e)', () => {
     expect(doc.paths['/api/v1/admin/inventory/{productId}']?.get).toBeDefined();
   });
 
-  it('requires authentication and INVENTORY permissions', async () => {
+  it('requires authentication and INVENTORY permissions on read routes', async () => {
     const productId = seedProduct();
 
-    await request(server())
-      .get(`/api/v1/admin/inventory/${productId}`)
-      .expect(401);
+    await request(server()).get('/api/v1/admin/inventory').expect(401);
 
     const userToken = signAccessToken(AuthSubjectType.USER);
     await request(server())
-      .get(`/api/v1/admin/inventory/${productId}`)
+      .get('/api/v1/admin/inventory')
       .set('Authorization', `Bearer ${userToken}`)
       .expect(403);
 
@@ -635,12 +772,23 @@ describe('Admin inventory APIs (e2e)', () => {
       .set('Idempotency-Key', randomUUID())
       .send({ quantity: 1 })
       .expect(403);
+    await request(server())
+      .get(`/api/v1/admin/inventory/${productId}/ledger`)
+      .set('Authorization', `Bearer ${orderOpsToken}`)
+      .expect(200);
 
     admins.activeRole(AdminRole.WAREHOUSE);
     const warehouseToken = signAccessToken(AuthSubjectType.ADMIN);
     await request(server())
-      .get(`/api/v1/admin/inventory/${productId}`)
+      .get('/api/v1/admin/inventory')
       .set('Authorization', `Bearer ${warehouseToken}`)
+      .expect(200);
+
+    admins.activeRole(AdminRole.SUPER_ADMIN);
+    const superAdminToken = signAccessToken(AuthSubjectType.ADMIN);
+    await request(server())
+      .get(`/api/v1/admin/inventory/${productId}/reconciliation`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
       .expect(200);
   });
 
@@ -777,5 +925,152 @@ describe('Admin inventory APIs (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(404);
     expect(asApiErrorBody(missing.body).error.code).toBe('INVENTORY_NOT_FOUND');
+  });
+
+  it('lists inventory with pagination, search, filter, sort, and rejects unknown query', async () => {
+    admins.activeRole(AdminRole.WAREHOUSE);
+    const token = signAccessToken(AuthSubjectType.ADMIN);
+    const now = new Date();
+    const activeId = randomUUID();
+    const inactiveId = randomUUID();
+    products.seed({
+      id: activeId,
+      name: 'Alpha warehouse eggs',
+      price: 1000,
+      categoryId: activeCategoryId,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+    products.seed({
+      id: inactiveId,
+      name: 'Beta warehouse eggs',
+      price: 2000,
+      categoryId: activeCategoryId,
+      isActive: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+    balances.seed(
+      toInventoryBalance({
+        productId: activeId,
+        onHand: 10,
+        reserved: 2,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
+    balances.seed(
+      toInventoryBalance({
+        productId: inactiveId,
+        onHand: 50,
+        reserved: 0,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
+
+    const page = await request(server())
+      .get('/api/v1/admin/inventory')
+      .query({
+        page: 1,
+        pageSize: 1,
+        search: 'alpha',
+        sortBy: 'onHand',
+        sortOrder: 'desc',
+        isActive: 'true',
+      })
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    const body = page.body as {
+      data: Array<{ available: number; onHand: number; reserved: number }>;
+      meta: { total: number; page: number; pageSize: number };
+      requestId?: string;
+    };
+    expect(body.meta).toMatchObject({ total: 1, page: 1, pageSize: 1 });
+    expect(body.data[0]).toMatchObject({
+      onHand: 10,
+      reserved: 2,
+      available: 8,
+    });
+    expect(page.headers['x-request-id']).toBeDefined();
+
+    await request(server())
+      .get('/api/v1/admin/inventory')
+      .query({ unknown: 'x' })
+      .set('Authorization', `Bearer ${token}`)
+      .expect(400);
+  });
+
+  it('returns paginated ledger and reservation diagnostics without customer fields', async () => {
+    admins.activeRole(AdminRole.WAREHOUSE);
+    const token = signAccessToken(AuthSubjectType.ADMIN);
+    const productId = seedProduct(20, 5);
+    const orderId = randomUUID();
+    const now = new Date();
+    reservations.seed({
+      id: randomUUID(),
+      orderId,
+      productId,
+      quantity: 5,
+      status: 'ACTIVE',
+      createdAt: now,
+      updatedAt: now,
+    });
+    ledger.entries.push({
+      id: randomUUID(),
+      productId,
+      type: 'RECEIVE',
+      quantity: 20,
+      onHandDelta: 20,
+      reservedDelta: 0,
+      onHandAfter: 20,
+      reservedAfter: 0,
+      referenceType: 'RECEIVE',
+      referenceId: randomUUID(),
+      reason: null,
+      actorType: 'SYSTEM',
+      actorId: null,
+      correlationId: null,
+      createdAt: now,
+    });
+
+    const reservationPage = await request(server())
+      .get(`/api/v1/admin/inventory/${productId}/reservations`)
+      .query({ page: 1, pageSize: 10, status: 'ACTIVE' })
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const reservationBody = reservationPage.body as {
+      data: Array<Record<string, unknown>>;
+    };
+    expect(reservationBody.data[0]).toMatchObject({ orderId, quantity: 5 });
+    expect(reservationBody.data[0]).not.toHaveProperty('customerPhone');
+
+    const ledgerPage = await request(server())
+      .get(`/api/v1/admin/inventory/${productId}/ledger`)
+      .query({ page: 1, pageSize: 10, type: 'RECEIVE' })
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect((ledgerPage.body as { data: unknown[] }).data).toHaveLength(1);
+    expect(ledgerPage.headers['cache-control']).toBe('no-store');
+  });
+
+  it('returns reconciliation diagnostics with HTTP 200 for consistent inventory', async () => {
+    admins.activeRole(AdminRole.WAREHOUSE);
+    const token = signAccessToken(AuthSubjectType.ADMIN);
+    const productId = seedProduct(0, 0);
+
+    const response = await request(server())
+      .get(`/api/v1/admin/inventory/${productId}/reconciliation`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    const body = response.body as {
+      data: { status: string; current: { available: number } };
+    };
+    expect(body.data.status).toBe('CONSISTENT');
+    expect(body.data.current.available).toBe(0);
+    expect(response.headers['cache-control']).toBe('no-store');
   });
 });

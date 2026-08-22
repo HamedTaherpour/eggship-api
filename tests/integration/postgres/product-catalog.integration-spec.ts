@@ -12,12 +12,21 @@ import { InventoryModule } from '../../../src/modules/inventory/inventory.module
 import { InventoryService } from '../../../src/modules/inventory/application/inventory.service';
 import { ProductService } from '../../../src/modules/products/application/product.service';
 import { ProductRepository } from '../../../src/modules/products/infrastructure/product.repository';
+import { ProductsModule } from '../../../src/modules/products/products.module';
+import type { AuthenticatedPrincipal } from '../../../src/modules/auth/domain/authenticated-principal';
+import { AuthSubjectType } from '../../../src/modules/auth/domain/subject-type';
 import { assertDestructiveOperationsAllowed } from '../support/integration-environment';
+
+const adminPrincipal: AuthenticatedPrincipal = {
+  subjectId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+  subjectType: AuthSubjectType.ADMIN,
+  sessionId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+};
 
 async function truncateProductTables(prisma: PrismaService): Promise<void> {
   assertDestructiveOperationsAllowed();
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "InventoryLedger", "InventoryReservation", "Inventory", "Product", "Category" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "PriceHistory", "InventoryLedger", "InventoryReservation", "Inventory", "Product", "Category" RESTART IDENTITY CASCADE',
   );
 }
 
@@ -36,13 +45,9 @@ describe('Product catalog persistence (integration)', () => {
         ObservabilityModule,
         PrismaModule,
         InventoryModule,
+        ProductsModule,
       ],
-      providers: [
-        CategoryRepository,
-        CategoryService,
-        ProductRepository,
-        ProductService,
-      ],
+      providers: [CategoryRepository, CategoryService],
     }).compile();
 
     app = moduleRef;
@@ -81,7 +86,11 @@ describe('Product catalog persistence (integration)', () => {
       price: 625000,
     });
 
-    const updated = await products.update(created.id, { price: 650000 });
+    const updated = await productService.update(
+      created.id,
+      { price: 650000 },
+      adminPrincipal,
+    );
     expect(updated).toMatchObject({ price: 650000 });
   });
 

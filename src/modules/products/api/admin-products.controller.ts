@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -29,6 +30,8 @@ import { PermissionGuard } from '../../../common/authz/permission.guard';
 import { RequirePermissions } from '../../../common/authz/require-permissions.decorator';
 import { ApiErrorResponseDto } from '../../../common/openapi/dto/common-response.dto';
 import { AccessTokenGuard } from '../../auth/api/access-token.guard';
+import { getAuthenticatedPrincipal } from '../../auth/api/authenticated-principal.util';
+import type { Request } from 'express';
 import { ProductService } from '../application/product.service';
 import { AdminProductListQueryDto } from './dto/admin-product-list-query.dto';
 import { CreateProductBodyDto } from './dto/create-product.dto';
@@ -111,7 +114,7 @@ export class AdminProductsController {
       'No hard-delete endpoint: deactivate via PATCH.',
       'No inventory quantities on Product (INV-01). Media deferred to CAT-04.',
       'Requires CATALOG_MANAGE. Admin mutations are auditable candidates once AUD-01 exists.',
-      'Current price changes will integrate with PriceHistory in PRC-01; Orders must snapshot price/title (ORD-01).',
+      'Price changes write immutable PriceHistory rows atomically with Product.price (PRC-01). Orders must snapshot price/title (ORD-01).',
     ].join(' '),
   })
   @ApiBody({ type: CreateProductBodyDto })
@@ -141,6 +144,7 @@ export class AdminProductsController {
       'Returns PRODUCT_NOT_FOUND when the id does not exist.',
       'Returns PRODUCT_INVALID_CATEGORY when categoryId does not exist.',
       'Returns PRODUCT_INVALID_PRICE for non-positive or non-integer prices.',
+      'Price changes require an authenticated Admin actor and append immutable PriceHistory (PRC-01).',
     ].join(' '),
   })
   @ApiParam({ name: 'id', format: 'uuid' })
@@ -155,8 +159,10 @@ export class AdminProductsController {
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: UpdateProductBodyDto,
+    @Req() request: Request,
   ): Promise<AdminProductResponseDto> {
-    const updated = await this.products.update(id, body);
+    const principal = getAuthenticatedPrincipal(request);
+    const updated = await this.products.update(id, body, principal!);
     return { data: toAdminProductDto(updated) };
   }
 }

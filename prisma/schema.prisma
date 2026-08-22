@@ -179,11 +179,36 @@ model Product {
   inventoryReservations InventoryReservation[]
   inventoryLedger       InventoryLedger[]
   orderLines            OrderLine[]
+  priceHistory          PriceHistory[]
 
   /// Category filter + active visibility.
   @@index([categoryId, isActive])
   /// Public/admin list by recency when filtered by active.
   @@index([isActive, createdAt])
+}
+
+/// Immutable audit row for each actual Product price change (PRC-01).
+/// Append-only; no update/delete repository API. `createdAt` is UTC
+/// timestamptz — the effective instant of the committed change.
+model PriceHistory {
+  id        String                @id @default(uuid()) @db.Uuid
+  productId String                @db.Uuid
+  /// Previous current price in integer Toman (server-read, never client-trusted).
+  oldPrice  Int
+  /// New current price in integer Toman after the change.
+  newPrice  Int
+  actorType PriceHistoryActorType
+  /// Admin id for actorType ADMIN. Polymorphic; no FK to Admin.
+  actorId   String                @db.Uuid
+  createdAt DateTime              @default(now()) @db.Timestamptz(3)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([productId, createdAt])
+}
+
+enum PriceHistoryActorType {
+  ADMIN
 }
 
 /// Reusable Media library object (CAT-04). Metadata only — binaries live in

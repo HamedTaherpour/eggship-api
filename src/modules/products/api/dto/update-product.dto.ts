@@ -24,7 +24,7 @@ function trimString({ value }: { value: unknown }): unknown {
 /**
  * PATCH allowlist. Only name, price, categoryId, and isActive are writable.
  * Id, timestamps, inventory fields, and unknown properties are rejected.
- * Current price mutation will integrate with PriceHistory in PRC-01.
+ * Price changes route through PricingService and append immutable PriceHistory.
  */
 export class UpdateProductBodyDto {
   @ApiPropertyOptional({
@@ -42,7 +42,7 @@ export class UpdateProductBodyDto {
 
   @ApiPropertyOptional({
     description:
-      'Current selling price as an integer number of Toman (not Rial). Updates overwrite current price only; PriceHistory is PRC-01.',
+      'Current selling price as an integer number of Toman (not Rial). Committed changes append immutable PriceHistory with the server-read previous price.',
     minimum: PRODUCT_PRICE_MIN_TOMAN,
     maximum: PRODUCT_PRICE_MAX_TOMAN,
     example: 650000,

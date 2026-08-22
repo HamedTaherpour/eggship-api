@@ -23,7 +23,6 @@ export interface CreateProductInput {
 
 export interface UpdateProductInput {
   name?: string;
-  price?: number;
   categoryId?: string;
   isActive?: boolean;
 }

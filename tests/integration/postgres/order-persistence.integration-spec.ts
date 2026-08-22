@@ -163,8 +163,11 @@ describe('Order persistence (integration)', () => {
 
     await products.update(product.id, {
       name: 'تخم مرغ ویژه',
-      price: 700_000,
       isActive: false,
+    });
+    await prisma.product.update({
+      where: { id: product.id },
+      data: { price: 700_000 },
     });
 
     const reloaded = await orders.findById(created.id);

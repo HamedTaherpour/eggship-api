@@ -107,16 +107,60 @@ export class ProductRepository {
     }
   }
 
+  async findByIdForUpdate(
+    id: string,
+    tx: TransactionContext,
+  ): Promise<ProductRecord | null> {
+    const db = resolvePrismaConnection(this.prisma, tx);
+    const rows = await db.$queryRaw<PrismaProduct[]>(Prisma.sql`
+      SELECT
+        "id",
+        "name",
+        "price",
+        "categoryId",
+        "isActive",
+        "createdAt",
+        "updatedAt"
+      FROM "Product"
+      WHERE "id" = ${id}::uuid
+      FOR UPDATE
+    `);
+    return rows.length === 1 ? mapProduct(rows[0]!) : null;
+  }
+
+  /**
+   * Updates current price only. Callers must route admin price changes through
+   * PricingService so PriceHistory stays consistent (PRC-01).
+   */
+  async updatePrice(
+    id: string,
+    price: number,
+    tx: TransactionContext,
+  ): Promise<ProductRecord | null> {
+    const normalized = normalizeProductPrice(price);
+    const db = resolvePrismaConnection(this.prisma, tx);
+    try {
+      const updated = await db.product.update({
+        where: { id },
+        data: { price: normalized },
+      });
+      return mapProduct(updated);
+    } catch (error: unknown) {
+      if (isRecordNotFoundError(error)) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
   async update(
     id: string,
     input: UpdateProductInput,
+    tx?: TransactionContext,
   ): Promise<ProductRecord | null> {
     const data: Prisma.ProductUpdateInput = {};
     if (input.name !== undefined) {
       data.name = normalizeProductName(input.name);
-    }
-    if (input.price !== undefined) {
-      data.price = normalizeProductPrice(input.price);
     }
     if (input.categoryId !== undefined) {
       data.category = { connect: { id: input.categoryId } };
@@ -129,8 +173,9 @@ export class ProductRepository {
       return this.findById(id);
     }
 
+    const db = resolvePrismaConnection(this.prisma, tx);
     try {
-      const updated = await this.prisma.product.update({
+      const updated = await db.product.update({
         where: { id },
         data,
       });

@@ -71,6 +71,11 @@ import type {
 import { normalizeProductName } from '../src/modules/products/domain/product-name';
 import { normalizeProductPrice } from '../src/modules/products/domain/product-price';
 import { ProductRepository } from '../src/modules/products/infrastructure/product.repository';
+import { PriceHistoryRepository } from '../src/modules/pricing/infrastructure/price-history.repository';
+import type {
+  AppendPriceHistoryInput,
+  PriceHistoryRecord,
+} from '../src/modules/pricing/domain/price-history';
 import { AuthSubjectType } from '../src/modules/auth/domain/subject-type';
 
 class ConfigurableAdminRoleResolver implements AdminRoleResolver {
@@ -219,7 +224,11 @@ class InMemoryProductRepository {
     });
   }
 
-  create(input: CreateProductInput): Promise<ProductRecord> {
+  create(
+    input: CreateProductInput,
+    tx?: TransactionContext,
+  ): Promise<ProductRecord> {
+    void tx;
     const now = new Date();
     const created: ProductRecord = {
       id: randomUUID(),
@@ -234,7 +243,39 @@ class InMemoryProductRepository {
     return Promise.resolve(created);
   }
 
-  update(id: string, input: UpdateProductInput): Promise<ProductRecord | null> {
+  findByIdForUpdate(
+    id: string,
+    tx: TransactionContext,
+  ): Promise<ProductRecord | null> {
+    void tx;
+    return this.findById(id);
+  }
+
+  updatePrice(
+    id: string,
+    price: number,
+    tx: TransactionContext,
+  ): Promise<ProductRecord | null> {
+    void tx;
+    const existing = this.rows.get(id);
+    if (existing === undefined) {
+      return Promise.resolve(null);
+    }
+    const updated: ProductRecord = {
+      ...existing,
+      price: normalizeProductPrice(price),
+      updatedAt: new Date(),
+    };
+    this.rows.set(id, updated);
+    return Promise.resolve(updated);
+  }
+
+  update(
+    id: string,
+    input: UpdateProductInput,
+    tx?: TransactionContext,
+  ): Promise<ProductRecord | null> {
+    void tx;
     const existing = this.rows.get(id);
     if (existing === undefined) {
       return Promise.resolve(null);
@@ -245,10 +286,6 @@ class InMemoryProductRepository {
         input.name !== undefined
           ? normalizeProductName(input.name)
           : existing.name,
-      price:
-        input.price !== undefined
-          ? normalizeProductPrice(input.price)
-          : existing.price,
       categoryId:
         input.categoryId !== undefined ? input.categoryId : existing.categoryId,
       isActive:
@@ -257,6 +294,44 @@ class InMemoryProductRepository {
     };
     this.rows.set(id, updated);
     return Promise.resolve(updated);
+  }
+}
+
+class InMemoryPriceHistoryRepository {
+  readonly rows: PriceHistoryRecord[] = [];
+
+  clear(): void {
+    this.rows.length = 0;
+  }
+
+  append(
+    input: AppendPriceHistoryInput,
+    tx: TransactionContext,
+  ): Promise<PriceHistoryRecord> {
+    void tx;
+    const created: PriceHistoryRecord = {
+      id: randomUUID(),
+      productId: input.productId,
+      oldPrice: input.oldPrice,
+      newPrice: input.newPrice,
+      actorType: input.actorType,
+      actorId: input.actorId,
+      createdAt: new Date(),
+    };
+    this.rows.push(created);
+    return Promise.resolve(created);
+  }
+
+  listByProductId(productId: string): Promise<PriceHistoryRecord[]> {
+    return Promise.resolve(
+      this.rows.filter((row) => row.productId === productId),
+    );
+  }
+
+  countByProductId(productId: string): Promise<number> {
+    return Promise.resolve(
+      this.rows.filter((row) => row.productId === productId).length,
+    );
   }
 }
 
@@ -631,6 +706,7 @@ describe('Admin inventory APIs (e2e)', () => {
   let app: INestApplication;
   let categories: InMemoryCategoryRepository;
   let products: InMemoryProductRepository;
+  let priceHistory: InMemoryPriceHistoryRepository;
   let balances: InMemoryInventoryBalanceRepository;
   let ledger: InMemoryInventoryLedgerRepository;
   let reservations: InMemoryInventoryReservationRepository;
@@ -642,6 +718,7 @@ describe('Admin inventory APIs (e2e)', () => {
     categories = new InMemoryCategoryRepository();
     products = new InMemoryProductRepository();
     products.categories = categories;
+    priceHistory = new InMemoryPriceHistoryRepository();
     balances = new InMemoryInventoryBalanceRepository();
     balances.products = products;
     ledger = new InMemoryInventoryLedgerRepository();
@@ -661,6 +738,8 @@ describe('Admin inventory APIs (e2e)', () => {
       .useValue(categories)
       .overrideProvider(ProductRepository)
       .useValue(products)
+      .overrideProvider(PriceHistoryRepository)
+      .useValue(priceHistory)
       .overrideProvider(TransactionRunner)
       .useValue(new PassThroughTransactionRunner())
       .overrideProvider(InventoryBalanceRepository)
@@ -687,6 +766,7 @@ describe('Admin inventory APIs (e2e)', () => {
   beforeEach(() => {
     categories.clear();
     products.clear();
+    priceHistory.clear();
     balances.clear();
     ledger.clear();
     reservations.clear();

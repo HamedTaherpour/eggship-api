@@ -8,6 +8,8 @@ import { ApplicationLogger } from '../../../common/observability/application-log
 import { TransactionRunner } from '../../../infrastructure/database/transaction';
 import { CategoryService } from '../../categories/application/category.service';
 import { InventoryService } from '../../inventory/application/inventory.service';
+import { PricingService } from '../../pricing/application/pricing.service';
+import type { AuthenticatedPrincipal } from '../../auth/domain/authenticated-principal';
 import type { ProductRecord } from '../domain/product';
 import {
   ProductInvalidCategoryError,
@@ -27,6 +29,7 @@ export class ProductService {
     private readonly products: ProductRepository,
     private readonly categories: CategoryService,
     private readonly inventory: InventoryService,
+    private readonly pricing: PricingService,
     private readonly transactions: TransactionRunner,
     private readonly logger: ApplicationLogger,
   ) {}
@@ -115,22 +118,22 @@ export class ProductService {
     return created;
   }
 
-  async update(id: string, body: UpdateProductBodyDto): Promise<ProductRecord> {
+  async update(
+    id: string,
+    body: UpdateProductBodyDto,
+    principal: AuthenticatedPrincipal,
+  ): Promise<ProductRecord> {
     if (body.categoryId !== undefined) {
       await this.requireExistingCategory(body.categoryId);
     }
 
     const patch: {
       name?: string;
-      price?: number;
       categoryId?: string;
       isActive?: boolean;
     } = {};
     if (body.name !== undefined) {
       patch.name = body.name;
-    }
-    if (body.price !== undefined) {
-      patch.price = body.price;
     }
     if (body.categoryId !== undefined) {
       patch.categoryId = body.categoryId;
@@ -139,15 +142,55 @@ export class ProductService {
       patch.isActive = body.isActive;
     }
 
-    const updated = await this.products.update(id, patch);
-    if (updated === null) {
-      throw new ProductNotFoundError();
+    const hasPriceChange = body.price !== undefined;
+    const hasOtherChanges = Object.keys(patch).length > 0;
+
+    if (!hasPriceChange && !hasOtherChanges) {
+      const current = await this.products.findById(id);
+      if (current === null) {
+        throw new ProductNotFoundError();
+      }
+      return current;
     }
+
+    const actor = hasPriceChange
+      ? this.pricing.requireAdminActor(principal)
+      : undefined;
+
+    const updated = await this.transactions.run(async (tx) => {
+      let product: ProductRecord | null = null;
+
+      if (hasPriceChange) {
+        const priceResult = await this.pricing.changeProductPrice(
+          {
+            productId: id,
+            newPrice: body.price!,
+            actor: actor!,
+          },
+          tx,
+        );
+        product = priceResult.product;
+      }
+
+      if (hasOtherChanges) {
+        product = await this.products.update(id, patch, tx);
+        if (product === null) {
+          throw new ProductNotFoundError();
+        }
+      }
+
+      if (product === null) {
+        throw new ProductNotFoundError();
+      }
+      return product;
+    });
 
     const operation =
       body.isActive === false
         ? 'catalog.product.deactivated'
-        : 'catalog.product.updated';
+        : hasPriceChange
+          ? 'catalog.product.price_changed'
+          : 'catalog.product.updated';
 
     this.logger.info(
       {

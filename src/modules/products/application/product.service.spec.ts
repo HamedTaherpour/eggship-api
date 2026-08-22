@@ -22,6 +22,9 @@ import {
 import { UpdateProductBodyDto } from '../api/dto/update-product.dto';
 import { ProductService } from './product.service';
 import type { InventoryService } from '../../inventory/application/inventory.service';
+import type { PricingService } from '../../pricing/application/pricing.service';
+import type { AuthenticatedPrincipal } from '../../auth/domain/authenticated-principal';
+import { AuthSubjectType } from '../../auth/domain/subject-type';
 import {
   TRANSACTION_CONTEXT_BRAND,
   TransactionRunner,
@@ -49,6 +52,13 @@ class ImmediateTransactionRunner extends TransactionRunner {
 
 const CATEGORY_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const PRODUCT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const ADMIN_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+const adminPrincipal: AuthenticatedPrincipal = {
+  subjectId: ADMIN_ID,
+  subjectType: AuthSubjectType.ADMIN,
+  sessionId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+};
 
 function category(overrides: Partial<CategoryRecord> = {}): CategoryRecord {
   const now = new Date('2026-08-21T12:00:00.000Z');
@@ -85,6 +95,9 @@ describe('ProductService', () => {
   >;
   let categories: jest.Mocked<Pick<CategoryService, 'findById'>>;
   let inventory: jest.Mocked<Pick<InventoryService, 'ensureForProduct'>>;
+  let pricing: jest.Mocked<
+    Pick<PricingService, 'changeProductPrice' | 'requireAdminActor'>
+  >;
   let logger: jest.Mocked<Pick<ApplicationLogger, 'info'>>;
   let service: ProductService;
 
@@ -98,11 +111,19 @@ describe('ProductService', () => {
     };
     categories = { findById: jest.fn() };
     inventory = { ensureForProduct: jest.fn() };
+    pricing = {
+      changeProductPrice: jest.fn(),
+      requireAdminActor: jest.fn().mockReturnValue({
+        type: 'ADMIN',
+        id: ADMIN_ID,
+      }),
+    };
     logger = { info: jest.fn() };
     service = new ProductService(
       repository as unknown as ProductRepository,
       categories as unknown as CategoryService,
       inventory as unknown as InventoryService,
+      pricing as unknown as PricingService,
       new ImmediateTransactionRunner(),
       logger as unknown as ApplicationLogger,
     );
@@ -275,9 +296,13 @@ describe('ProductService', () => {
     expect(await validate(decimal)).not.toHaveLength(0);
   });
 
-  it('updates allowlisted fields and logs deactivation', async () => {
+  it('updates allowlisted fields and routes price changes through PricingService', async () => {
     categories.findById.mockResolvedValue(category({ isActive: false }));
     const updated = product({ isActive: false, price: 700000 });
+    pricing.changeProductPrice.mockResolvedValue({
+      product: updated,
+      historyWritten: true,
+    });
     repository.update.mockResolvedValue(updated);
 
     const body = plainToInstance(UpdateProductBodyDto, {
@@ -287,7 +312,25 @@ describe('ProductService', () => {
     });
     expect(await validate(body)).toHaveLength(0);
 
-    await expect(service.update(PRODUCT_ID, body)).resolves.toEqual(updated);
+    await expect(
+      service.update(PRODUCT_ID, body, adminPrincipal),
+    ).resolves.toEqual(updated);
+    expect(pricing.changeProductPrice).toHaveBeenCalledWith(
+      {
+        productId: PRODUCT_ID,
+        newPrice: 700000,
+        actor: { type: 'ADMIN', id: ADMIN_ID },
+      },
+      expect.anything(),
+    );
+    expect(repository.update).toHaveBeenCalledWith(
+      PRODUCT_ID,
+      {
+        isActive: false,
+        categoryId: CATEGORY_ID,
+      },
+      expect.anything(),
+    );
     expect(toAdminProductDto(updated).price).toBe(700000);
     expect(logger.info).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -297,10 +340,26 @@ describe('ProductService', () => {
     );
   });
 
+  it('does not write history when price is unchanged via ProductService no-op patch', async () => {
+    repository.findById.mockResolvedValue(product());
+
+    await expect(
+      service.update(PRODUCT_ID, {}, adminPrincipal),
+    ).resolves.toMatchObject({ price: 625000 });
+    expect(pricing.changeProductPrice).not.toHaveBeenCalled();
+  });
+
   it('throws PRODUCT_NOT_FOUND when update target is missing', async () => {
+    pricing.changeProductPrice.mockRejectedValue(new ProductNotFoundError());
+    await expect(
+      service.update(PRODUCT_ID, { price: 700000 }, adminPrincipal),
+    ).rejects.toBeInstanceOf(ProductNotFoundError);
+  });
+
+  it('throws PRODUCT_NOT_FOUND when non-price update target is missing', async () => {
     repository.update.mockResolvedValue(null);
     await expect(
-      service.update(PRODUCT_ID, { name: 'Gone' }),
+      service.update(PRODUCT_ID, { name: 'Gone' }, adminPrincipal),
     ).rejects.toBeInstanceOf(ProductNotFoundError);
   });
 

@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |    95 |
-| DONE        |    34 |
+| DONE        |    35 |
 | IN_PROGRESS |     0 |
-| READY       |     3 |
+| READY       |     2 |
 | BLOCKED     |     0 |
 | PLANNED     |    59 |
 
-- Current task: none in progress. Next recommended: `CAT-05 — Admin product media attachment` or `CAT-06` / `PRC-01` as dependencies allow. `ORD-03` stays PLANNED on `PRC-05`; `ORD-05`/`ORD-06` stay PLANNED on `ORD-03`.
+- Current task: none in progress. Next recommended: `CAT-05 — Admin product media attachment`, `CAT-06`, or `PRC-02` as dependencies allow. `ORD-03` stays PLANNED on `PRC-05`; `ORD-05`/`ORD-06` stay PLANNED on `ORD-03`.
 - Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
@@ -512,7 +512,7 @@ Explicitly out of scope: Changing business rules to meet performance targets.
 
 ### PRC-01 — Pricing rules and price history
 
-Status: READY | Depends on: CAT-03 | Primary: Human + ChatGPT architecture process, then Codex | Review: Claude/Cursor, Human approval
+Status: DONE | Depends on: CAT-03 | Primary: Human + ChatGPT architecture process, then Codex | Review: Claude/Cursor, Human approval
 
 Scope: Approve price-change semantics and implement immutable product price history with integer-Toman constraints and effective timestamps.
 

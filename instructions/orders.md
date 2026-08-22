@@ -190,7 +190,7 @@ PostgreSQL transaction
 
 Every Orders+Inventory flow must use this order.
 
-Admin Inventory errors during ship/cancel may surface as Inventory errors after rollback. Customer cancel maps `INVENTORY_RESERVATION_NOT_FOUND` and `INVENTORY_RESERVATION_CONFLICT` to `ORDER_INVALID_TRANSITION` with the customer-cancel message; unexpected persistence failures are not remapped.
+Admin Inventory errors during ship/cancel may surface as Inventory errors after rollback. Customer cancel maps `INVENTORY_RESERVATION_NOT_FOUND` and `INVENTORY_RESERVATION_CONFLICT` to `ORDER_INVALID_TRANSITION` with the customer-cancel message. Other Inventory `ApplicationError`s on that path are treated as internal failures (not remapped to `ORDER_INVALID_TRANSITION` and not returned as Inventory codes or details). Unexpected persistence failures are not remapped.
 
 ## Inactive source entities
 

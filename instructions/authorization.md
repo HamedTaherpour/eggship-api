@@ -77,6 +77,8 @@ Role → permission policy is centralized in `src/common/authz/role-permissions.
 | `WAREHOUSE`   | `INVENTORY_READ`, `INVENTORY_ADJUST`, `CATALOG_READ`, `MEDIA_READ`, `ORDER_READ`    |
 | `ORDER_OPS`   | `ORDER_READ`, `ORDER_TRANSITION`, `INVENTORY_READ`, `CATALOG_READ`, `CUSTOMER_READ` |
 
+`WAREHOUSE` has **`ORDER_READ` only** for Orders — no transition permission. `ORDER_OPS` and `SUPER_ADMIN` may confirm, cancel, ship, and deliver via `ORDER_TRANSITION`.
+
 Rules:
 
 - Controllers and services must **not** branch on a role (`if (role === 'WAREHOUSE')`). Check permissions.
@@ -84,6 +86,7 @@ Rules:
 - Never use bare string literals for permissions in application code; use the `Permission` constant.
 - A permission that no endpoint requires grants nothing. Adding a permission is safe; granting it is the decision.
 - Granularity inside a domain stays coarse until the owning roadmap task has evidence for finer actions. The owning task extends the catalog and the role policy in the same change.
+- **`ORDER_TRANSITION` stays coarse for V1** (ORD-02A / [ADR 0014](../docs/adr/0014-order-state-machine-and-transition-authorization.md)): one permission covers confirm, cancel, ship, and deliver. Do not introduce `ORDER_CANCEL`, `ORDER_SHIP`, or `ORDER_DELIVER` until a later task has evidence for finer admin actions.
 - Role policy is code, so a policy change requires a deployment. That is the accepted trade-off (ADR 0007); do not add a database-driven permission editor without an approved requirement.
 
 ### SUPER_ADMIN
@@ -219,8 +222,9 @@ Ownership is a different question from permission, and it is always answered ser
 Examples:
 
 - Read own orders: authenticated `USER` and `order.userId === principal.subjectId`.
+- Cancel own pending order: authenticated `USER`, owner-scoped lookup, and order in `PENDING_REVIEW` — **ownership-based**, not RBAC. Customer cancel does not require `ORDER_TRANSITION` or any admin permission ([ADR 0014](../docs/adr/0014-order-state-machine-and-transition-authorization.md)).
 - Update own profile: target derived from the principal; no id accepted from the client.
-- Admin viewing a store: requires an admin permission and still applies data minimization.
+- Admin order transitions: require `ORDER_TRANSITION` plus Orders domain preconditions; not owner-scoped.
 
 ### BOLA / IDOR prevention
 
@@ -327,7 +331,8 @@ Covered by CAT-02 Admin category/region controllers (`admin-route-guards.spec.ts
 ## Unresolved authorization details
 
 1. Legacy capability evidence for `WAREHOUSE` and `ORDER_OPS` (MIG-01). The current grants are provisional and may widen or narrow.
-2. Whether `ORDER_TRANSITION` needs to split by transition once ORD-02 approves the order state machine.
-3. Whether an admin role lookup cache is justified, and its staleness window. Resolution is per-request from PostgreSQL today, which is the safe default: a role change or deactivation takes effect on the next request with no staleness window.
-4. Admin impersonation — out of scope unless a later task approves it.
-5. Any organization/tenant scoping — not approved.
+2. Whether an admin role lookup cache is justified, and its staleness window. Resolution is per-request from PostgreSQL today, which is the safe default: a role change or deactivation takes effect on the next request with no staleness window.
+3. Admin impersonation — out of scope unless a later task approves it.
+4. Any organization/tenant scoping — not approved.
+
+**Settled (ORD-02A):** `ORDER_TRANSITION` remains coarse for V1. Customer cancel is ownership-based, not RBAC. Finer per-transition permissions are deferred until a future task has evidence.

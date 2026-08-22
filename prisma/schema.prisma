@@ -45,6 +45,7 @@ model User {
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   sessions AuthSession[]
+  orders   Order[]
 }
 
 /// Server-side refresh session for a User only. Admin sessions live on
@@ -177,6 +178,7 @@ model Product {
   inventory             Inventory?
   inventoryReservations InventoryReservation[]
   inventoryLedger       InventoryLedger[]
+  orderLines            OrderLine[]
 
   /// Category filter + active visibility.
   @@index([categoryId, isActive])
@@ -223,8 +225,8 @@ model Inventory {
 }
 
 /// Per-order reservation row (INV-01B). `orderId` is an opaque domain UUID —
-/// Orders do not exist yet and must not be referenced by FK. V1 allows one row
-/// per (orderId, productId); status transitions ACTIVE → RELEASED | SHIPPED.
+/// Inventory does not FK to Orders; Orders may reference the same UUID.
+/// V1 allows one row per (orderId, productId); status transitions ACTIVE → RELEASED | SHIPPED.
 enum InventoryReservationStatus {
   ACTIVE
   RELEASED
@@ -337,6 +339,81 @@ model Region {
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
+  orders Order[]
+
   /// Public active list and Admin filter+name sort.
   @@index([isActive, name])
+}
+
+/// Customer order lifecycle status (ORD-01). Transition rules belong to ORD-02;
+/// inventory quantity effects follow ADR 0012 / `instructions/inventory.md`.
+enum OrderStatus {
+  PENDING_REVIEW
+  CONFIRMED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  RETURNED
+}
+
+/// Customer/store order with immutable historical snapshots (ORD-01).
+/// V1 has no online payment gateway — settlement occurs outside EggShip.
+/// Prefer User deactivation over hard delete; Orders survive account lifecycle.
+model Order {
+  id             String      @id @default(uuid()) @db.Uuid
+  userId         String      @db.Uuid
+  status         OrderStatus @default(PENDING_REVIEW)
+  /// Canonical customer phone at order time (E.164). Immutable after creation.
+  customerPhone  String      @db.VarChar(16)
+  /// Region traceability + historical display name. Immutable after creation.
+  regionId       String      @db.Uuid
+  regionName     String      @db.VarChar(100)
+  /// Sum of line totals in integer Toman (BIGINT — may exceed int4).
+  subtotal       BigInt
+  /// Order-time total in integer Toman. Equals subtotal until PRC discount snapshots land.
+  total          BigInt
+  /// Optional HTTP retry identity for ORD-03; immutable when set. Scoped per user.
+  idempotencyKey String?     @db.Uuid
+  /// Scheduled/expected delivery when workflow supports it (ORD-02).
+  deliveryAt     DateTime?   @db.Timestamptz(3)
+  confirmedAt    DateTime?   @db.Timestamptz(3)
+  shippedAt      DateTime?   @db.Timestamptz(3)
+  deliveredAt    DateTime?   @db.Timestamptz(3)
+  cancelledAt    DateTime?   @db.Timestamptz(3)
+  /// Human-readable cancellation reason when status is CANCELLED (ORD-05).
+  cancelReason   String?     @db.VarChar(500)
+  createdAt      DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime    @updatedAt @db.Timestamptz(3)
+
+  user   User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  region Region      @relation(fields: [regionId], references: [id], onDelete: Restrict)
+  lines  OrderLine[]
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([createdAt])
+}
+
+/// Immutable order line with product/price snapshots (ORD-01).
+/// Historical display uses snapshot columns, not live Product fields.
+model OrderLine {
+  id          String   @id @default(uuid()) @db.Uuid
+  orderId     String   @db.Uuid
+  productId   String   @db.Uuid
+  /// Customer-visible product title at order time. Immutable after creation.
+  productName String   @db.VarChar(100)
+  /// Unit price in integer Toman (int4 — matches Product.price at order time).
+  unitPrice   Int
+  quantity    Int
+  /// Persisted unitPrice × quantity in integer Toman (BIGINT). Server-computed.
+  lineTotal   BigInt
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([orderId, productId])
+  @@index([orderId])
+  @@index([productId])
 }

@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |    94 |
-| DONE        |    29 |
+| DONE        |    30 |
 | IN_PROGRESS |     0 |
-| READY       |     6 |
+| READY       |     5 |
 | BLOCKED     |     0 |
 | PLANNED     |    60 |
 
-- Current task: none in progress. Next recommended: `ORD-01 — Order schema and historical snapshots` (READY; unblocks ORD-02 state machine) or `INV-05 — Inventory reconciliation` (now READY after INV-04). `CAT-05 — Admin catalog APIs` and `CAT-06 — Public catalog APIs` remain READY. `PRC-01 — Pricing rules and price history` is READY (depends on CAT-03; starts with human architecture approval). `ADM-01 — Admin account management` when back-office operator administration is prioritized over catalog work; it depends on `ADM-AUTH-01` so disablement can revoke Admin sessions.
+- Current task: none in progress. Next recommended: `ORD-02 — Order state machine and authorization matrix` (PLANNED; depends on ORD-01 + INV-04, now DONE) or `INV-05 — Inventory reconciliation` (READY after INV-04).
 - Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
@@ -410,13 +410,15 @@ Explicitly out of scope: Customer inventory mutation and Redis caching.
 
 ### ORD-01 — Order schema and historical snapshots
 
-Status: READY | Depends on: AUTH-07, CAT-03, INV-01B | Primary: Codex | Review: Claude/Cursor, Human migration review
+Status: DONE | Depends on: AUTH-07, CAT-03, INV-01B | Primary: Codex | Review: Claude/Cursor, Human migration review
 
 Scope: Model orders/items and immutable shipping/address, product title, unit price, and discount snapshots independently from mutable catalog/profile data.
 
 Acceptance criteria: Money uses integer Toman; required history survives source edits/deletion; constraints/indexes and migration/backfill requirements are reviewed.
 
 Explicitly out of scope: State transitions, reservation, and payment integration.
+
+Delivered: Prisma `Order` / `OrderLine` with `OrderStatus` enum; immutable product/phone/region snapshots; int4 `unitPrice` and BIGINT persisted `lineTotal`/`subtotal`/`total`; server-computed money helpers; `UNIQUE(orderId, productId)`; optional `idempotencyKey` with `UNIQUE(userId, idempotencyKey)`; DB CHECKs including `lineTotal = unitPrice × quantity` and E.164 `customerPhone`; `OrderRepository` (`createWithLines`, `findById`, `findOwnedById`); ADR 0013; `instructions/orders.md`. No HTTP, payment models, or Inventory orchestration. Address/profile/discount snapshots deferred (MIG-01 / profile / PRC). PostgreSQL integration specs exist; live `TEST_DATABASE_URL` run not executed in this environment.
 
 ### ORD-02 — Order state machine and authorization matrix
 

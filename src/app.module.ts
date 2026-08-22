@@ -17,6 +17,7 @@ import { MediaModule } from './modules/media/media.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { RegionsModule } from './modules/regions/regions.module';
 import { UsersModule } from './modules/users/users.module';
+import { OrdersModule } from './modules/orders/orders.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { UsersModule } from './modules/users/users.module';
     InventoryModule,
     MediaModule,
     RegionsModule,
+    OrdersModule,
   ],
   controllers: [HealthController],
 })

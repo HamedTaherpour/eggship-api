@@ -38,8 +38,10 @@ import { normalizeProductIdsForLock } from '../domain/lock-product-ids';
 import {
   classifyReleaseAgainstExisting,
   classifyReserveAgainstExisting,
+  classifyShipAgainstExisting,
   OrderReleasePlan,
   OrderReservePlan,
+  OrderShipPlan,
   reservationProductIdsMatch,
 } from '../domain/order-reservation-state';
 import {
@@ -57,6 +59,7 @@ import type {
   ReleaseForOrderInput,
   ReservationMutationResult,
   ReserveForOrderInput,
+  ShipForOrderInput,
   WriteOffOnHandInput,
 } from './inventory-commands';
 import { InventoryBalanceRepository } from '../infrastructure/inventory-balance.repository';
@@ -69,7 +72,7 @@ const SYSTEM_ACTOR: InventoryActor = {
 };
 
 /**
- * Inventory application contracts (INV-01B primitives + INV-03 order reserve/release).
+ * Inventory application contracts (INV-01B primitives + INV-03 reserve/release + INV-04 ship).
  * Quantity mutation and ledger append always share one PostgreSQL transaction.
  * Orders must call these methods; they must not mutate Inventory tables.
  */
@@ -239,6 +242,70 @@ export class InventoryService {
         );
       }
       return this.toOrderReservationResult(orderId, released);
+    });
+  }
+
+  async shipForOrder(
+    input: ShipForOrderInput,
+    tx?: TransactionContext,
+  ): Promise<OrderReservationResult> {
+    const orderId = this.requireOrderId(input.orderId);
+    const actor = assertLedgerActor(input.actor);
+    const correlationId = this.resolveLedgerCorrelationId(input.correlationId);
+
+    return this.transactions.runIn(tx, async (ctx) => {
+      await this.reservations.lockOrderScope(orderId, ctx);
+      const snapshot = await this.reservations.findByOrderId(orderId, ctx);
+      if (snapshot.length === 0) {
+        throw new InventoryReservationNotFoundError(
+          InventoryHttpMessage.RESERVATION_NOT_FOUND,
+          { orderId },
+        );
+      }
+
+      const productIds = normalizeProductIdsForLock(
+        snapshot.map((row) => row.productId),
+      );
+      const locked = await this.balances.lockBalances(productIds, ctx);
+      if (locked.length !== productIds.length) {
+        throw new InventoryNotFoundError(InventoryHttpMessage.NOT_FOUND, {
+          productIds: productIds.filter(
+            (id) => !locked.some((row) => row.productId === id),
+          ),
+        });
+      }
+
+      const existing = await this.reservations.lockByOrderId(orderId, ctx);
+      if (!reservationProductIdsMatch(productIds, existing)) {
+        throw new InventoryReservationConflictError(
+          InventoryHttpMessage.SHIP_RESERVATION_CONFLICT,
+          { orderId },
+        );
+      }
+
+      const plan = classifyShipAgainstExisting(existing);
+      if (plan === OrderShipPlan.REPLAY) {
+        return this.toOrderReservationResult(orderId, existing);
+      }
+      if (plan !== OrderShipPlan.SHIP) {
+        throw new InventoryReservationConflictError(
+          InventoryHttpMessage.SHIP_RESERVATION_CONFLICT,
+          { orderId },
+        );
+      }
+
+      const shipped: InventoryReservation[] = [];
+      for (const row of existing) {
+        shipped.push(
+          await this.writeShipLine({
+            reservation: row,
+            actor,
+            correlationId,
+            ctx,
+          }),
+        );
+      }
+      return this.toOrderReservationResult(orderId, shipped);
     });
   }
 
@@ -521,6 +588,46 @@ export class InventoryService {
     );
     await this.appendBalanceEvent({
       type: InventoryLedgerType.RELEASE,
+      productId: input.reservation.productId,
+      quantity: input.reservation.quantity,
+      balance,
+      referenceType: InventoryLedgerReferenceType.ORDER,
+      referenceId: input.reservation.orderId,
+      actor: input.actor,
+      correlationId: input.correlationId,
+      ctx: input.ctx,
+    });
+    return outcome.reservation;
+  }
+
+  private async writeShipLine(input: {
+    reservation: InventoryReservation;
+    actor: InventoryActor;
+    correlationId: string | null;
+    ctx: TransactionContext;
+  }): Promise<InventoryReservation> {
+    const outcome = await this.reservations.transitionFromActive(
+      input.reservation.id,
+      InventoryReservationStatus.SHIPPED,
+      input.ctx,
+    );
+    if (outcome === null || !outcome.transitioned) {
+      throw new InventoryReservationConflictError(
+        InventoryHttpMessage.SHIP_RESERVATION_CONFLICT,
+        {
+          orderId: input.reservation.orderId,
+          productId: input.reservation.productId,
+        },
+      );
+    }
+
+    const balance = await this.balances.shipQuantity(
+      input.reservation.productId,
+      input.reservation.quantity,
+      input.ctx,
+    );
+    await this.appendBalanceEvent({
+      type: InventoryLedgerType.SHIP,
       productId: input.reservation.productId,
       quantity: input.reservation.quantity,
       balance,

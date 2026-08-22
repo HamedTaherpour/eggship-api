@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |    94 |
-| DONE        |    28 |
+| DONE        |    29 |
 | IN_PROGRESS |     0 |
-| READY       |     5 |
+| READY       |     6 |
 | BLOCKED     |     0 |
-| PLANNED     |    61 |
+| PLANNED     |    60 |
 
-- Current task: none in progress. Next recommended: `INV-04 — Fulfillment and physical stock commitment contract` (READY after INV-03). `CAT-05 — Admin catalog APIs` and `CAT-06 — Public catalog APIs` remain READY. `PRC-01 — Pricing rules and price history` is READY (depends on CAT-03; starts with human architecture approval). `ORD-01 — Order schema and historical snapshots` is now READY (AUTH-07, CAT-03, INV-01B). `ADM-01 — Admin account management` when back-office operator administration is prioritized over catalog work; it depends on `ADM-AUTH-01` so disablement can revoke Admin sessions.
+- Current task: none in progress. Next recommended: `ORD-01 — Order schema and historical snapshots` (READY; unblocks ORD-02 state machine) or `INV-05 — Inventory reconciliation` (now READY after INV-04). `CAT-05 — Admin catalog APIs` and `CAT-06 — Public catalog APIs` remain READY. `PRC-01 — Pricing rules and price history` is READY (depends on CAT-03; starts with human architecture approval). `ADM-01 — Admin account management` when back-office operator administration is prioritized over catalog work; it depends on `ADM-AUTH-01` so disablement can revoke Admin sessions.
 - Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
@@ -376,7 +376,7 @@ Delivered: Internal `reserveForOrder` / `releaseForOrder` application contracts 
 
 ### INV-04 — Fulfillment and physical stock commitment contract
 
-Status: READY | Depends on: INV-01B, INV-03 | Primary: Codex | Review: Claude/Cursor concurrency review
+Status: DONE | Depends on: INV-01B, INV-03 | Primary: Codex | Review: Claude/Cursor concurrency review
 
 Scope: Implement the approved ship/commit contract: on `SHIPPED`, `onHand -= qty` and `reserved -= qty`, with ledger effects, repeat-call idempotency, and atomic conditional updates.
 
@@ -384,9 +384,11 @@ Acceptance criteria: Ship follows ADR 0012; failure/reversal and idempotent repe
 
 Explicitly out of scope: Re-deciding the physical decrement point; inventing `PACKED`/`PICKED` without a new architecture decision.
 
+Delivered: Internal `shipForOrder({ orderId, actor }, tx?)` application contract (no HTTP) shipping the full ACTIVE reservation set with `onHand -= qty`, `reserved -= qty`, `ACTIVE → SHIPPED`, and `SHIP` ledger in one PostgreSQL transaction; order-scoped advisory serialization; all-or-nothing multi-SKU; all-`SHIPPED` idempotent replay; ship vs release winner semantics; joinable opaque `TransactionContext`; available unchanged when shipping reserved stock. Unit coverage plus a PostgreSQL ship suite (including 20-way same-order stampede, ship vs release/adjust/reserve, outer-tx rollback, partial-failure rollback). Live `TEST_DATABASE_URL` concurrency run is environment-dependent.
+
 ### INV-05 — Inventory reconciliation
 
-Status: PLANNED | Depends on: INV-02, INV-03, INV-04 | Primary: Codex | Review: Claude/Cursor, Human operations review
+Status: READY | Depends on: INV-02, INV-03, INV-04 | Primary: Codex | Review: Claude/Cursor, Human operations review
 
 Scope: Implement safe discrepancy detection between current balances, reservations, and ledger history, with an approved correction workflow.
 

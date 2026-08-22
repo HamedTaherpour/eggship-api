@@ -1,8 +1,10 @@
 import {
   classifyReleaseAgainstExisting,
   classifyReserveAgainstExisting,
+  classifyShipAgainstExisting,
   OrderReleasePlan,
   OrderReservePlan,
+  OrderShipPlan,
   reservationProductIdsMatch,
 } from './order-reservation-state';
 import {
@@ -159,6 +161,62 @@ describe('order reservation classification', () => {
         }),
       ]),
     ).toBe(OrderReleasePlan.CONFLICT);
+  });
+
+  it('ships only when every row is ACTIVE and replays all-SHIPPED', () => {
+    expect(
+      classifyShipAgainstExisting([
+        row({
+          productId: PRODUCT_A,
+          quantity: 1,
+          status: InventoryReservationStatus.ACTIVE,
+        }),
+        row({
+          productId: PRODUCT_B,
+          quantity: 2,
+          status: InventoryReservationStatus.ACTIVE,
+        }),
+      ]),
+    ).toBe(OrderShipPlan.SHIP);
+
+    expect(
+      classifyShipAgainstExisting([
+        row({
+          productId: PRODUCT_A,
+          quantity: 1,
+          status: InventoryReservationStatus.SHIPPED,
+        }),
+      ]),
+    ).toBe(OrderShipPlan.REPLAY);
+  });
+
+  it('conflicts mixed, RELEASED, or empty ship state', () => {
+    expect(classifyShipAgainstExisting([])).toBe(OrderShipPlan.NOT_FOUND);
+
+    expect(
+      classifyShipAgainstExisting([
+        row({
+          productId: PRODUCT_A,
+          quantity: 1,
+          status: InventoryReservationStatus.RELEASED,
+        }),
+      ]),
+    ).toBe(OrderShipPlan.CONFLICT);
+
+    expect(
+      classifyShipAgainstExisting([
+        row({
+          productId: PRODUCT_A,
+          quantity: 1,
+          status: InventoryReservationStatus.ACTIVE,
+        }),
+        row({
+          productId: PRODUCT_B,
+          quantity: 1,
+          status: InventoryReservationStatus.SHIPPED,
+        }),
+      ]),
+    ).toBe(OrderShipPlan.CONFLICT);
   });
 
   it('detects reservation product-set drift after locking', () => {

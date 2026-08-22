@@ -24,6 +24,10 @@ export interface ReleaseForOrderInput extends InventoryMutationActor {
   orderId: string;
 }
 
+export interface ShipForOrderInput extends InventoryMutationActor {
+  orderId: string;
+}
+
 export interface CompleteReservationInput extends InventoryMutationActor {
   orderId: string;
   productId: string;

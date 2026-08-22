@@ -23,6 +23,15 @@ export const OrderReleasePlan = {
 export type OrderReleasePlan =
   (typeof OrderReleasePlan)[keyof typeof OrderReleasePlan];
 
+export const OrderShipPlan = {
+  SHIP: 'SHIP',
+  REPLAY: 'REPLAY',
+  CONFLICT: 'CONFLICT',
+  NOT_FOUND: 'NOT_FOUND',
+} as const;
+
+export type OrderShipPlan = (typeof OrderShipPlan)[keyof typeof OrderShipPlan];
+
 /**
  * Same-order reserve is idempotent only when every requested line already has
  * an ACTIVE row with the same quantity and there are no extra rows.
@@ -83,6 +92,32 @@ export function classifyReleaseAgainstExisting(
     return OrderReleasePlan.REPLAY;
   }
   return OrderReleasePlan.CONFLICT;
+}
+
+/**
+ * Ship requires every row ACTIVE; all-SHIPPED replays; all-RELEASED or mixed
+ * statuses conflict — do not ship a remainder.
+ */
+export function classifyShipAgainstExisting(
+  existing: readonly InventoryReservation[],
+): OrderShipPlan {
+  if (existing.length === 0) {
+    return OrderShipPlan.NOT_FOUND;
+  }
+
+  const statuses = new Set(existing.map((row) => row.status));
+  if (statuses.size !== 1) {
+    return OrderShipPlan.CONFLICT;
+  }
+
+  const status = existing[0]!.status;
+  if (status === InventoryReservationStatus.ACTIVE) {
+    return OrderShipPlan.SHIP;
+  }
+  if (status === InventoryReservationStatus.SHIPPED) {
+    return OrderShipPlan.REPLAY;
+  }
+  return OrderShipPlan.CONFLICT;
 }
 
 export function reservationProductIdsMatch(

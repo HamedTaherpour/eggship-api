@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |    95 |
-| DONE        |    35 |
+| DONE        |    36 |
 | IN_PROGRESS |     0 |
 | READY       |     2 |
 | BLOCKED     |     0 |
-| PLANNED     |    59 |
+| PLANNED     |    58 |
 
-- Current task: none in progress. Next recommended: `CAT-05 — Admin product media attachment`, `CAT-06`, or `PRC-02` as dependencies allow. `ORD-03` stays PLANNED on `PRC-05`; `ORD-05`/`ORD-06` stay PLANNED on `ORD-03`.
+- Current task: none in progress. Next recommended: `PRC-03 — Pricing and discount calculation`, `CAT-05 — Admin product media attachment`, or `CAT-06` as dependencies allow. `ORD-03` stays PLANNED on `PRC-05`; `ORD-05`/`ORD-06` stay PLANNED on `ORD-03`.
 - Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
@@ -522,11 +522,13 @@ Explicitly out of scope: Discounts and analytics materialization.
 
 ### PRC-02 — Discount model and activation lifecycle
 
-Status: PLANNED | Depends on: CAT-03 | Primary: Codex after Human business approval | Review: Claude/Cursor, Human migration review
+Status: DONE | Depends on: CAT-03 | Primary: Codex after Human business approval | Review: Claude/Cursor, Human migration review
 
 Scope: Model `PERCENT` and `FIXED` discounts, targets, activation windows, status/lifecycle, and precedence inputs supported by confirmed requirements.
 
 Acceptance criteria: Invalid amounts/windows/combinations are constrained; timezone and overlap rules are approved; no usage limit or eligibility dimension is invented.
+
+Delivered: Prisma `Discount` with `DiscountType` (`PERCENT`/`FIXED`) and `DiscountTarget` (`ORDER`/`PRODUCT`/`CATEGORY`); integer `percentValue` (1–100) and `fixedAmount` (Toman) with mutual-exclusion CHECKs; optional UTC `startsAt`/`endsAt` window CHECK; explicit `isActive` lifecycle; opaque `precedence` input; `ON DELETE RESTRICT` on Product/Category; `PricingModule` / `DiscountService` with server-side validation and activate/deactivate; no HTTP, calculation, promo codes, or Order snapshots; `instructions/pricing.md` discount section; unit + PostgreSQL integration coverage.
 
 Explicitly out of scope: Calculation, redemption counters, and promo presentation.
 

@@ -8,6 +8,7 @@ Durable boundaries for Product current price and immutable price history. Field-
 | --------------- | ---------------------- | ------ | --------------------------------------------------- |
 | `Product.price` | `src/modules/products` | read   | via existing Admin Product PATCH (`CATALOG_MANAGE`) |
 | `PriceHistory`  | `src/modules/pricing`  | none   | internal only in PRC-01; read APIs are PRC-04       |
+| `Discount`      | `src/modules/pricing`  | none   | internal only in PRC-02; HTTP APIs are PRC-04       |
 
 ## Current price vs history (PRC-01)
 
@@ -29,7 +30,17 @@ Durable boundaries for Product current price and immutable price history. Field-
 - **Catalog (`products`)** owns Product identity, Category link, activation, and the current price column.
 - **Pricing (`pricing`)** owns price-change semantics and `PriceHistory` persistence.
 - Admin Product PATCH remains the HTTP entry for price changes in PRC-01, but application code routes price mutations through `PricingService` — not direct repository price writes.
-- Do not implement discounts, calculation engines, or public pricing APIs here (PRC-02–PRC-05).
+- Do not implement calculation engines or public pricing APIs here (PRC-03–PRC-05).
+
+## Discount model and lifecycle (PRC-02)
+
+- **`Discount`** lives in `src/modules/pricing` — separate from append-only **`PriceHistory`**.
+- **Types:** `PERCENT` (whole-number `percentValue` 1–100) and `FIXED` (`fixedAmount` integer Toman). No floating-point money; type-specific columns are mutually exclusive (DB CHECK + application validation).
+- **Targets:** `ORDER` (no FK), `PRODUCT` (`productId`), `CATEGORY` (`categoryId`). Target FK columns are enforced by CHECK constraints; Product/Category references use `ON DELETE RESTRICT`.
+- **Lifecycle:** explicit `isActive` flag — prefer deactivation over hard delete. Optional UTC window `startsAt` / `endsAt` (timestamptz); when both are set, `startsAt < endsAt`. Rows may remain `isActive = true` after `endsAt` until an admin deactivates or updates them; **expired-but-active rows are not applicable** (`isPotentiallyApplicable` requires both `isActive` and an in-window instant). PRC-03 owns calculation semantics.
+- **`precedence`:** opaque integer input stored for PRC-03 ordering. No stacking, overlap, or eligibility rules in PRC-02.
+- **Admin writes only:** `DiscountService` validates server-side; HTTP Admin CRUD/list is PRC-04 (`DISCOUNT_READ` / `DISCOUNT_MANAGE`).
+- **Out of scope in PRC-02:** promo codes, redemption counters, minimum order amount, max discount cap, usage limits, calculation, Order discount snapshots, and public discount APIs.
 
 ## Orders boundary
 

@@ -150,7 +150,8 @@ model Category {
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  products Product[]
+  products  Product[]
+  discounts Discount[]
 
   /// Public active list and Admin filter+name sort.
   @@index([isActive, name])
@@ -180,6 +181,7 @@ model Product {
   inventoryLedger       InventoryLedger[]
   orderLines            OrderLine[]
   priceHistory          PriceHistory[]
+  discounts             Discount[]
 
   /// Category filter + active visibility.
   @@index([categoryId, isActive])
@@ -209,6 +211,57 @@ model PriceHistory {
 
 enum PriceHistoryActorType {
   ADMIN
+}
+
+/// Discount value kind (PRC-02). PERCENT uses `percentValue`; FIXED uses `fixedAmount`.
+enum DiscountType {
+  PERCENT
+  FIXED
+}
+
+/// What a discount applies to (PRC-02). Target-specific FK columns enforce scope.
+enum DiscountTarget {
+  ORDER
+  PRODUCT
+  CATEGORY
+}
+
+/// Admin-managed discount definition (PRC-02). No calculation, redemption, or
+/// promo-code semantics here — those belong to PRC-03+ / PRC-04. Prefer
+/// `isActive = false` over hard delete; future Order discount snapshots may
+/// reference rows. Activation windows are optional UTC timestamptz bounds.
+model Discount {
+  id           String         @id @default(uuid()) @db.Uuid
+  /// Admin display label. Stored trimmed.
+  name         String         @db.VarChar(100)
+  type         DiscountType
+  target       DiscountTarget
+  /// Whole-number percentage 1–100 when type is PERCENT; null when FIXED.
+  percentValue Int?
+  /// Fixed amount in integer Toman when type is FIXED; null when PERCENT.
+  fixedAmount  Int?
+  /// Required when target is PRODUCT.
+  productId    String?        @db.Uuid
+  /// Required when target is CATEGORY.
+  categoryId   String?        @db.Uuid
+  /// Explicit admin lifecycle flag. Deactivate instead of deleting.
+  isActive     Boolean        @default(true)
+  /// Optional UTC window start. Null means no start bound.
+  startsAt     DateTime?      @db.Timestamptz(3)
+  /// Optional UTC window end. Null means no end bound.
+  endsAt       DateTime?      @db.Timestamptz(3)
+  /// Opaque precedence input for PRC-03 ordering. No stacking/overlap rules here.
+  precedence   Int            @default(0)
+  createdAt    DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime       @updatedAt @db.Timestamptz(3)
+
+  product  Product?  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@index([isActive, createdAt])
+  @@index([target, isActive])
+  @@index([productId])
+  @@index([categoryId])
 }
 
 /// Reusable Media library object (CAT-04). Metadata only — binaries live in

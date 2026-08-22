@@ -9,7 +9,8 @@ import { PriceHistoryRepository } from './infrastructure/price-history.repositor
 
 /**
  * Product price mutations with durable PriceHistory (PRC-01) and Discount
- * persistence/lifecycle (PRC-02). Admin HTTP and calculation are later PRC tasks.
+ * persistence/lifecycle (PRC-02), and pure discount calculation (PRC-03).
+ * Admin HTTP is PRC-04; Order snapshot integration is PRC-05.
  */
 @Module({
   imports: [PrismaModule, forwardRef(() => ProductsModule), CategoriesModule],

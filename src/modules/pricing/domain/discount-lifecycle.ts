@@ -22,7 +22,7 @@ export function isWithinActivationWindow(
 
 /**
  * Whether a discount could apply at `now` from lifecycle + window only.
- * PRC-03 adds calculation/eligibility; inactive rows never apply.
+ * Calculation eligibility also requires target match and calculable shape (PRC-03).
  * Expired-but-active rows (`isActive = true`, past `endsAt`) return false here
  * but remain stored until an admin deactivates or updates them.
  */

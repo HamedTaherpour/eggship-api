@@ -13,7 +13,7 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | BLOCKED     |     0 |
 | PLANNED     |    58 |
 
-- Current task: none in progress. Next recommended: `PRC-03 — Pricing and discount calculation`, `CAT-05 — Admin product media attachment`, or `CAT-06` as dependencies allow. `ORD-03` stays PLANNED on `PRC-05`; `ORD-05`/`ORD-06` stay PLANNED on `ORD-03`.
+- Current task: none in progress. Next recommended: `PRC-04 — Admin pricing, discount, and promo-banner APIs`, `CAT-05 — Admin product media attachment`, or `CAT-06` as dependencies allow. `ORD-03` stays PLANNED on `PRC-05`; `ORD-05`/`ORD-06` stay PLANNED on `ORD-03`.
 - Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
@@ -534,11 +534,13 @@ Explicitly out of scope: Calculation, redemption counters, and promo presentatio
 
 ### PRC-03 — Pricing and discount calculation
 
-Status: PLANNED | Depends on: PRC-01, PRC-02 | Primary: Codex | Review: Claude/Cursor
+Status: DONE | Depends on: PRC-01, PRC-02 | Primary: Codex | Review: Claude/Cursor
 
 Scope: Implement deterministic calculation for approved percent/fixed behavior, rounding, precedence, activation, and any evidenced eligibility/limit rules.
 
 Acceptance criteria: Pure rule tests cover boundaries and integer-Toman results; concurrent usage is safe if and only if approved usage limits exist; stable identifiers support order snapshots.
+
+Delivered: Pure domain `calculateDiscount` in `discount-calculation.ts` with PERCENT/FIXED amounts, LINE (`PRODUCT`/`CATEGORY`) and ORDER scopes, server-authoritative targeting, UTC window eligibility, V1 single-winner stacking, higher-`precedence` winner with ascending-`id` tie-break, floor percent rounding, fixed cap at base, bigint-safe bounds, malformed-row skip, persistence-neutral result model for future Order snapshots; `instructions/pricing.md` calculation section; comprehensive unit tests. No HTTP, DB mutation, promo codes, usage limits, or Redis.
 
 Explicitly out of scope: Assuming coupons, per-user limits, stacking, or rewards without requirements.
 

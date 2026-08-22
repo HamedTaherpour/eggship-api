@@ -42,6 +42,57 @@ Durable boundaries for Product current price and immutable price history. Field-
 - **Admin writes only:** `DiscountService` validates server-side; HTTP Admin CRUD/list is PRC-04 (`DISCOUNT_READ` / `DISCOUNT_MANAGE`).
 - **Out of scope in PRC-02:** promo codes, redemption counters, minimum order amount, max discount cap, usage limits, calculation, Order discount snapshots, and public discount APIs.
 
+## Discount calculation (PRC-03)
+
+Pure domain calculation in `src/modules/pricing/domain/discount-calculation.ts`. No HTTP, no DB mutation, no Redis/cache authority, and no promo-code redemption.
+
+### Calculation contract
+
+- **Persistence-neutral:** callers supply candidate `DiscountRecord` rows and a pricing snapshot instant (`evaluatedAt`). The engine returns base/discount/final amounts plus immutable applied-discount metadata for future Order snapshotting (ORD-03 / PRC-05).
+- **Server authority:** `Product.price` is the unit-price authority; `PriceHistory` is historical only. Line bases derive from server `unitPrice × quantity`. PRODUCT/CATEGORY targeting matches server `productId` / `categoryId` from catalog — never client-supplied category or price.
+- **Snapshot instant:** eligibility uses `evaluatedAt` with `isPotentiallyApplicable` (`isActive` plus optional UTC window). Callers that load discounts from PostgreSQL must pass the same instant they used for catalog/pricing reads so concurrent price or discount changes have an explicit evaluation point (PRC-05 / ORD-03 orchestration).
+
+### Eligibility
+
+A discount is eligible when all hold at `evaluatedAt`:
+
+1. `isActive === true`
+2. Inside optional window: `startsAt` null or `evaluatedAt >= startsAt`; `endsAt` null or `evaluatedAt < endsAt` (same semantics as PRC-02 `isWithinActivationWindow`)
+3. Target-compatible with calculation scope and server line context (see targeting below)
+4. Persisted type/value/target shape passes existing PRC-02 normalizers — malformed rows are **skipped**, not applied
+
+### Targeting
+
+| Scope   | Evaluates targets     | Context required                                    |
+| ------- | --------------------- | --------------------------------------------------- |
+| `LINE`  | `PRODUCT`, `CATEGORY` | Server `productId`, `categoryId` on the priced line |
+| `ORDER` | `ORDER` only          | Order subtotal as `baseAmount`                      |
+
+`ORDER` discounts do not apply at `LINE` scope; `PRODUCT` / `CATEGORY` discounts do not apply at `ORDER` scope.
+
+### Stacking (V1)
+
+**Single winner per calculation invocation.** No multi-discount stacking, compounding, or silent combination. PRC-05 / ORD-03 may invoke separate LINE and ORDER calculations, but each invocation applies at most one discount.
+
+### Precedence and tie-break
+
+Among eligible discounts for one invocation:
+
+1. **Higher `precedence` wins** (larger integer beats smaller).
+2. **Equal precedence:** ascending discount `id` (UUID string order) wins — stable, DB-order-independent tie-break.
+
+### Rounding and money safety
+
+- Integer Toman only; bigint arithmetic for amounts that may exceed int4 (order subtotals).
+- **PERCENT:** `discountAmount = floor(baseAmount × percentValue ÷ 100)` via bigint integer division (truncate toward zero).
+- **FIXED:** `discountAmount = min(fixedAmount, baseAmount)`.
+- **Final:** `finalAmount = baseAmount − discountAmount` (never negative).
+- Bounds: `0 … DISCOUNT_MONEY_MAX_TOMAN` (PostgreSQL BIGINT max; same as order money per [ADR 0013](../docs/adr/0013-order-historical-snapshots.md), [ADR 0010](../docs/adr/0010-integer-toman-money.md)).
+
+### Out of scope in PRC-03
+
+Promo codes, usage limits, minimum-order thresholds, max-discount caps, HTTP/public APIs, Order persistence, payment concepts, and multi-discount stacking beyond the single-winner rule above.
+
 ## Orders boundary
 
 - Orders snapshot title and unit price at creation (ORD-01). Changing current price or appending history must not mutate existing Order lines.

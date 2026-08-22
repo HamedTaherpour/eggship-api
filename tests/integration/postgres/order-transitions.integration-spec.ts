@@ -367,6 +367,29 @@ describe('Order transitions (integration)', () => {
     });
   });
 
+  it('returns ORDER_NOT_FOUND when another customer cancels a pending order', async () => {
+    const { orderId, productId, user } = await seedReservedPending();
+    const other = await users.create({ phone: nextPhone() });
+
+    await expect(
+      transitions.cancelPendingOrderByCustomer({
+        orderId,
+        actor: { type: OrderActorType.USER, id: other.id },
+      }),
+    ).rejects.toBeInstanceOf(OrderNotFoundError);
+
+    expect(await orders.findById(orderId)).toMatchObject({
+      status: OrderStatus.PENDING_REVIEW,
+      userId: user.id,
+    });
+    expect(
+      await prisma.inventoryReservation.findFirst({ where: { orderId } }),
+    ).toMatchObject({ status: 'ACTIVE' });
+    expect(await inventory.getBalance(productId)).toMatchObject({
+      reserved: 2,
+    });
+  });
+
   it('treats 20 concurrent same-order cancellations as one physical update', async () => {
     const { orderId, productId, customer } = await seedReservedPending();
 

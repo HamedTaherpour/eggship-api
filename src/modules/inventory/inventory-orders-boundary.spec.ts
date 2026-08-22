@@ -22,9 +22,13 @@ describe('Inventory module boundary', () => {
   it('does not import Orders', () => {
     const files = collectSources(INVENTORY_ROOT);
     expect(files.length).toBeGreaterThan(0);
-    const offenders = files.filter((file) =>
-      readFileSync(file, 'utf8').includes('modules/orders'),
-    );
+    const offenders = files.filter((file) => {
+      const source = readFileSync(file, 'utf8');
+      return (
+        source.includes('modules/orders') ||
+        /from ['"](?:\.\.\/)+orders(?:\/|['"])/u.test(source)
+      );
+    });
     expect(offenders).toEqual([]);
   });
 });

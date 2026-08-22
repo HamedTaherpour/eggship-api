@@ -11,5 +11,6 @@ describe('Order raw SQL safety', () => {
     expect(source).not.toMatch(/\$\{[^}]*\}`/u);
     expect(source).not.toMatch(/async updateStatus\b/u);
     expect(source).not.toMatch(/\bupdateStatus\s*\(/u);
+    expect(source).toContain('AND "userId" = ${spec.userId}::uuid');
   });
 });

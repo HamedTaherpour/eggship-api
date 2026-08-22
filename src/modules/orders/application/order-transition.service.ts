@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ApplicationError } from '../../../common/errors/application-error';
 import { ApplicationLogger } from '../../../common/observability/application-logger.service';
 import { TransactionRunner } from '../../../infrastructure/database/transaction';
 import type { TransactionContext } from '../../../infrastructure/database/transaction';
@@ -300,6 +301,25 @@ export class OrderTransitionService {
         );
         throw new OrderInvalidTransitionError(
           OrderMessage.CUSTOMER_CANCEL_DENIED,
+        );
+      }
+      if (error instanceof ApplicationError) {
+        this.logger.error(
+          {
+            module: 'orders',
+            operation: 'order.transition.rejected',
+            orderId,
+            actorType: actor.type,
+            fromStatus: OrderStatus.PENDING_REVIEW,
+            toStatus: OrderStatus.CANCELLED,
+            errorCode: error.code,
+          },
+          'Customer cancel hid an inventory application error',
+          error,
+        );
+        throw new Error(
+          'Customer order cancellation could not complete inventory release.',
+          { cause: error },
         );
       }
       throw error;

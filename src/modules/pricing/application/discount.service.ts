@@ -7,9 +7,10 @@ import {
 import { ApplicationLogger } from '../../../common/observability/application-logger.service';
 import { CategoryService } from '../../categories/application/category.service';
 import { ProductRepository } from '../../products/infrastructure/product.repository';
+import type { AdminDiscountListQueryDto } from '../api/dto/admin-discount-list-query.dto';
+import { resolveDiscountSort } from '../api/dto/admin-discount-list-query.dto';
 import type {
   CreateDiscountInput,
-  DiscountListQuery,
   DiscountPayload,
   DiscountRecord,
   UpdateDiscountInput,
@@ -43,13 +44,19 @@ export class DiscountService {
   }
 
   async listAdmin(
-    query: DiscountListQuery,
+    query: AdminDiscountListQueryDto,
   ): Promise<PaginatedResponse<DiscountRecord>> {
     const pageRequest = resolvePageRequest(query);
+    const sort = resolveDiscountSort(query);
     const page = await this.discounts.list({
-      ...query,
       page: pageRequest.page,
       pageSize: pageRequest.pageSize,
+      search: query.search,
+      sortBy: sort.sortBy,
+      sortOrder: sort.sortOrder,
+      isActive: query.isActive,
+      type: query.type,
+      target: query.target,
     });
     return toPaginatedResponse(page.items, pageRequest, page.total);
   }

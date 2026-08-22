@@ -4,11 +4,11 @@ Durable boundaries for Product current price and immutable price history. Field-
 
 ## Owned resources
 
-| Resource        | Module                 | Public | Admin manage                                        |
-| --------------- | ---------------------- | ------ | --------------------------------------------------- |
-| `Product.price` | `src/modules/products` | read   | via existing Admin Product PATCH (`CATALOG_MANAGE`) |
-| `PriceHistory`  | `src/modules/pricing`  | none   | internal only in PRC-01; read APIs are PRC-04       |
-| `Discount`      | `src/modules/pricing`  | none   | internal only in PRC-02; HTTP APIs are PRC-04       |
+| Resource        | Module                 | Public | Admin manage                                                                                                |
+| --------------- | ---------------------- | ------ | ----------------------------------------------------------------------------------------------------------- |
+| `Product.price` | `src/modules/products` | read   | via Admin Product PATCH (`CATALOG_MANAGE`) **or** dedicated Admin pricing route (`DISCOUNT_MANAGE`, PRC-04) |
+| `PriceHistory`  | `src/modules/pricing`  | none   | read via Admin pricing API (`DISCOUNT_READ`, PRC-04)                                                        |
+| `Discount`      | `src/modules/pricing`  | none   | Admin discount APIs (`DISCOUNT_READ` / `DISCOUNT_MANAGE`, PRC-04)                                           |
 
 ## Current price vs history (PRC-01)
 
@@ -40,6 +40,7 @@ Durable boundaries for Product current price and immutable price history. Field-
 - **Lifecycle:** explicit `isActive` flag — prefer deactivation over hard delete. Optional UTC window `startsAt` / `endsAt` (timestamptz); when both are set, `startsAt < endsAt`. Rows may remain `isActive = true` after `endsAt` until an admin deactivates or updates them; **expired-but-active rows are not applicable** (`isPotentiallyApplicable` requires both `isActive` and an in-window instant). PRC-03 owns calculation semantics.
 - **`precedence`:** opaque integer input stored for PRC-03 ordering. No stacking, overlap, or eligibility rules in PRC-02.
 - **Admin writes only:** `DiscountService` validates server-side; HTTP Admin CRUD/list is PRC-04 (`DISCOUNT_READ` / `DISCOUNT_MANAGE`).
+- **HTTP lifecycle (PRC-04):** `GET/POST/PATCH admin/discounts`, `POST admin/discounts/:id/activate|deactivate`. PATCH excludes `isActive` — use explicit lifecycle routes. No hard delete.
 - **Out of scope in PRC-02:** promo codes, redemption counters, minimum order amount, max discount cap, usage limits, calculation, Order discount snapshots, and public discount APIs.
 
 ## Discount calculation (PRC-03)
@@ -99,4 +100,20 @@ Promo codes, usage limits, minimum-order thresholds, max-discount caps, HTTP/pub
 
 ## Permissions
 
-- Admin price changes use existing `CATALOG_MANAGE` on Product PATCH until PRC-04 introduces dedicated pricing admin APIs.
+- **Price changes:** Admin Product PATCH (`CATALOG_MANAGE`) remains supported for catalog workflows. PRC-04 adds `PATCH admin/pricing/products/:productId/price` under `DISCOUNT_MANAGE` with the same `PricingService` semantics (atomic history append, no-op when unchanged, server-side actor).
+- **Price history read:** `GET admin/pricing/products/:productId/price-history` requires `DISCOUNT_READ`. Append-only — no update/delete HTTP.
+- **Discount admin:** list/read routes require `DISCOUNT_READ`; create/update/activate/deactivate require `DISCOUNT_MANAGE`. Customer (`USER`) principals receive `403`.
+
+## Admin HTTP surface (PRC-04)
+
+| Method  | Path                                              | Permission        | Notes                                                                           |
+| ------- | ------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------- |
+| `GET`   | `admin/pricing/products/:productId/price-history` | `DISCOUNT_READ`   | Paginated; newest first (`createdAt desc`, `id desc` tie-break)                 |
+| `PATCH` | `admin/pricing/products/:productId/price`         | `DISCOUNT_MANAGE` | Body: `{ price }` integer Toman; actor from Admin session                       |
+| `GET`   | `admin/discounts`                                 | `DISCOUNT_READ`   | Pagination, `search` (name), filters `isActive`/`type`/`target`, sort allowlist |
+| `POST`  | `admin/discounts`                                 | `DISCOUNT_MANAGE` | Create with strict DTO validation                                               |
+| `PATCH` | `admin/discounts/:id`                             | `DISCOUNT_MANAGE` | Update allowlist; no `isActive`                                                 |
+| `POST`  | `admin/discounts/:id/activate`                    | `DISCOUNT_MANAGE` | Sets `isActive = true`                                                          |
+| `POST`  | `admin/discounts/:id/deactivate`                  | `DISCOUNT_MANAGE` | Sets `isActive = false`                                                         |
+
+Promo-banner persistence/API is **not** implemented in PRC-04 — no evidenced legacy requirements in-repo (see roadmap unresolved decisions).

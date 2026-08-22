@@ -17,3 +17,9 @@ export interface AppendPriceHistoryInput {
   actorType: PriceHistoryActorType;
   actorId: string;
 }
+
+export interface PriceHistoryListQuery {
+  productId: string;
+  page: number;
+  pageSize: number;
+}

@@ -111,6 +111,8 @@ export function buildOpenApiConfig(
     .addTag('AdminRegions', 'Admin region reference management')
     .addTag('AdminProducts', 'Admin product catalog management')
     .addTag('AdminMedia', 'Admin media library metadata and uploads')
+    .addTag('AdminPricing', 'Admin product price changes and price history')
+    .addTag('AdminDiscounts', 'Admin discount lifecycle management')
     .build();
 }
 

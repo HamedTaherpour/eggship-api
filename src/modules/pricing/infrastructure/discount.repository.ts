@@ -61,7 +61,7 @@ export class DiscountRepository {
       this.prisma.discount.count({ where }),
       this.prisma.discount.findMany({
         where,
-        orderBy: { [orderField]: query.sortOrder },
+        orderBy: [{ [orderField]: query.sortOrder }, { id: query.sortOrder }],
         skip,
         take,
       }),

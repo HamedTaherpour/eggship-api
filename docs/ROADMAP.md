@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |    95 |
-| DONE        |    36 |
+| DONE        |    37 |
 | IN_PROGRESS |     0 |
 | READY       |     2 |
 | BLOCKED     |     0 |
-| PLANNED     |    58 |
+| PLANNED     |    57 |
 
-- Current task: none in progress. Next recommended: `PRC-04 — Admin pricing, discount, and promo-banner APIs`, `CAT-05 — Admin product media attachment`, or `CAT-06` as dependencies allow. `ORD-03` stays PLANNED on `PRC-05`; `ORD-05`/`ORD-06` stay PLANNED on `ORD-03`.
+- Current task: none in progress. Next recommended: `PRC-05 — Public pricing and order snapshot integration`, `CAT-05 — Admin product media attachment`, or `CAT-06` as dependencies allow. `ORD-03` stays PLANNED on `PRC-05`; `ORD-05`/`ORD-06` stay PLANNED on `ORD-03`.
 - Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
@@ -546,9 +546,11 @@ Explicitly out of scope: Assuming coupons, per-user limits, stacking, or rewards
 
 ### PRC-04 — Admin pricing, discount, and promo-banner APIs
 
-Status: PLANNED | Depends on: PRC-01, PRC-02, AUTH-08, CAT-04 | Primary: Codex | Review: Claude/Cursor
+Status: DONE | Depends on: PRC-01, PRC-02, AUTH-08, CAT-04 | Primary: Codex | Review: Claude/Cursor
 
 Scope: Implement authorized price changes and discount lifecycle APIs, plus an explicit promo-banner relationship to media/content where legacy behavior requires it.
+
+Delivered: Admin pricing routes (`GET .../price-history`, `PATCH .../price`) with `DISCOUNT_READ`/`DISCOUNT_MANAGE`; Admin discount CRUD/list with activate/deactivate lifecycle, CAT-01 list/search/filter/sort, strict DTO validation, stable errors, OpenAPI, and e2e coverage. Promo-banner API deferred — no evidenced legacy requirements in-repo.
 
 Acceptance criteria: Validation, conflicts, audit hooks, list contracts, OpenAPI, and integration tests cover lifecycle transitions and historical preservation.
 

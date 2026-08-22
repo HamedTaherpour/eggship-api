@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { toSkipTake, type PageResult } from '../../../common/list';
 import {
   resolvePrismaConnection,
   type PrismaConnection,
@@ -11,6 +12,7 @@ import {
 } from '../domain/price-history-actor';
 import type {
   AppendPriceHistoryInput,
+  PriceHistoryListQuery,
   PriceHistoryRecord,
 } from '../domain/price-history';
 import { assertInventoryUuid } from '../../inventory/domain/inventory-quantity';
@@ -86,6 +88,30 @@ export class PriceHistoryRepository {
   ): Promise<number> {
     const id = assertInventoryUuid(productId, 'productId');
     return this.db(tx).priceHistory.count({ where: { productId: id } });
+  }
+
+  async listByProductPaginated(
+    query: PriceHistoryListQuery,
+    tx?: TransactionContext,
+  ): Promise<PageResult<PriceHistoryRecord>> {
+    const productId = assertInventoryUuid(query.productId, 'productId');
+    const { skip, take } = toSkipTake({
+      page: query.page,
+      pageSize: query.pageSize,
+    });
+    const db = this.db(tx);
+
+    const [total, rows] = await db.$transaction([
+      db.priceHistory.count({ where: { productId } }),
+      db.priceHistory.findMany({
+        where: { productId },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip,
+        take,
+      }),
+    ]);
+
+    return { items: rows.map(mapPriceHistory), total };
   }
 }
 

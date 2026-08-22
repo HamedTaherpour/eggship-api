@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { toSkipTake, type PageResult } from '../../../common/list';
 import { Prisma } from '../../../generated/prisma/client';
+import { resolvePrismaConnection } from '../../../infrastructure/database/prisma/prisma-transaction-context';
 import { PrismaService } from '../../../infrastructure/database/prisma/prisma.service';
+import type { TransactionContext } from '../../../infrastructure/database/transaction';
 import type {
   DiscountListQuery,
   DiscountRecord,
@@ -47,6 +49,45 @@ export class DiscountRepository {
   async findById(id: string): Promise<DiscountRecord | null> {
     const found = await this.prisma.discount.findUnique({ where: { id } });
     return found === null ? null : mapDiscount(found);
+  }
+
+  /**
+   * Candidate discounts for one order-pricing evaluation (PRC-05).
+   * Loads active ORDER discounts plus PRODUCT/CATEGORY discounts matching the
+   * priced line set in a single query. Window eligibility stays in PRC-03.
+   */
+  async findCandidatesForOrderPricing(
+    scope: {
+      productIds: readonly string[];
+      categoryIds: readonly string[];
+    },
+    tx?: TransactionContext,
+  ): Promise<DiscountRecord[]> {
+    const db = resolvePrismaConnection(this.prisma, tx);
+    const orFilters: Prisma.DiscountWhereInput[] = [
+      { target: DiscountTarget.ORDER },
+    ];
+
+    if (scope.productIds.length > 0) {
+      orFilters.push({
+        target: DiscountTarget.PRODUCT,
+        productId: { in: [...scope.productIds] },
+      });
+    }
+    if (scope.categoryIds.length > 0) {
+      orFilters.push({
+        target: DiscountTarget.CATEGORY,
+        categoryId: { in: [...scope.categoryIds] },
+      });
+    }
+
+    const rows = await db.discount.findMany({
+      where: {
+        isActive: true,
+        OR: orFilters,
+      },
+    });
+    return rows.map(mapDiscount);
   }
 
   async list(query: DiscountListQuery): Promise<PageResult<DiscountRecord>> {

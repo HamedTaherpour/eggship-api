@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |    95 |
-| DONE        |    38 |
+| DONE        |    39 |
 | IN_PROGRESS |     0 |
 | READY       |     2 |
 | BLOCKED     |     0 |
-| PLANNED     |    56 |
+| PLANNED     |    55 |
 
-- Current task: none in progress. Next recommended: `PRC-05 — Public pricing and order snapshot integration` or `CAT-05 — Admin catalog APIs` as dependencies allow. `ORD-03` stays PLANNED on `PRC-05`; `ORD-05`/`ORD-06` stay PLANNED on `ORD-03`.
+- Current task: none in progress. Next recommended: `ORD-03 — Transactional order creation and idempotency` or `CAT-05 — Admin catalog APIs` as dependencies allow. `ORD-05`/`ORD-06` stay PLANNED on `ORD-03`.
 - Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
@@ -452,7 +452,7 @@ Delivered: Internal `OrderTransitionService` commands `confirmOrder`, `cancelPen
 
 ### ORD-03 — Transactional order creation and idempotency
 
-Status: PLANNED | Depends on: ORD-01, ORD-02A, INV-03, PRC-05 | Primary: Codex | Review: Claude/Cursor concurrency review
+Status: READY | Depends on: ORD-01, ORD-02A, INV-03, PRC-05 | Primary: Codex | Review: Claude/Cursor concurrency review
 
 Scope: Implement multi-item order creation, price/discount snapshots, idempotency keys, and inventory reservation through module-owned contracts in one controlled transaction.
 
@@ -560,13 +560,15 @@ Explicitly out of scope: Public catalog calculation and order creation.
 
 ### PRC-05 — Public pricing and order snapshot integration
 
-Status: READY | Depends on: PRC-03, CAT-06, ORD-01 | Primary: Codex | Review: Claude/Cursor concurrency review
+Status: DONE | Depends on: PRC-03, CAT-06, ORD-01 | Primary: Codex | Review: Claude/Cursor concurrency review
 
 Scope: Expose calculated public pricing and provide the Order-owned creation flow with immutable calculation evidence/snapshot inputs.
 
 Acceptance criteria: Displayed and ordered pricing share approved rules; changes during concurrent checkout cannot mutate persisted order history; eligibility ownership is enforced.
 
-Explicitly out of scope: Payment settlement and cache authority.
+Delivered: Persistence-neutral `OrderPricingService.priceOrderLines` composing PRC-03 LINE then ORDER on the discounted subtotal ([ADR 0015](adr/0015-line-then-order-discount-composition.md)); server-authoritative Product price/name/category with CAT-06 sale visibility; one shared `evaluatedAt`; batch Product/Discount reads (no N+1); REPEATABLE READ snapshot reads with joinable `TransactionContext` for ORD-03; explicit line/order snapshot fields including applied-discount evidence; no Order schema migration (ORD-03 owns persistence); unit + PostgreSQL concurrency/consistency specs; `instructions/pricing.md` / `orders.md` updates.
+
+Explicitly out of scope: Payment settlement, Order HTTP/create, promo codes, usage limits, cache authority, and Order/OrderLine discount column migration.
 
 ## Phase 6 — Referrals & Visitors
 
@@ -1166,7 +1168,7 @@ The following are not implementation assumptions:
 - Whether a future `PACKED`/`PICKED` state should move the physical `onHand` decrement earlier than `SHIPPED`.
 - Whether partial fulfillment or split shipment is ever allowed after V1.
 - Public exposure of exact inventory `available`, and any preferred-customer allocation/fairness policy under contention.
-- Discount precedence/stacking, eligibility, limits, usage accounting, and promo-banner behavior beyond evidenced legacy requirements.
+- Discount eligibility limits, usage accounting, promo codes, and promo-banner behavior beyond evidenced legacy requirements. V1 LINE-then-ORDER composition and single-winner-per-scope rules are locked in PRC-03 / PRC-05 / [ADR 0015](adr/0015-line-then-order-discount-composition.md).
 - Referral attribution window/source/reassignment, duplicate/self-referral treatment, visitor conversion, and whether rewards exist at all.
 - Notification type/content rules, push provider/consent, delivery guarantees, and token lifecycle.
 - Media historical-reference behavior when Product/Blog/Category attach to Media (MED-01). Upload limits/types and the S3-compatible provider abstraction are decided in CAT-04 / ADR 0011; orphan cleanup remains DATA-02 (no retention periods invented). Live production-bucket verification remains pending credentials (DEP-02).

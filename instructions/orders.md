@@ -23,13 +23,27 @@ Repositories must not expose generic updates for snapshot fields. ORD-02 owns ex
 
 ## Server-authoritative money
 
-Future order creation receives conceptually `productId` + `quantity` (and approved pricing inputs). The backend reads current catalog/pricing state, computes snapshots, and persists them. **Clients must never submit authoritative `unitPrice`, `lineTotal`, or order totals.**
+Future order creation receives conceptually `productId` + `quantity`. The backend reads current catalog/pricing state via PRC-05 `OrderPricingService`, computes snapshots, and persists them in ORD-03. **Clients must never submit authoritative `unitPrice`, `lineTotal`, discount ids, or order totals.**
 
 - Currency: **integer Toman** ([ADR 0010](../docs/adr/0010-integer-toman-money.md)).
 - `OrderLine.unitPrice`: PostgreSQL `INTEGER` (int4), same bounds as `Product.price`.
 - `OrderLine.lineTotal`, `Order.subtotal`, `Order.total`: PostgreSQL `BIGINT` / Prisma `BigInt` because `unitPrice × quantity` and multi-line sums can exceed int4 ([ADR 0013](../docs/adr/0013-order-historical-snapshots.md)).
-- `lineTotal` is **persisted** (not derived at read time) for audit integrity and future discount allocation.
+- `lineTotal` is **persisted** (not derived at read time) for audit integrity.
 - Use `src/modules/orders/domain/order-money.ts` for safe bigint multiplication/summing; never use floating point.
+- **Discount composition** for create-time money is owned by Pricing PRC-05 ([ADR 0015](../docs/adr/0015-line-then-order-discount-composition.md), [pricing.md](pricing.md)): LINE then ORDER on the discounted subtotal. ORD-03 must persist the PRC-05 snapshot without re-reading mutable Product/Discount state.
+
+### PRC-05 → ORD-03 snapshot contract
+
+PRC-05 returns a persistence-neutral snapshot. ORD-01 columns today store gross `lineTotal = unitPrice × quantity` only. ORD-03 owns the minimal migration to persist discounted amounts and applied-discount evidence. Until that migration lands, do not write discounted `finalLineTotal` into `OrderLine.lineTotal`.
+
+Required snapshot facts ORD-03 must be able to consume:
+
+| Area  | Fields                                                                                                                                             |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Line  | `productId`, `productName`, `categoryId`, `unitPrice`, `quantity`, `grossLineTotal`, `lineDiscountAmount`, `finalLineTotal`, `appliedLineDiscount` |
+| Order | `grossSubtotal`, `lineDiscountTotal`, `subtotalAfterLineDiscounts`, `orderDiscountAmount`, `total`, `appliedOrderDiscount`, `evaluatedAt`          |
+
+**Transaction isolation:** when ORD-03 calls `priceOrderLines({ tx })` inside the create transaction, that transaction **must** use PostgreSQL **REPEATABLE READ** (or equivalent) so Product and Discount reads share one snapshot. Alternatively, price via standalone `runSnapshotRead` and persist the frozen snapshot in the write transaction without re-reading mutable catalog/discount state.
 
 JSON: totals within `Number.MAX_SAFE_INTEGER` may serialize as numbers; larger exact values serialize as decimal strings — never floats.
 
@@ -237,7 +251,8 @@ No in-repo legacy Order contract exists yet (`MIG-01` PLANNED). The following re
 - Shipping/delivery **address** snapshot columns (User profile address fields do not exist — AUTH-07 is phone-only).
 - Store name, manager name, coordinates, and profile `regionId` FK.
 - Human-readable order numbers/codes.
-- Order notes, invoice metadata, discount snapshots (`PRC-*`).
+- Order notes, invoice metadata.
+- Discount **persistence columns** on Order/OrderLine (calculation + snapshot contract delivered in PRC-05; ORD-03 owns the minimal migration to store them).
 - Payment/settlement recording.
 
 When profile/address support lands, Orders must snapshot address at creation — **never reference a mutable User address directly** for historical display.
@@ -252,3 +267,4 @@ When profile/address support lands, Orders must snapshot address at creation —
 - [0012 — Inventory quantity / ledger / concurrency](../docs/adr/0012-inventory-quantity-ledger-concurrency.md)
 - [0013 — Order historical snapshots](../docs/adr/0013-order-historical-snapshots.md)
 - [0014 — Order state machine and transition authorization](../docs/adr/0014-order-state-machine-and-transition-authorization.md)
+- [0015 — V1 LINE then ORDER discount composition](../docs/adr/0015-line-then-order-discount-composition.md)

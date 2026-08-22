@@ -51,8 +51,12 @@ export class ProductRepository {
   /**
    * Public storefront detail: active product whose Category is also active.
    */
-  async findPublicById(id: string): Promise<ProductRecord | null> {
-    const found = await this.prisma.product.findFirst({
+  async findPublicById(
+    id: string,
+    tx?: TransactionContext,
+  ): Promise<ProductRecord | null> {
+    const db = resolvePrismaConnection(this.prisma, tx);
+    const found = await db.product.findFirst({
       where: {
         id,
         isActive: true,
@@ -60,6 +64,28 @@ export class ProductRepository {
       },
     });
     return found === null ? null : mapProduct(found);
+  }
+
+  /**
+   * Batch public/order-sale Product read (active product + active Category).
+   * Single query — callers must not N+1 via findPublicById in a loop.
+   */
+  async findPublicByIds(
+    ids: readonly string[],
+    tx?: TransactionContext,
+  ): Promise<ProductRecord[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    const db = resolvePrismaConnection(this.prisma, tx);
+    const rows = await db.product.findMany({
+      where: {
+        id: { in: [...ids] },
+        isActive: true,
+        category: { isActive: true },
+      },
+    });
+    return rows.map(mapProduct);
   }
 
   async list(query: ProductListQuery): Promise<PageResult<ProductRecord>> {

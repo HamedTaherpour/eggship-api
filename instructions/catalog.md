@@ -77,20 +77,20 @@ Do not role-check in controllers. `SUPER_ADMIN` receives these only through the 
 
 In-repository legacy Category/Region/Product field inventory does not exist yet (`MIG-01` PLANNED). Schemas and public DTOs stay minimal. Do **not** invent the following without MIG-01 evidence:
 
-| Topic                           | Current public contract                            |
-| ------------------------------- | -------------------------------------------------- |
-| SKU / product code              | Absent                                             |
-| Description / rich content      | Absent                                             |
-| Slug / SEO                      | Absent                                             |
-| Category hierarchy / sortOrder  | Flat list by `name` only                           |
-| Package / unit semantics        | Absent                                             |
-| Product media / gallery         | Absent (MED-01); no media fields on public Product |
-| Zero-price products             | Rejected (`price > 0`)                             |
-| Name uniqueness                 | Not enforced                                       |
-| Public Category detail          | Not offered                                        |
-| Public Category pagination      | Not offered (full active set)                      |
-| Nested category on Product      | `categoryId` only                                  |
-| Inventory on Product            | Never (INV owns stock)                             |
-| Personalized / discounted price | Base `price` only until PRC-05                     |
+| Topic                           | Current public contract                                                                                                             |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| SKU / product code              | Absent                                                                                                                              |
+| Description / rich content      | Absent                                                                                                                              |
+| Slug / SEO                      | Absent                                                                                                                              |
+| Category hierarchy / sortOrder  | Flat list by `name` only                                                                                                            |
+| Package / unit semantics        | Absent                                                                                                                              |
+| Product media / gallery         | Absent (MED-01); no media fields on public Product                                                                                  |
+| Zero-price products             | Rejected (`price > 0`)                                                                                                              |
+| Name uniqueness                 | Not enforced                                                                                                                        |
+| Public Category detail          | Not offered                                                                                                                         |
+| Public Category pagination      | Not offered (full active set)                                                                                                       |
+| Nested category on Product      | `categoryId` only                                                                                                                   |
+| Inventory on Product            | Never (INV owns stock)                                                                                                              |
+| Personalized / discounted price | Order/create pricing via PRC-05 `OrderPricingService` (ADR 0015); public catalog list/detail still expose base `Product.price` only |
 
 Record migration mapping differences against legacy when MIG-01 inventories the source system; do not invent parity fields to “look complete.”

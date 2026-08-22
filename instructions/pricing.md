@@ -30,7 +30,7 @@ Durable boundaries for Product current price and immutable price history. Field-
 - **Catalog (`products`)** owns Product identity, Category link, activation, and the current price column.
 - **Pricing (`pricing`)** owns price-change semantics and `PriceHistory` persistence.
 - Admin Product PATCH remains the HTTP entry for price changes in PRC-01, but application code routes price mutations through `PricingService` — not direct repository price writes.
-- Do not implement calculation engines or public pricing APIs here (PRC-03–PRC-05).
+- Do not route order pricing through Product HTTP. Order/create pricing uses `OrderPricingService` (PRC-05).
 
 ## Discount model and lifecycle (PRC-02)
 
@@ -73,7 +73,7 @@ A discount is eligible when all hold at `evaluatedAt`:
 
 ### Stacking (V1)
 
-**Single winner per calculation invocation.** No multi-discount stacking, compounding, or silent combination. PRC-05 / ORD-03 may invoke separate LINE and ORDER calculations, but each invocation applies at most one discount.
+**Single winner per calculation invocation.** No multi-discount stacking, compounding, or silent combination within one scope. PRC-05 composes separate LINE and ORDER invocations under [ADR 0015](../docs/adr/0015-line-then-order-discount-composition.md) (LINE then ORDER on the discounted subtotal).
 
 ### Precedence and tie-break
 
@@ -94,9 +94,65 @@ Among eligible discounts for one invocation:
 
 Promo codes, usage limits, minimum-order thresholds, max-discount caps, HTTP/public APIs, Order persistence, payment concepts, and multi-discount stacking beyond the single-winner rule above.
 
+## Order pricing composition (PRC-05)
+
+Server-authoritative order pricing for ORD-03. Application entry: `OrderPricingService.priceOrderLines`. No HTTP, no Order/OrderLine writes, no promo codes, no Redis correctness dependency.
+
+Locked V1 composition is [ADR 0015](../docs/adr/0015-line-then-order-discount-composition.md).
+
+### Input contract
+
+- Callers supply normalized order lines containing only trusted `productId` + `quantity`.
+- Duplicate `productId` lines collapse by summing quantities (same V1 policy as ORD-01 / Inventory).
+- Clients never supply authoritative `unitPrice`, category, or discount identity.
+- One shared `evaluatedAt` for the whole operation (caller-supplied or a single default at service entry — never per-line `new Date()`).
+
+### Authoritative sources
+
+| Fact                    | Source                                                                                                                       |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Unit price              | Current `Product.price` (not PriceHistory)                                                                                   |
+| Product name / category | Current Product row                                                                                                          |
+| Sale visibility         | Active Product **and** active Category (CAT-06 / public storefront rule)                                                     |
+| Discounts               | Active Discount candidates matching ORDER or the priced PRODUCT/CATEGORY ids; window eligibility via PRC-03 at `evaluatedAt` |
+
+Missing or non-saleable products raise `PRODUCT_NOT_FOUND` (`OrderPricingProductUnavailableError`) without distinguishing hidden vs absent.
+
+### Composition (policy A)
+
+1. Each line: at most one LINE winner (`PRODUCT` / `CATEGORY`) via PRC-03.
+2. `grossLineTotal = unitPrice × quantity`; `finalLineTotal = grossLineTotal − lineDiscountAmount`.
+3. `subtotalAfterLineDiscounts = Σ finalLineTotal`.
+4. At most one ORDER winner against **`subtotalAfterLineDiscounts`** (not pre-discount gross).
+5. `total = subtotalAfterLineDiscounts − orderDiscountAmount`.
+6. No same-scope stacking; LINE then ORDER cross-scope composition is allowed.
+7. Reuses PRC-03 `calculateDiscount` — does not fork percent/fixed/precedence/malformed-skip math.
+
+### Snapshot result (persistence-neutral)
+
+Returned for ORD-03 persistence later. Explicit fields — not a generic JSON blob:
+
+**Per line:** `productId`, `productName`, `categoryId`, `unitPrice`, `quantity`, `grossLineTotal`, `lineDiscountAmount`, `finalLineTotal`, `appliedLineDiscount` (or null).
+
+**Order:** `grossSubtotal`, `lineDiscountTotal`, `subtotalAfterLineDiscounts`, `orderDiscountAmount`, `total`, `appliedOrderDiscount` (or null), `evaluatedAt`.
+
+PRC-05 does **not** migrate Order/OrderLine schema and does **not** relax `OrderLine.lineTotal = unitPrice × quantity`. ORD-03 owns the minimal migration to store discounted amounts and applied-discount evidence.
+
+### Reads, transactions, and concurrency
+
+- Batch-load Products (`findPublicByIds`) and Discount candidates (`findCandidatesForOrderPricing`) — no N+1.
+- Standalone calls use `TransactionRunner.runSnapshotRead` (PostgreSQL **REPEATABLE READ**) so Product price/name/category and eligible Discounts share one coherent snapshot without broad row locks.
+- Optional `tx` joins an outer ORD-03 transaction via `runIn` (inherits caller isolation). **ORD-03 must open that create transaction at REPEATABLE READ** (or price standalone then persist the frozen snapshot without re-reading Product/Discount). Joining a default READ COMMITTED transaction can observe Product@S1 and Discount@S2 under concurrent Admin updates.
+- Concurrent Admin price/discount updates must not produce a hybrid mutable view within one pricing attempt; repeated calculation with the same snapshot inputs is deterministic.
+
+### Out of scope in PRC-05
+
+Order HTTP/create, payments, promo codes, usage limits, Order schema migration, and Redis-backed pricing.
+
 ## Orders boundary
 
 - Orders snapshot title and unit price at creation (ORD-01). Changing current price or appending history must not mutate existing Order lines.
+- Order-time discount composition and persistence-neutral pricing snapshots are owned by PRC-05 (`OrderPricingService`); ORD-03 persists them.
 
 ## Permissions
 

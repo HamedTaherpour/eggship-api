@@ -2,12 +2,11 @@ import { randomUUID } from 'node:crypto';
 import type { INestApplicationContext } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
-import { Prisma } from '../../../src/generated/prisma/client';
 import { ObservabilityModule } from '../../../src/common/observability/observability.module';
 import { createConfigModuleOptions } from '../../../src/config/config-module.options';
 import { PrismaModule } from '../../../src/infrastructure/database/prisma/prisma.module';
 import { PrismaService } from '../../../src/infrastructure/database/prisma/prisma.service';
-import { PrismaTransactionContext } from '../../../src/infrastructure/database/prisma/prisma-transaction-context';
+import { TransactionRunner } from '../../../src/infrastructure/database/transaction';
 import { CategoryRepository } from '../../../src/modules/categories/infrastructure/category.repository';
 import { CategoryService } from '../../../src/modules/categories/application/category.service';
 import { InventoryReconciliationService } from '../../../src/modules/inventory/application/inventory-reconciliation.service';
@@ -47,6 +46,7 @@ describe('Inventory reconciliation (integration)', () => {
   let productService: ProductService;
   let inventory: InventoryService;
   let reconciliation: InventoryReconciliationService;
+  let transactions: TransactionRunner;
   let balances: InventoryBalanceRepository;
   let reservations: InventoryReservationRepository;
   let ledger: InventoryLedgerRepository;
@@ -73,6 +73,7 @@ describe('Inventory reconciliation (integration)', () => {
     productService = moduleRef.get(ProductService);
     inventory = moduleRef.get(InventoryService);
     reconciliation = moduleRef.get(InventoryReconciliationService);
+    transactions = moduleRef.get(TransactionRunner);
     balances = moduleRef.get(InventoryBalanceRepository);
     reservations = moduleRef.get(InventoryReservationRepository);
     ledger = moduleRef.get(InventoryLedgerRepository);
@@ -333,7 +334,7 @@ describe('Inventory reconciliation (integration)', () => {
     expect(result.current.onHand).toBe(120);
   });
 
-  it('uses one repeatable-read snapshot during concurrent mutation', async () => {
+  it('uses runSnapshotRead for a coherent snapshot during concurrent mutation', async () => {
     const productId = await stockProduct(100);
     let releaseConcurrent!: () => void;
     const snapshotReady = new Promise<void>((resolve) => {
@@ -344,35 +345,28 @@ describe('Inventory reconciliation (integration)', () => {
       concurrentCommitted = resolve;
     });
 
-    const snapshotPromise = prisma.$transaction(
-      async (client) => {
-        const ctx = new PrismaTransactionContext(client);
-        const balance = await balances.findByProductId(productId, ctx);
-        expect(balance!.onHand).toBe(100);
-        releaseConcurrent();
-        await concurrentDone;
+    const snapshotPromise = transactions.runSnapshotRead(async (ctx) => {
+      const balance = await balances.findByProductId(productId, ctx);
+      expect(balance!.onHand).toBe(100);
+      releaseConcurrent();
+      await concurrentDone;
 
-        const [reservationRows, ledgerRows] = await Promise.all([
-          reservations.listByProduct(productId, ctx),
-          ledger.listByProduct(productId, ctx),
-        ]);
-        const tail = ledgerRows[ledgerRows.length - 1];
-        expect(tail?.onHandAfter).toBe(100);
+      const [reservationRows, ledgerRows] = await Promise.all([
+        reservations.listByProduct(productId, ctx),
+        ledger.listByProduct(productId, ctx),
+      ]);
+      const tail = ledgerRows[ledgerRows.length - 1];
+      expect(tail?.onHandAfter).toBe(100);
 
-        return reconcileInventorySnapshot({
-          productId,
-          onHand: balance!.onHand,
-          reserved: balance!.reserved,
-          reservations: reservationRows,
-          ledger: ledgerRows,
-          checkedAt: new Date(),
-        });
-      },
-      {
-        isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
-        timeout: 30_000,
-      },
-    );
+      return reconcileInventorySnapshot({
+        productId,
+        onHand: balance!.onHand,
+        reserved: balance!.reserved,
+        reservations: reservationRows,
+        ledger: ledgerRows,
+        checkedAt: new Date(),
+      });
+    });
 
     void snapshotReady.then(async () => {
       await inventory.receiveOnHand({
@@ -397,6 +391,22 @@ describe('Inventory reconciliation (integration)', () => {
     const postMutation = await reconciliation.reconcileProduct(productId);
     expect(postMutation.status).toBe(InventoryReconciliationStatus.CONSISTENT);
     expect(postMutation.current.onHand).toBe(150);
+  });
+
+  it('keeps reconcileProduct internally coherent while receive races', async () => {
+    const productId = await stockProduct(50);
+    const [snapshot] = await Promise.all([
+      reconciliation.reconcileProduct(productId),
+      inventory.receiveOnHand({
+        productId,
+        quantity: 10,
+        referenceType: InventoryLedgerReferenceType.RECEIVE,
+        referenceId: randomUUID(),
+        actor: SYSTEM_ACTOR,
+      }),
+    ]);
+    expect(snapshot.status).toBe(InventoryReconciliationStatus.CONSISTENT);
+    expect([50, 60]).toContain(snapshot.current.onHand);
   });
 
   it('throws when inventory row is missing', async () => {

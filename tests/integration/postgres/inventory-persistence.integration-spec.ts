@@ -210,8 +210,7 @@ describe('Inventory persistence (integration)', () => {
         Array.from({ length: 20 }, () =>
           inventory.reserveForOrder({
             orderId: randomUUID(),
-            productId,
-            quantity: 1,
+            lines: [{ productId, quantity: 1 }],
             actor: SYSTEM_ACTOR,
           }),
         ),
@@ -246,8 +245,7 @@ describe('Inventory persistence (integration)', () => {
         quantities.map((quantity) =>
           inventory.reserveForOrder({
             orderId: randomUUID(),
-            productId,
-            quantity,
+            lines: [{ productId, quantity }],
             actor: SYSTEM_ACTOR,
           }),
         ),
@@ -256,10 +254,10 @@ describe('Inventory persistence (integration)', () => {
       const succeeded = outcomes.filter(
         (row) => row.status === 'fulfilled',
       ) as PromiseFulfilledResult<{
-        reservation: { quantity: number };
+        lines: Array<{ quantity: number }>;
       }>[];
       const reservedSum = succeeded.reduce(
-        (sum, row) => sum + row.value.reservation.quantity,
+        (sum, row) => sum + (row.value.lines[0]?.quantity ?? 0),
         0,
       );
       expect(reservedSum).toBeLessThanOrEqual(10);
@@ -277,15 +275,14 @@ describe('Inventory persistence (integration)', () => {
       const productId = await stockProduct(5);
       const reserved = await inventory.reserveForOrder({
         orderId: randomUUID(),
-        productId,
-        quantity: 5,
+        lines: [{ productId, quantity: 5 }],
         actor: SYSTEM_ACTOR,
       });
 
       const outcomes = await Promise.allSettled(
         Array.from({ length: 8 }, () =>
           inventory.releaseReservation({
-            orderId: reserved.reservation.orderId,
+            orderId: reserved.orderId,
             productId,
             actor: SYSTEM_ACTOR,
           }),
@@ -311,15 +308,14 @@ describe('Inventory persistence (integration)', () => {
       const productId = await stockProduct(8);
       const reserved = await inventory.reserveForOrder({
         orderId: randomUUID(),
-        productId,
-        quantity: 3,
+        lines: [{ productId, quantity: 3 }],
         actor: SYSTEM_ACTOR,
       });
 
       await Promise.all(
         Array.from({ length: 6 }, () =>
           inventory.shipReservation({
-            orderId: reserved.reservation.orderId,
+            orderId: reserved.orderId,
             productId,
             actor: SYSTEM_ACTOR,
           }),
@@ -344,8 +340,7 @@ describe('Inventory persistence (integration)', () => {
         ...Array.from({ length: 10 }, () =>
           inventory.reserveForOrder({
             orderId: randomUUID(),
-            productId,
-            quantity: 1,
+            lines: [{ productId, quantity: 1 }],
             actor: SYSTEM_ACTOR,
           }),
         ),
@@ -376,16 +371,14 @@ describe('Inventory persistence (integration)', () => {
       const orderId = randomUUID();
       await inventory.reserveForOrder({
         orderId,
-        productId,
-        quantity: 1,
+        lines: [{ productId, quantity: 1 }],
         actor: SYSTEM_ACTOR,
       });
 
       await expect(
         inventory.reserveForOrder({
           orderId,
-          productId,
-          quantity: 2,
+          lines: [{ productId, quantity: 2 }],
           actor: SYSTEM_ACTOR,
         }),
       ).rejects.toBeInstanceOf(InventoryReservationConflictError);
@@ -398,8 +391,7 @@ describe('Inventory persistence (integration)', () => {
         Array.from({ length: 8 }, () =>
           inventory.reserveForOrder({
             orderId,
-            productId,
-            quantity: 2,
+            lines: [{ productId, quantity: 2 }],
             actor: SYSTEM_ACTOR,
           }),
         ),
@@ -428,8 +420,7 @@ describe('Inventory persistence (integration)', () => {
         await inventory.reserveForOrder(
           {
             orderId,
-            productId,
-            quantity: 1,
+            lines: [{ productId, quantity: 1 }],
             actor: SYSTEM_ACTOR,
           },
           tx,
@@ -437,8 +428,7 @@ describe('Inventory persistence (integration)', () => {
         await inventory.reserveForOrder(
           {
             orderId,
-            productId,
-            quantity: 1,
+            lines: [{ productId, quantity: 1 }],
             actor: SYSTEM_ACTOR,
           },
           tx,
@@ -459,8 +449,7 @@ describe('Inventory persistence (integration)', () => {
       const productId = await stockProduct(5);
       await inventory.reserveForOrder({
         orderId: randomUUID(),
-        productId,
-        quantity: 4,
+        lines: [{ productId, quantity: 4 }],
         actor: SYSTEM_ACTOR,
       });
 
@@ -530,8 +519,7 @@ describe('Inventory persistence (integration)', () => {
       await expect(
         inventory.reserveForOrder({
           orderId: randomUUID(),
-          productId,
-          quantity: 5,
+          lines: [{ productId, quantity: 5 }],
           actor: SYSTEM_ACTOR,
         }),
       ).rejects.toBeInstanceOf(InventoryInsufficientStockError);

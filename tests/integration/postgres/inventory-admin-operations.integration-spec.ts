@@ -131,8 +131,7 @@ describe('Admin inventory operations (integration)', () => {
     });
     await inventory.reserveForOrder({
       orderId: randomUUID(),
-      productId,
-      quantity: 8,
+      lines: [{ productId, quantity: 8 }],
       actor: SYSTEM_ACTOR,
     });
 

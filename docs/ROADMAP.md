@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |    94 |
-| DONE        |    27 |
+| DONE        |    28 |
 | IN_PROGRESS |     0 |
-| READY       |     6 |
+| READY       |     5 |
 | BLOCKED     |     0 |
-| PLANNED     |    62 |
+| PLANNED     |    61 |
 
-- Current task: none in progress. Next recommended: `INV-03 — Reservation and release semantics` (READY after INV-02). `CAT-05 — Admin catalog APIs` and `CAT-06 — Public catalog APIs` remain READY. `CAT-05 — Admin catalog APIs` and `CAT-06 — Public catalog APIs` remain READY. `PRC-01 — Pricing rules and price history` is READY (depends on CAT-03; starts with human architecture approval). `ORD-01 — Order schema and historical snapshots` is now READY (AUTH-07, CAT-03, INV-01B). `INV-04` stays PLANNED until INV-03 is DONE. `ADM-01 — Admin account management` when back-office operator administration is prioritized over catalog work; it depends on `ADM-AUTH-01` so disablement can revoke Admin sessions.
+- Current task: none in progress. Next recommended: `INV-04 — Fulfillment and physical stock commitment contract` (READY after INV-03). `CAT-05 — Admin catalog APIs` and `CAT-06 — Public catalog APIs` remain READY. `PRC-01 — Pricing rules and price history` is READY (depends on CAT-03; starts with human architecture approval). `ORD-01 — Order schema and historical snapshots` is now READY (AUTH-07, CAT-03, INV-01B). `ADM-01 — Admin account management` when back-office operator administration is prioritized over catalog work; it depends on `ADM-AUTH-01` so disablement can revoke Admin sessions.
 - Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
@@ -364,7 +364,7 @@ Delivered: Admin `POST /api/v1/admin/inventory/:productId/receive` and `/adjust`
 
 ### INV-03 — Reservation and release semantics
 
-Status: READY | Depends on: INV-01B | Primary: Codex | Review: Claude/Cursor concurrency review
+Status: DONE | Depends on: INV-01B | Primary: Codex | Review: Claude/Cursor concurrency review
 
 Scope: Implement atomic reservation and release contracts using conditional PostgreSQL updates and deterministic resource ordering for multi-SKU operations.
 
@@ -372,9 +372,11 @@ Acceptance criteria: Overselling and negative reservations are prevented under c
 
 Explicitly out of scope: Shipping/commit implementation (INV-04) and Orders HTTP.
 
+Delivered: Internal `reserveForOrder` / `releaseForOrder` application contracts (no HTTP) with collapsed multi-SKU lines, all-or-nothing shortage collection, deterministic Inventory `FOR UPDATE` after an order-scoped PostgreSQL advisory lock, `orderId` idempotency (identical replay / mismatched, partial, or terminal conflict), joinable opaque `TransactionContext`, and `releaseForOrder` ACTIVE→RELEASED with all-RELEASED replay. Unit coverage plus a PostgreSQL reservation suite (including disjoint same-order SKU race, reverse-input deadlock, outer-tx rollback). Live `TEST_DATABASE_URL` concurrency run is environment-dependent.
+
 ### INV-04 — Fulfillment and physical stock commitment contract
 
-Status: PLANNED | Depends on: INV-01B, INV-03 | Primary: Codex | Review: Claude/Cursor concurrency review
+Status: READY | Depends on: INV-01B, INV-03 | Primary: Codex | Review: Claude/Cursor concurrency review
 
 Scope: Implement the approved ship/commit contract: on `SHIPPED`, `onHand -= qty` and `reserved -= qty`, with ledger effects, repeat-call idempotency, and atomic conditional updates.
 

@@ -4,7 +4,11 @@ import type {
   InventoryActor,
   InventoryLedgerEntry,
 } from '../domain/inventory-ledger';
-import type { InventoryReservation } from '../domain/inventory-reservation';
+import type {
+  InventoryReservation,
+  InventoryReservationStatus,
+} from '../domain/inventory-reservation';
+import type { ReservationLineInput } from '../domain/reservation-lines';
 
 export interface InventoryMutationActor {
   actor: InventoryActor;
@@ -13,8 +17,11 @@ export interface InventoryMutationActor {
 
 export interface ReserveForOrderInput extends InventoryMutationActor {
   orderId: string;
-  productId: string;
-  quantity: number;
+  lines: readonly ReservationLineInput[];
+}
+
+export interface ReleaseForOrderInput extends InventoryMutationActor {
+  orderId: string;
 }
 
 export interface CompleteReservationInput extends InventoryMutationActor {
@@ -44,6 +51,17 @@ export interface WriteOffOnHandInput extends InventoryMutationActor {
   referenceType: 'ADJUSTMENT' | 'RECONCILIATION';
   referenceId: string | null;
   reason: string;
+}
+
+export interface OrderReservationLine {
+  productId: string;
+  quantity: number;
+  status: InventoryReservationStatus;
+}
+
+export interface OrderReservationResult {
+  orderId: string;
+  lines: OrderReservationLine[];
 }
 
 export interface ReservationMutationResult {

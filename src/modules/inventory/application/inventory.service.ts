@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { RequestContextService } from '../../../common/observability/request-context.service';
 import { TransactionRunner } from '../../../infrastructure/database/transaction';
 import type { TransactionContext } from '../../../infrastructure/database/transaction';
 import {
@@ -10,15 +11,19 @@ import {
   InventoryLedgerActorType,
   InventoryLedgerReferenceType,
   InventoryLedgerType,
+  assertLedgerActor,
   expectedDeltasForType,
   type InventoryActor,
   type InventoryLedgerEntry,
 } from '../domain/inventory-ledger';
 import {
+  InventoryInsufficientStockError,
+  InventoryInvalidQuantityError,
   InventoryNotFoundError,
   InventoryReservationConflictError,
   InventoryReservationNotFoundError,
 } from '../domain/inventory-errors';
+import { InventoryHttpMessage } from '../domain/inventory-http-messages';
 import {
   InventoryReservationStatus,
   type InventoryReservation,
@@ -27,14 +32,29 @@ import {
   assertAdjustmentDelta,
   assertInventoryUuid,
   assertPositiveQuantity,
+  isInventoryUuid,
 } from '../domain/inventory-quantity';
 import { normalizeProductIdsForLock } from '../domain/lock-product-ids';
+import {
+  classifyReleaseAgainstExisting,
+  classifyReserveAgainstExisting,
+  OrderReleasePlan,
+  OrderReservePlan,
+  reservationProductIdsMatch,
+} from '../domain/order-reservation-state';
+import {
+  collapseReservationLines,
+  shortageDetailsWithoutAvailability,
+  type NormalizedReservationLine,
+} from '../domain/reservation-lines';
 import type {
   AdjustOnHandInput,
   BalanceMutationResult,
   CompleteReservationInput,
   LockAndInspectInput,
   OnHandIncreaseInput,
+  OrderReservationResult,
+  ReleaseForOrderInput,
   ReservationMutationResult,
   ReserveForOrderInput,
   WriteOffOnHandInput,
@@ -49,8 +69,9 @@ const SYSTEM_ACTOR: InventoryActor = {
 };
 
 /**
- * Inventory persistence primitives (INV-01B). Not HTTP use cases.
+ * Inventory application contracts (INV-01B primitives + INV-03 order reserve/release).
  * Quantity mutation and ledger append always share one PostgreSQL transaction.
+ * Orders must call these methods; they must not mutate Inventory tables.
  */
 @Injectable()
 export class InventoryService {
@@ -59,6 +80,7 @@ export class InventoryService {
     private readonly balances: InventoryBalanceRepository,
     private readonly reservations: InventoryReservationRepository,
     private readonly ledger: InventoryLedgerRepository,
+    private readonly requestContext: RequestContextService,
   ) {}
 
   async ensureForProduct(
@@ -85,30 +107,14 @@ export class InventoryService {
   }
 
   /**
-   * Lock rows, then report every shortage without writing. INV-03 will use this
-   * for all-or-nothing multi-SKU reservation.
+   * Lock rows, then report every shortage without writing.
    */
   async lockAndInspectAvailability(input: LockAndInspectInput): Promise<{
     balances: InventoryBalance[];
     inspection: AvailabilityInspection;
   }> {
-    const requested = input.items.map((item) => ({
-      productId: assertInventoryUuid(item.productId, 'productId'),
-      quantity: assertPositiveQuantity(item.quantity),
-    }));
-    const quantityByProduct = new Map<string, number>();
-    for (const item of requested) {
-      quantityByProduct.set(
-        item.productId,
-        (quantityByProduct.get(item.productId) ?? 0) + item.quantity,
-      );
-    }
-    const collapsed = [...quantityByProduct.entries()].map(
-      ([productId, quantity]) => ({ productId, quantity }),
-    );
-    const productIds = normalizeProductIdsForLock(
-      collapsed.map((item) => item.productId),
-    );
+    const collapsed = this.normalizeLines(input.items);
+    const productIds = collapsed.map((item) => item.productId);
     const balances = await this.balances.lockBalances(productIds, input.tx);
     const inspection = inspectAvailability({
       requested: collapsed,
@@ -123,45 +129,116 @@ export class InventoryService {
   async reserveForOrder(
     input: ReserveForOrderInput,
     tx?: TransactionContext,
-  ): Promise<ReservationMutationResult> {
-    const orderId = assertInventoryUuid(input.orderId, 'orderId');
-    const productId = assertInventoryUuid(input.productId, 'productId');
-    const quantity = assertPositiveQuantity(input.quantity);
+  ): Promise<OrderReservationResult> {
+    const orderId = this.requireOrderId(input.orderId);
+    const lines = this.normalizeLines(input.lines);
+    const actor = assertLedgerActor(input.actor);
+    const correlationId = this.resolveLedgerCorrelationId(input.correlationId);
 
     return this.transactions.runIn(tx, async (ctx) => {
-      await this.requireLockedBalance(productId, ctx);
-      const inserted = await this.reservations.insertActive(
-        { orderId, productId, quantity },
-        ctx,
-      );
-      if (!inserted.inserted) {
-        return this.resumeExistingReservation(
-          inserted.reservation,
-          InventoryLedgerType.RESERVE,
-          ctx,
+      await this.reservations.lockOrderScope(orderId, ctx);
+      const productIds = lines.map((line) => line.productId);
+      const balances = await this.balances.lockBalances(productIds, ctx);
+      const inspection = inspectAvailability({
+        requested: lines,
+        locked: balances.map((row) => ({
+          productId: row.productId,
+          available: row.available,
+        })),
+      });
+      const existing = await this.reservations.lockByOrderId(orderId, ctx);
+      const plan = classifyReserveAgainstExisting(lines, existing);
+
+      if (plan === OrderReservePlan.REPLAY) {
+        return this.toOrderReservationResult(orderId, existing);
+      }
+      if (plan === OrderReservePlan.CONFLICT) {
+        throw new InventoryReservationConflictError(
+          InventoryHttpMessage.RESERVATION_CONFLICT,
+          { orderId },
         );
       }
-      const balance = await this.balances.reserveQuantity(
-        productId,
-        quantity,
-        ctx,
+
+      this.rejectMissingInventory(inspection.missingProductIds);
+      this.rejectShortages(inspection.shortages);
+
+      const committed: InventoryReservation[] = [];
+      for (const line of lines) {
+        committed.push(
+          await this.writeFreshReservationLine({
+            orderId,
+            line,
+            actor,
+            correlationId,
+            ctx,
+          }),
+        );
+      }
+      return this.toOrderReservationResult(orderId, committed);
+    });
+  }
+
+  async releaseForOrder(
+    input: ReleaseForOrderInput,
+    tx?: TransactionContext,
+  ): Promise<OrderReservationResult> {
+    const orderId = this.requireOrderId(input.orderId);
+    const actor = assertLedgerActor(input.actor);
+    const correlationId = this.resolveLedgerCorrelationId(input.correlationId);
+
+    return this.transactions.runIn(tx, async (ctx) => {
+      await this.reservations.lockOrderScope(orderId, ctx);
+      const snapshot = await this.reservations.findByOrderId(orderId, ctx);
+      if (snapshot.length === 0) {
+        throw new InventoryReservationNotFoundError(
+          InventoryHttpMessage.RESERVATION_NOT_FOUND,
+          { orderId },
+        );
+      }
+
+      const productIds = normalizeProductIdsForLock(
+        snapshot.map((row) => row.productId),
       );
-      const ledger = await this.appendBalanceEvent({
-        type: InventoryLedgerType.RESERVE,
-        productId,
-        quantity,
-        balance,
-        referenceType: InventoryLedgerReferenceType.ORDER,
-        referenceId: orderId,
-        actor: input.actor,
-        correlationId: input.correlationId,
-        ctx,
-      });
-      return {
-        balance,
-        reservation: inserted.reservation,
-        ledger,
-      };
+      const locked = await this.balances.lockBalances(productIds, ctx);
+      if (locked.length !== productIds.length) {
+        throw new InventoryNotFoundError(InventoryHttpMessage.NOT_FOUND, {
+          productIds: productIds.filter(
+            (id) => !locked.some((row) => row.productId === id),
+          ),
+        });
+      }
+
+      const existing = await this.reservations.lockByOrderId(orderId, ctx);
+      if (!reservationProductIdsMatch(productIds, existing)) {
+        throw new InventoryReservationConflictError(
+          InventoryHttpMessage.RESERVATION_CONFLICT,
+          { orderId },
+        );
+      }
+
+      const plan = classifyReleaseAgainstExisting(existing);
+      if (plan === OrderReleasePlan.REPLAY) {
+        return this.toOrderReservationResult(orderId, existing);
+      }
+      if (plan !== OrderReleasePlan.RELEASE) {
+        throw new InventoryReservationConflictError(
+          InventoryHttpMessage.RESERVATION_CONFLICT,
+          { orderId },
+        );
+      }
+
+      const released: InventoryReservation[] = [];
+      for (const row of existing) {
+        released.push(
+          await this.writeReleaseLine({
+            reservation: row,
+            actor,
+            correlationId,
+            ctx,
+          }),
+        );
+      }
+      return this.toOrderReservationResult(orderId, released);
     });
   }
 
@@ -310,6 +387,7 @@ export class InventoryService {
     const productId = assertInventoryUuid(input.productId, 'productId');
 
     return this.transactions.runIn(tx, async (ctx) => {
+      await this.reservations.lockOrderScope(orderId, ctx);
       await this.requireLockedBalance(productId, ctx);
       const existing = await this.reservations.findByOrderProduct(
         orderId,
@@ -369,6 +447,92 @@ export class InventoryService {
     });
   }
 
+  private async writeFreshReservationLine(input: {
+    orderId: string;
+    line: NormalizedReservationLine;
+    actor: InventoryActor;
+    correlationId: string | null;
+    ctx: TransactionContext;
+  }): Promise<InventoryReservation> {
+    const inserted = await this.reservations.insertActive(
+      {
+        orderId: input.orderId,
+        productId: input.line.productId,
+        quantity: input.line.quantity,
+      },
+      input.ctx,
+    );
+    if (!inserted.inserted) {
+      // Classify already required FRESH under the order advisory lock.
+      // A matching row here is an inconsistency — fail closed, do not increment.
+      throw new InventoryReservationConflictError(
+        InventoryHttpMessage.RESERVATION_CONFLICT,
+        {
+          orderId: input.orderId,
+          productId: input.line.productId,
+        },
+      );
+    }
+
+    const balance = await this.balances.reserveQuantity(
+      input.line.productId,
+      input.line.quantity,
+      input.ctx,
+    );
+    await this.appendBalanceEvent({
+      type: InventoryLedgerType.RESERVE,
+      productId: input.line.productId,
+      quantity: input.line.quantity,
+      balance,
+      referenceType: InventoryLedgerReferenceType.ORDER,
+      referenceId: input.orderId,
+      actor: input.actor,
+      correlationId: input.correlationId,
+      ctx: input.ctx,
+    });
+    return inserted.reservation;
+  }
+
+  private async writeReleaseLine(input: {
+    reservation: InventoryReservation;
+    actor: InventoryActor;
+    correlationId: string | null;
+    ctx: TransactionContext;
+  }): Promise<InventoryReservation> {
+    const outcome = await this.reservations.transitionFromActive(
+      input.reservation.id,
+      InventoryReservationStatus.RELEASED,
+      input.ctx,
+    );
+    if (outcome === null || !outcome.transitioned) {
+      throw new InventoryReservationConflictError(
+        InventoryHttpMessage.RESERVATION_CONFLICT,
+        {
+          orderId: input.reservation.orderId,
+          productId: input.reservation.productId,
+        },
+      );
+    }
+
+    const balance = await this.balances.releaseQuantity(
+      input.reservation.productId,
+      input.reservation.quantity,
+      input.ctx,
+    );
+    await this.appendBalanceEvent({
+      type: InventoryLedgerType.RELEASE,
+      productId: input.reservation.productId,
+      quantity: input.reservation.quantity,
+      balance,
+      referenceType: InventoryLedgerReferenceType.ORDER,
+      referenceId: input.reservation.orderId,
+      actor: input.actor,
+      correlationId: input.correlationId,
+      ctx: input.ctx,
+    });
+    return outcome.reservation;
+  }
+
   private async resumeExistingReservation(
     reservation: InventoryReservation,
     ledgerType:
@@ -413,6 +577,90 @@ export class InventoryService {
       );
     }
     return balance;
+  }
+
+  private normalizeLines(
+    lines: ReadonlyArray<{ productId: string; quantity: number }>,
+  ): NormalizedReservationLine[] {
+    try {
+      return collapseReservationLines(lines);
+    } catch (error: unknown) {
+      if (error instanceof InventoryInvalidQuantityError) {
+        throw new InventoryInvalidQuantityError(
+          InventoryHttpMessage.INVALID_QUANTITY,
+        );
+      }
+      throw error;
+    }
+  }
+
+  private requireOrderId(orderId: string): string {
+    try {
+      return assertInventoryUuid(orderId, 'orderId');
+    } catch (error: unknown) {
+      if (error instanceof InventoryInvalidQuantityError) {
+        throw new InventoryInvalidQuantityError(
+          InventoryHttpMessage.INVALID_QUANTITY,
+        );
+      }
+      throw error;
+    }
+  }
+
+  private rejectMissingInventory(missingProductIds: readonly string[]): void {
+    if (missingProductIds.length === 0) {
+      return;
+    }
+    throw new InventoryNotFoundError(InventoryHttpMessage.NOT_FOUND, {
+      productIds: [...missingProductIds],
+    });
+  }
+
+  private rejectShortages(
+    shortages: ReadonlyArray<{ productId: string; requested: number }>,
+  ): void {
+    if (shortages.length === 0) {
+      return;
+    }
+    throw new InventoryInsufficientStockError(
+      InventoryHttpMessage.INSUFFICIENT_STOCK,
+      shortageDetailsWithoutAvailability(shortages),
+    );
+  }
+
+  private toOrderReservationResult(
+    orderId: string,
+    rows: readonly InventoryReservation[],
+  ): OrderReservationResult {
+    return {
+      orderId,
+      lines: [...rows]
+        .sort((left, right) =>
+          left.productId < right.productId
+            ? -1
+            : left.productId > right.productId
+              ? 1
+              : 0,
+        )
+        .map((row) => ({
+          productId: row.productId,
+          quantity: row.quantity,
+          status: row.status,
+        })),
+    };
+  }
+
+  /**
+   * Ledger.correlationId is UUID. HTTP request ids (`req_...`) are omitted
+   * rather than stored or replaced with orderId.
+   */
+  private resolveLedgerCorrelationId(explicit?: string | null): string | null {
+    const candidate =
+      explicit ?? this.requestContext.getCorrelationId() ?? null;
+    if (candidate === null) {
+      return null;
+    }
+    return isInventoryUuid(candidate) ? candidate.toLowerCase() : null;
   }
 
   private async appendBalanceEvent(input: {

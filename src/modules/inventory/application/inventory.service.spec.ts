@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { RequestContextService } from '../../../common/observability/request-context.service';
 import {
   TRANSACTION_CONTEXT_BRAND,
   type TransactionContext,
@@ -11,7 +12,12 @@ import {
   InventoryLedgerType,
   type InventoryLedgerEntry,
 } from '../domain/inventory-ledger';
-import { InventoryReservationConflictError } from '../domain/inventory-errors';
+import {
+  InventoryInvalidQuantityError,
+  InventoryNotFoundError,
+  InventoryReservationConflictError,
+} from '../domain/inventory-errors';
+import { InventoryHttpMessage } from '../domain/inventory-http-messages';
 import {
   InventoryReservationStatus,
   type InventoryReservation,
@@ -21,8 +27,12 @@ import type { InventoryLedgerRepository } from '../infrastructure/inventory-ledg
 import type { InventoryReservationRepository } from '../infrastructure/inventory-reservation.repository';
 import { InventoryService, SYSTEM_ACTOR } from './inventory.service';
 
-const PRODUCT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-const ORDER_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const PRODUCT_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const PRODUCT_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const PRODUCT_C = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+const ORDER_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const USER_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const CORRELATION_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 
 class ImmediateTransactionRunner extends TransactionRunner {
   override run<T>(fn: (tx: TransactionContext) => Promise<T>): Promise<T> {
@@ -40,7 +50,7 @@ class ImmediateTransactionRunner extends TransactionRunner {
 function balance(overrides: Partial<InventoryBalance> = {}): InventoryBalance {
   const now = new Date('2026-08-22T00:00:00.000Z');
   return {
-    productId: PRODUCT_ID,
+    productId: PRODUCT_A,
     onHand: 10,
     reserved: 1,
     available: 9,
@@ -57,7 +67,7 @@ function reservation(
   return {
     id: randomUUID(),
     orderId: ORDER_ID,
-    productId: PRODUCT_ID,
+    productId: PRODUCT_A,
     quantity: 1,
     status: InventoryReservationStatus.ACTIVE,
     createdAt: now,
@@ -71,7 +81,7 @@ function ledgerEntry(
 ): InventoryLedgerEntry {
   return {
     id: randomUUID(),
-    productId: PRODUCT_ID,
+    productId: PRODUCT_A,
     type: InventoryLedgerType.RESERVE,
     quantity: 1,
     onHandDelta: 0,
@@ -89,7 +99,7 @@ function ledgerEntry(
   };
 }
 
-describe('InventoryService persistence primitives', () => {
+describe('InventoryService reservation contracts', () => {
   let balances: jest.Mocked<
     Pick<
       InventoryBalanceRepository,
@@ -107,12 +117,18 @@ describe('InventoryService persistence primitives', () => {
   let reservations: jest.Mocked<
     Pick<
       InventoryReservationRepository,
-      'insertActive' | 'findByOrderProduct' | 'transitionFromActive'
+      | 'insertActive'
+      | 'findByOrderProduct'
+      | 'findByOrderId'
+      | 'lockByOrderId'
+      | 'lockOrderScope'
+      | 'transitionFromActive'
     >
   >;
   let ledger: jest.Mocked<
     Pick<InventoryLedgerRepository, 'append' | 'findOrderEvent'>
   >;
+  let requestContext: RequestContextService;
   let service: InventoryService;
 
   beforeEach(() => {
@@ -130,92 +146,264 @@ describe('InventoryService persistence primitives', () => {
     reservations = {
       insertActive: jest.fn(),
       findByOrderProduct: jest.fn(),
+      findByOrderId: jest.fn(),
+      lockByOrderId: jest.fn(),
+      lockOrderScope: jest.fn().mockResolvedValue(undefined),
       transitionFromActive: jest.fn(),
     };
     ledger = {
       append: jest.fn(),
       findOrderEvent: jest.fn(),
     };
+    requestContext = new RequestContextService();
     service = new InventoryService(
       new ImmediateTransactionRunner(),
       balances as unknown as InventoryBalanceRepository,
       reservations as unknown as InventoryReservationRepository,
       ledger as unknown as InventoryLedgerRepository,
+      requestContext,
     );
   });
 
-  it('reserves by mutating balance, inserting ACTIVE, and appending RESERVE together', async () => {
-    const next = balance({ reserved: 1, available: 9 });
-    const row = reservation();
-    const entry = ledgerEntry();
-    balances.lockBalances.mockResolvedValue([balance()]);
-    balances.reserveQuantity.mockResolvedValue(next);
+  it('rejects empty lines and overflow before locking', async () => {
+    await expect(
+      service.reserveForOrder({
+        orderId: ORDER_ID,
+        lines: [],
+        actor: SYSTEM_ACTOR,
+      }),
+    ).rejects.toBeInstanceOf(InventoryInvalidQuantityError);
+
+    expect(reservations.lockOrderScope).not.toHaveBeenCalled();
+    expect(balances.lockBalances).not.toHaveBeenCalled();
+  });
+
+  it('reserves collapsed lines after locking inventory, then reservations', async () => {
+    const row = reservation({ quantity: 5 });
+    const next = balance({ reserved: 6, available: 4 });
+    balances.lockBalances.mockResolvedValue([balance({ available: 9 })]);
+    reservations.lockByOrderId.mockResolvedValue([]);
     reservations.insertActive.mockResolvedValue({
       reservation: row,
       inserted: true,
     });
-    ledger.append.mockResolvedValue(entry);
+    balances.reserveQuantity.mockResolvedValue(next);
+    ledger.append.mockResolvedValue(ledgerEntry({ quantity: 5 }));
 
     const result = await service.reserveForOrder({
       orderId: ORDER_ID,
-      productId: PRODUCT_ID,
-      quantity: 1,
+      lines: [
+        { productId: PRODUCT_A, quantity: 2 },
+        { productId: PRODUCT_A, quantity: 3 },
+      ],
       actor: SYSTEM_ACTOR,
     });
 
+    expect(
+      reservations.lockOrderScope.mock.invocationCallOrder[0],
+    ).toBeLessThan(balances.lockBalances.mock.invocationCallOrder[0]!);
     expect(balances.lockBalances.mock.invocationCallOrder[0]).toBeLessThan(
+      reservations.lockByOrderId.mock.invocationCallOrder[0]!,
+    );
+    expect(reservations.lockByOrderId.mock.invocationCallOrder[0]).toBeLessThan(
       reservations.insertActive.mock.invocationCallOrder[0]!,
     );
-    expect(reservations.insertActive.mock.invocationCallOrder[0]).toBeLessThan(
-      balances.reserveQuantity.mock.invocationCallOrder[0]!,
-    );
-
-    expect(balances.reserveQuantity).toHaveBeenCalledWith(
-      PRODUCT_ID,
-      1,
-      expect.anything(),
-    );
     expect(reservations.insertActive).toHaveBeenCalledWith(
-      { orderId: ORDER_ID, productId: PRODUCT_ID, quantity: 1 },
+      { orderId: ORDER_ID, productId: PRODUCT_A, quantity: 5 },
       expect.anything(),
     );
     expect(ledger.append).toHaveBeenCalledWith(
       expect.objectContaining({
         type: InventoryLedgerType.RESERVE,
-        reservedDelta: 1,
+        quantity: 5,
+        reservedDelta: 5,
         onHandDelta: 0,
         referenceType: InventoryLedgerReferenceType.ORDER,
         referenceId: ORDER_ID,
       }),
       expect.anything(),
     );
-    expect(result).toEqual({ balance: next, reservation: row, ledger: entry });
+    expect(result).toEqual({
+      orderId: ORDER_ID,
+      lines: [
+        {
+          productId: PRODUCT_A,
+          quantity: 5,
+          status: InventoryReservationStatus.ACTIVE,
+        },
+      ],
+    });
   });
 
-  it('replays an identical ACTIVE reservation without incrementing again', async () => {
-    const existing = reservation();
-    balances.lockBalances.mockResolvedValue([balance()]);
-    reservations.insertActive.mockResolvedValue({
-      reservation: existing,
-      inserted: false,
-    });
-    balances.findByProductId.mockResolvedValue(balance());
-    ledger.findOrderEvent.mockResolvedValue(ledgerEntry());
+  it('collects all shortages and writes nothing', async () => {
+    balances.lockBalances.mockResolvedValue([
+      balance({ productId: PRODUCT_A, onHand: 2, reserved: 0, available: 2 }),
+      balance({ productId: PRODUCT_B, onHand: 4, reserved: 0, available: 4 }),
+      balance({ productId: PRODUCT_C, onHand: 20, reserved: 0, available: 20 }),
+    ]);
+    reservations.lockByOrderId.mockResolvedValue([]);
 
-    const result = await service.reserveForOrder({
-      orderId: ORDER_ID,
-      productId: PRODUCT_ID,
-      quantity: 1,
-      actor: SYSTEM_ACTOR,
+    await expect(
+      service.reserveForOrder({
+        orderId: ORDER_ID,
+        lines: [
+          { productId: PRODUCT_A, quantity: 3 },
+          { productId: PRODUCT_B, quantity: 5 },
+          { productId: PRODUCT_C, quantity: 2 },
+        ],
+        actor: SYSTEM_ACTOR,
+      }),
+    ).rejects.toMatchObject({
+      code: 'INVENTORY_INSUFFICIENT_STOCK',
+      message: InventoryHttpMessage.INSUFFICIENT_STOCK,
+      details: {
+        lines: [
+          { productId: PRODUCT_A, requested: 3 },
+          { productId: PRODUCT_B, requested: 5 },
+        ],
+      },
     });
 
-    expect(result.reservation).toEqual(existing);
+    expect(reservations.insertActive).not.toHaveBeenCalled();
     expect(balances.reserveQuantity).not.toHaveBeenCalled();
     expect(ledger.append).not.toHaveBeenCalled();
   });
 
-  it('propagates reservation conflicts even when a caller transaction is joined', async () => {
-    balances.lockBalances.mockResolvedValue([balance()]);
+  it('fails the whole reservation when any Inventory row is missing', async () => {
+    balances.lockBalances.mockResolvedValue([
+      balance({ productId: PRODUCT_A, available: 10 }),
+    ]);
+    reservations.lockByOrderId.mockResolvedValue([]);
+
+    await expect(
+      service.reserveForOrder({
+        orderId: ORDER_ID,
+        lines: [
+          { productId: PRODUCT_A, quantity: 1 },
+          { productId: PRODUCT_B, quantity: 1 },
+        ],
+        actor: SYSTEM_ACTOR,
+      }),
+    ).rejects.toBeInstanceOf(InventoryNotFoundError);
+    expect(reservations.insertActive).not.toHaveBeenCalled();
+  });
+
+  it('replays the same order and payload without mutating again', async () => {
+    const existing = reservation({ quantity: 2 });
+    balances.lockBalances.mockResolvedValue([balance({ available: 8 })]);
+    reservations.lockByOrderId.mockResolvedValue([existing]);
+
+    const result = await service.reserveForOrder({
+      orderId: ORDER_ID,
+      lines: [{ productId: PRODUCT_A, quantity: 2 }],
+      actor: SYSTEM_ACTOR,
+    });
+
+    expect(result.lines).toEqual([
+      {
+        productId: PRODUCT_A,
+        quantity: 2,
+        status: InventoryReservationStatus.ACTIVE,
+      },
+    ]);
+    expect(reservations.insertActive).not.toHaveBeenCalled();
+    expect(balances.reserveQuantity).not.toHaveBeenCalled();
+    expect(ledger.append).not.toHaveBeenCalled();
+  });
+
+  it('conflicts when the same order retries a different payload', async () => {
+    balances.lockBalances.mockResolvedValue([balance({ available: 8 })]);
+    reservations.lockByOrderId.mockResolvedValue([
+      reservation({ quantity: 2 }),
+    ]);
+
+    await expect(
+      service.reserveForOrder({
+        orderId: ORDER_ID,
+        lines: [{ productId: PRODUCT_A, quantity: 3 }],
+        actor: SYSTEM_ACTOR,
+      }),
+    ).rejects.toMatchObject({
+      code: 'INVENTORY_RESERVATION_CONFLICT',
+      message: InventoryHttpMessage.RESERVATION_CONFLICT,
+    });
+    expect(balances.reserveQuantity).not.toHaveBeenCalled();
+  });
+
+  it('conflicts on partial existing reservation state', async () => {
+    balances.lockBalances.mockResolvedValue([
+      balance({ productId: PRODUCT_A, available: 10 }),
+      balance({ productId: PRODUCT_B, available: 10 }),
+    ]);
+    reservations.lockByOrderId.mockResolvedValue([
+      reservation({ productId: PRODUCT_A, quantity: 1 }),
+    ]);
+
+    await expect(
+      service.reserveForOrder({
+        orderId: ORDER_ID,
+        lines: [
+          { productId: PRODUCT_A, quantity: 1 },
+          { productId: PRODUCT_B, quantity: 1 },
+        ],
+        actor: SYSTEM_ACTOR,
+      }),
+    ).rejects.toBeInstanceOf(InventoryReservationConflictError);
+    expect(reservations.insertActive).not.toHaveBeenCalled();
+  });
+
+  it('does not recreate ACTIVE rows from RELEASED or SHIPPED', async () => {
+    balances.lockBalances.mockResolvedValue([balance({ available: 9 })]);
+    reservations.lockByOrderId.mockResolvedValue([
+      reservation({ status: InventoryReservationStatus.RELEASED }),
+    ]);
+
+    await expect(
+      service.reserveForOrder({
+        orderId: ORDER_ID,
+        lines: [{ productId: PRODUCT_A, quantity: 1 }],
+        actor: SYSTEM_ACTOR,
+      }),
+    ).rejects.toBeInstanceOf(InventoryReservationConflictError);
+  });
+
+  it('maps a USER actor and UUID correlation onto the RESERVE ledger', async () => {
+    const row = reservation();
+    balances.lockBalances.mockResolvedValue([balance({ available: 9 })]);
+    reservations.lockByOrderId.mockResolvedValue([]);
+    reservations.insertActive.mockResolvedValue({
+      reservation: row,
+      inserted: true,
+    });
+    balances.reserveQuantity.mockResolvedValue(
+      balance({ reserved: 2, available: 8 }),
+    );
+    ledger.append.mockResolvedValue(ledgerEntry());
+
+    await requestContext.run(
+      { requestId: 'req_ignored', correlationId: CORRELATION_ID },
+      async () => {
+        await service.reserveForOrder({
+          orderId: ORDER_ID,
+          lines: [{ productId: PRODUCT_A, quantity: 1 }],
+          actor: { type: InventoryLedgerActorType.USER, id: USER_ID },
+        });
+      },
+    );
+
+    expect(ledger.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorType: InventoryLedgerActorType.USER,
+        actorId: USER_ID,
+        correlationId: CORRELATION_ID,
+      }),
+      expect.anything(),
+    );
+  });
+
+  it('joins a caller transaction and does not swallow reservation conflicts', async () => {
+    balances.lockBalances.mockResolvedValue([balance({ available: 9 })]);
+    reservations.lockByOrderId.mockResolvedValue([]);
     reservations.insertActive.mockRejectedValue(
       new InventoryReservationConflictError(),
     );
@@ -224,14 +412,126 @@ describe('InventoryService persistence primitives', () => {
       service.reserveForOrder(
         {
           orderId: ORDER_ID,
-          productId: PRODUCT_ID,
-          quantity: 1,
+          lines: [{ productId: PRODUCT_A, quantity: 1 }],
           actor: SYSTEM_ACTOR,
         },
         { [TRANSACTION_CONTEXT_BRAND]: true },
       ),
     ).rejects.toBeInstanceOf(InventoryReservationConflictError);
     expect(balances.reserveQuantity).not.toHaveBeenCalled();
+  });
+
+  it('releases every ACTIVE line in one transaction', async () => {
+    const activeA = reservation({ productId: PRODUCT_A, quantity: 2 });
+    const activeB = reservation({ productId: PRODUCT_B, quantity: 1 });
+    reservations.findByOrderId.mockResolvedValue([activeA, activeB]);
+    balances.lockBalances.mockResolvedValue([
+      balance({ productId: PRODUCT_A, reserved: 2, available: 8 }),
+      balance({ productId: PRODUCT_B, reserved: 1, available: 9 }),
+    ]);
+    reservations.lockByOrderId.mockResolvedValue([activeA, activeB]);
+    reservations.transitionFromActive
+      .mockResolvedValueOnce({
+        reservation: {
+          ...activeA,
+          status: InventoryReservationStatus.RELEASED,
+        },
+        transitioned: true,
+      })
+      .mockResolvedValueOnce({
+        reservation: {
+          ...activeB,
+          status: InventoryReservationStatus.RELEASED,
+        },
+        transitioned: true,
+      });
+    balances.releaseQuantity.mockResolvedValue(balance({ reserved: 0 }));
+    ledger.append.mockResolvedValue(
+      ledgerEntry({ type: InventoryLedgerType.RELEASE }),
+    );
+
+    const result = await service.releaseForOrder({
+      orderId: ORDER_ID,
+      actor: SYSTEM_ACTOR,
+    });
+
+    expect(balances.releaseQuantity).toHaveBeenCalledTimes(2);
+    expect(ledger.append).toHaveBeenCalledTimes(2);
+    expect(result.lines.map((line) => line.status)).toEqual([
+      InventoryReservationStatus.RELEASED,
+      InventoryReservationStatus.RELEASED,
+    ]);
+  });
+
+  it('replays release when every row is already RELEASED', async () => {
+    const released = reservation({
+      status: InventoryReservationStatus.RELEASED,
+    });
+    reservations.findByOrderId.mockResolvedValue([released]);
+    balances.lockBalances.mockResolvedValue([
+      balance({ reserved: 0, available: 10 }),
+    ]);
+    reservations.lockByOrderId.mockResolvedValue([released]);
+
+    const result = await service.releaseForOrder({
+      orderId: ORDER_ID,
+      actor: SYSTEM_ACTOR,
+    });
+
+    expect(result.lines[0]?.status).toBe(InventoryReservationStatus.RELEASED);
+    expect(balances.releaseQuantity).not.toHaveBeenCalled();
+    expect(ledger.append).not.toHaveBeenCalled();
+  });
+
+  it('conflicts release of SHIPPED or mixed reservation state', async () => {
+    const shipped = reservation({ status: InventoryReservationStatus.SHIPPED });
+    reservations.findByOrderId.mockResolvedValue([shipped]);
+    balances.lockBalances.mockResolvedValue([balance()]);
+    reservations.lockByOrderId.mockResolvedValue([shipped]);
+
+    await expect(
+      service.releaseForOrder({
+        orderId: ORDER_ID,
+        actor: SYSTEM_ACTOR,
+      }),
+    ).rejects.toBeInstanceOf(InventoryReservationConflictError);
+
+    const active = reservation({ productId: PRODUCT_A });
+    const released = reservation({
+      productId: PRODUCT_B,
+      status: InventoryReservationStatus.RELEASED,
+    });
+    reservations.findByOrderId.mockResolvedValue([active, released]);
+    balances.lockBalances.mockResolvedValue([
+      balance({ productId: PRODUCT_A }),
+      balance({ productId: PRODUCT_B }),
+    ]);
+    reservations.lockByOrderId.mockResolvedValue([active, released]);
+
+    await expect(
+      service.releaseForOrder({
+        orderId: ORDER_ID,
+        actor: SYSTEM_ACTOR,
+      }),
+    ).rejects.toMatchObject({
+      message: InventoryHttpMessage.RESERVATION_CONFLICT,
+    });
+    expect(balances.releaseQuantity).not.toHaveBeenCalled();
+  });
+
+  it('returns not found when the order has no reservation rows', async () => {
+    reservations.findByOrderId.mockResolvedValue([]);
+
+    await expect(
+      service.releaseForOrder({
+        orderId: ORDER_ID,
+        actor: SYSTEM_ACTOR,
+      }),
+    ).rejects.toMatchObject({
+      code: 'INVENTORY_RESERVATION_NOT_FOUND',
+      message: InventoryHttpMessage.RESERVATION_NOT_FOUND,
+    });
+    expect(balances.lockBalances).not.toHaveBeenCalled();
   });
 
   it('releases only from ACTIVE and is idempotent when already RELEASED', async () => {
@@ -253,7 +553,7 @@ describe('InventoryService persistence primitives', () => {
 
     const result = await service.releaseReservation({
       orderId: ORDER_ID,
-      productId: PRODUCT_ID,
+      productId: PRODUCT_A,
       actor: SYSTEM_ACTOR,
     });
 
@@ -284,12 +584,12 @@ describe('InventoryService persistence primitives', () => {
 
     await service.shipReservation({
       orderId: ORDER_ID,
-      productId: PRODUCT_ID,
+      productId: PRODUCT_A,
       actor: SYSTEM_ACTOR,
     });
 
     expect(balances.shipQuantity).toHaveBeenCalledWith(
-      PRODUCT_ID,
+      PRODUCT_A,
       2,
       expect.anything(),
     );
@@ -297,16 +597,16 @@ describe('InventoryService persistence primitives', () => {
 
   it('inspects multi-SKU availability after locking, without writing', async () => {
     balances.lockBalances.mockResolvedValue([
-      balance({ productId: PRODUCT_ID, onHand: 2, reserved: 0, available: 2 }),
+      balance({ productId: PRODUCT_A, onHand: 2, reserved: 0, available: 2 }),
     ]);
 
     const result = await service.lockAndInspectAvailability({
-      items: [{ productId: PRODUCT_ID, quantity: 5 }],
+      items: [{ productId: PRODUCT_A, quantity: 5 }],
       tx: { [TRANSACTION_CONTEXT_BRAND]: true },
     });
 
     expect(result.inspection.shortages).toEqual([
-      { productId: PRODUCT_ID, requested: 5, available: 2 },
+      { productId: PRODUCT_A, requested: 5, available: 2 },
     ]);
     expect(balances.reserveQuantity).not.toHaveBeenCalled();
   });

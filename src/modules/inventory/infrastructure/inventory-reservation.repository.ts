@@ -18,6 +18,12 @@ import {
 } from '../domain/inventory-quantity';
 import { translateInventoryPersistenceError } from './inventory-persistence-errors';
 
+/**
+ * Advisory-lock class id for order-scoped Inventory reservation operations.
+ * Keyed with hashtext(orderId) so the pair stays inside int4.
+ */
+const INVENTORY_ORDER_ADVISORY_LOCK_CLASS = 120_300;
+
 type PrismaReservation = {
   id: string;
   orderId: string;
@@ -60,6 +66,47 @@ export class InventoryReservationRepository {
       },
     });
     return found === null ? null : mapReservation(found);
+  }
+
+  /**
+   * Order-driven lookup only. UNIQUE(orderId, productId) already prefixes
+   * `orderId`; do not add a duplicate index.
+   */
+  async findByOrderId(
+    orderId: string,
+    tx?: TransactionContext,
+  ): Promise<InventoryReservation[]> {
+    return this.loadByOrderId(orderId, false, tx);
+  }
+
+  /**
+   * Lock reservation rows for an order in productId order. Callers must already
+   * hold Inventory row locks for those products (inventory first).
+   */
+  async lockByOrderId(
+    orderId: string,
+    tx: TransactionContext,
+  ): Promise<InventoryReservation[]> {
+    return this.loadByOrderId(orderId, true, tx);
+  }
+
+  /**
+   * Transaction-scoped PostgreSQL advisory lock for one orderId. Serializes
+   * same-order reserve/release before Inventory row locks so disjoint-SKU
+   * retries cannot create a partial reservation set. Not a Redis lock.
+   */
+  async lockOrderScope(orderId: string, tx: TransactionContext): Promise<void> {
+    const order = assertInventoryUuid(orderId, 'orderId');
+    try {
+      await this.db(tx).$queryRaw(Prisma.sql`
+        SELECT pg_advisory_xact_lock(
+          ${INVENTORY_ORDER_ADVISORY_LOCK_CLASS},
+          hashtext(${order}::text)
+        )
+      `);
+    } catch (error: unknown) {
+      translateInventoryPersistenceError(error);
+    }
   }
 
   async insertActive(
@@ -151,6 +198,33 @@ export class InventoryReservationRepository {
         return null;
       }
       return { reservation: current, transitioned: result.count === 1 };
+    } catch (error: unknown) {
+      translateInventoryPersistenceError(error);
+    }
+  }
+
+  private async loadByOrderId(
+    orderId: string,
+    forUpdate: boolean,
+    tx?: TransactionContext,
+  ): Promise<InventoryReservation[]> {
+    const order = assertInventoryUuid(orderId, 'orderId');
+    try {
+      const rows = forUpdate
+        ? await this.db(tx).$queryRaw<PrismaReservation[]>(Prisma.sql`
+            SELECT "id", "orderId", "productId", "quantity", "status", "createdAt", "updatedAt"
+            FROM "InventoryReservation"
+            WHERE "orderId" = ${order}::uuid
+            ORDER BY "productId" ASC
+            FOR UPDATE
+          `)
+        : await this.db(tx).$queryRaw<PrismaReservation[]>(Prisma.sql`
+            SELECT "id", "orderId", "productId", "quantity", "status", "createdAt", "updatedAt"
+            FROM "InventoryReservation"
+            WHERE "orderId" = ${order}::uuid
+            ORDER BY "productId" ASC
+          `);
+      return rows.map(mapReservation);
     } catch (error: unknown) {
       translateInventoryPersistenceError(error);
     }

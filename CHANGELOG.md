@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Native Redis/BullMQ integration (LOCAL-REDIS-01): pad OTP challenge/grant Redis `EXPIRE` by 60s beyond logical expiry so consume can return `expired` before key eviction; reject BullMQ queue names containing `:`; use hyphenated integration queue names; expand Redis/BullMQ real-infrastructure probes (clients, retry/fail retention, custom job ids, key patterns).
 - Native PostgreSQL 17 order-create concurrency (LOCAL-PG-01): recover identical/conflicted idempotent creates after REPEATABLE READ + advisory-lock waiters miss the winner without querying an aborted transaction (25P02); raise Prisma/`pg` pool capacity for stampede waiters; map unique violations to idempotency conflicts; remove invalid `CHR(0)` media migration check; fix Inventory SQL/`$executeRaw` advisory-lock and ship-suite expectations exposed on real PG 17.
 
 ### Added

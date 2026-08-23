@@ -14,6 +14,10 @@ export function redisIntegrationKeyPrefix(testRunId: string): string {
   return `eggship:integration:${testRunId}`;
 }
 
+/**
+ * BullMQ forbids `:` in queue names (Redis key separator). Use hyphenated
+ * EggShip isolation prefixes instead.
+ */
 export function bullmqIntegrationQueueName(testRunId: string): string {
-  return `eggship:integration:q:${testRunId}`;
+  return `eggship-integration-q-${testRunId}`;
 }

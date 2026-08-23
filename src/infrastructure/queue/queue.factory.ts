@@ -29,6 +29,11 @@ export class QueueFactory implements OnModuleDestroy {
         'Cannot create a queue when REDIS_URL is not configured.',
       );
     }
+    if (queueName.includes(':')) {
+      throw new Error(
+        'Queue name cannot contain ":"; BullMQ uses colon as a Redis key separator.',
+      );
+    }
     const connection = this.redisClientFactory.createQueueClient(url);
     const queue = new Queue<AsyncJobEnvelope<Data>, Result, Name>(queueName, {
       connection,

@@ -21,6 +21,7 @@ import {
   otpPhoneCooldownKey,
   otpPhoneWindowKey,
   OTP_REDIS_KEY_PREFIX,
+  otpRedisKeyTtlSeconds,
   otpVerificationGrantKey,
   otpWindowBucketId,
 } from './otp-redis-keys';
@@ -64,7 +65,7 @@ export class RedisOtpStore implements OtpStore {
         otpPhoneActiveKey(phoneFingerprint),
         otpChallengeKey(input.challengeId),
         String(input.resendCooldownSeconds),
-        String(input.ttlSeconds),
+        String(otpRedisKeyTtlSeconds(input.ttlSeconds)),
         input.challengeId,
         input.phone,
         input.purpose,
@@ -132,7 +133,7 @@ export class RedisOtpStore implements OtpStore {
         OTP_REDIS_KEY_PREFIX,
         '300',
         input.grantId,
-        String(input.grantTtlSeconds),
+        String(otpRedisKeyTtlSeconds(input.grantTtlSeconds)),
         String(input.grantCreatedAtUnixMs),
         String(grantExpiresAtUnixMs),
       )) as string[];

@@ -17,6 +17,7 @@ import {
 import {
   otpVerificationGrantConsumedKey,
   otpVerificationGrantKey,
+  otpRedisKeyTtlSeconds,
 } from './otp-redis-keys';
 
 /** Keep consumed markers long enough to defeat immediate replay after delete. */
@@ -39,7 +40,7 @@ export class RedisOtpVerificationGrantStore implements OtpVerificationGrantStore
         input.challengeId,
         String(input.createdAtUnixMs),
         String(expiresAtUnixMs),
-        String(input.ttlSeconds),
+        String(otpRedisKeyTtlSeconds(input.ttlSeconds)),
       );
     });
   }

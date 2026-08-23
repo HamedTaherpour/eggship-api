@@ -20,6 +20,7 @@ BullMQ provides asynchronous delivery over Redis. It is infrastructure for expli
 ## Producers and workers
 
 - Queue producers live behind an explicit application-facing contract. Domain and controller code must not depend directly on BullMQ or ioredis.
+- Queue names must not contain `:`. BullMQ uses colon as a Redis key separator; `QueueFactory` rejects colon-bearing names.
 - Workers are composition roots. They deserialize the envelope, establish context, enforce a processor timeout, and delegate to an application service; business logic does not belong in a processor callback.
 - The intended deployment has separately scalable API and worker processes sharing application modules. Do not create a worker entrypoint until at least one approved queue and processor exist.
 - Concurrency, lock duration, retries, backoff, retention, payload limits, and timeouts must be deliberately reviewed per queue. Shared defaults are a baseline and may be overridden only with a documented reason.

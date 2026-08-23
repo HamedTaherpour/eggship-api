@@ -3,6 +3,17 @@ import { createHash } from 'node:crypto';
 /** Versioned OTP key namespace. Do not log these keys. */
 export const OTP_REDIS_KEY_PREFIX = 'eggship:auth:otp:v1' as const;
 
+/**
+ * Extra Redis key lifetime beyond logical `expiresAtUnixMs`.
+ * Lets consume scripts observe logical expiry and return `expired` before
+ * Redis evicts the key (aligned EXPIRE would otherwise surface as `missing`).
+ */
+export const OTP_REDIS_EXPIRY_GRACE_SECONDS = 60;
+
+export function otpRedisKeyTtlSeconds(logicalTtlSeconds: number): number {
+  return logicalTtlSeconds + OTP_REDIS_EXPIRY_GRACE_SECONDS;
+}
+
 export function otpChallengeKey(challengeId: string): string {
   return `${OTP_REDIS_KEY_PREFIX}:challenge:${challengeId}`;
 }

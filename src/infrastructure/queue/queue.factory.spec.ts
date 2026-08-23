@@ -26,4 +26,25 @@ describe('QueueFactory', () => {
       'Cannot create a queue when REDIS_URL is not configured.',
     );
   });
+
+  it('rejects queue names that contain colon separators', () => {
+    const logger = new ApplicationLogger(
+      new ConfigService({
+        NODE_ENV: 'test',
+        APP_VERSION: '0.1.0-test',
+        GIT_SHA: 'test',
+      }),
+      new RequestContextService(),
+      new PassThrough(),
+    );
+    const factory = new QueueFactory(
+      new ConfigService({ REDIS_URL: 'redis://127.0.0.1:6379' }),
+      new RedisClientFactory(),
+      logger,
+    );
+
+    expect(() => factory.create('eggship:bad')).toThrow(
+      'Queue name cannot contain ":"',
+    );
+  });
 });

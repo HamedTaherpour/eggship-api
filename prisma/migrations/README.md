@@ -19,3 +19,7 @@ Business migrations live here and are applied with `prisma migrate deploy`.
 | `20260822180000_order_pricing_snapshots`        | ORD-03 Order pricing / discount snapshot columns             |
 
 Integration suites apply migrations with `prisma migrate deploy` against `TEST_DATABASE_URL`. Do not use `prisma db push` as the canonical path.
+
+## LOCAL-PG-01 migration evidence (2026-08-24)
+
+Repository history shows `20260821240000_media_library` was introduced in `d39ea20` and its invalid `CHR(0)` check was corrected in `ac06b87`. The dedicated local `eggship_test` database reports the corrected migration as finished with one applied step and no rollback. Repository and local-test evidence cannot prove whether any shared staging/production environment attempted the earlier checksum. A human must inspect each shared environment's `_prisma_migrations` row and schema state before its next deploy; do not infer safety or invent a forward migration without that audit.

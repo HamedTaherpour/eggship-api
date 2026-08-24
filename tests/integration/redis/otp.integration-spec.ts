@@ -13,9 +13,16 @@ import { RedisService } from '../../../src/infrastructure/redis/redis.service';
 import { OTP_PURPOSE_CUSTOMER_AUTH } from '../../../src/modules/auth/domain/otp-challenge';
 import { digestOtpCode } from '../../../src/modules/auth/domain/otp-digest';
 import {
-  OTP_REDIS_KEY_PREFIX,
+  fingerprintSensitiveValue,
   otpChallengeKey,
+  otpPhoneActiveKey,
+  otpPhoneCooldownKey,
+  otpPhoneWindowKey,
+  otpVerificationGrantConsumedKey,
+  otpVerificationGrantKey,
+  otpWindowBucketId,
 } from '../../../src/modules/auth/infrastructure/otp-redis-keys';
+import { otpConsumedKey } from '../../../src/modules/auth/infrastructure/otp-lua-scripts';
 import { RedisOtpStore } from '../../../src/modules/auth/infrastructure/redis-otp-store';
 import { redisIntegrationKeyPrefix } from '../support/test-run-id';
 
@@ -24,6 +31,7 @@ describe('Redis OTP store (integration)', () => {
   let store: RedisOtpStore;
   let client: Redis;
   let keyPrefix: string;
+  const ownedKeys = new Set<string>();
   const hashSecret = 'integration-otp-hash-secret-32chars-min';
 
   beforeAll(async () => {
@@ -60,14 +68,7 @@ describe('Redis OTP store (integration)', () => {
   });
 
   afterAll(async () => {
-    const otpKeys = await client.keys(`${OTP_REDIS_KEY_PREFIX}:*`);
-    if (otpKeys.length > 0) {
-      await client.del(...otpKeys);
-    }
-    const integrationKeys = await client.keys(`${keyPrefix}:*`);
-    if (integrationKeys.length > 0) {
-      await client.del(...integrationKeys);
-    }
+    await deleteOwnedKeys();
     if (client.status === 'ready') {
       await client.quit();
     } else {
@@ -77,11 +78,37 @@ describe('Redis OTP store (integration)', () => {
   });
 
   afterEach(async () => {
-    const otpKeys = await client.keys(`${OTP_REDIS_KEY_PREFIX}:*`);
-    if (otpKeys.length > 0) {
-      await client.del(...otpKeys);
-    }
+    await deleteOwnedKeys();
   });
+
+  async function deleteOwnedKeys(): Promise<void> {
+    if (ownedKeys.size > 0) {
+      await client.del(...ownedKeys);
+      ownedKeys.clear();
+    }
+  }
+
+  function trackChallenge(challengeId: string, phone: string): void {
+    const phoneFingerprint = fingerprintSensitiveValue(phone);
+    ownedKeys.add(otpChallengeKey(challengeId));
+    ownedKeys.add(otpConsumedKey(challengeId));
+    ownedKeys.add(otpPhoneActiveKey(phoneFingerprint));
+    ownedKeys.add(otpPhoneCooldownKey(phoneFingerprint));
+  }
+
+  function trackGrant(grantId: string): void {
+    ownedKeys.add(otpVerificationGrantKey(grantId));
+    ownedKeys.add(otpVerificationGrantConsumedKey(grantId));
+  }
+
+  function trackPhoneWindow(phone: string, windowSeconds: number): void {
+    ownedKeys.add(
+      otpPhoneWindowKey(
+        fingerprintSensitiveValue(phone),
+        otpWindowBucketId(Date.now(), windowSeconds),
+      ),
+    );
+  }
 
   async function createChallenge(options?: {
     phone?: string;
@@ -93,6 +120,7 @@ describe('Redis OTP store (integration)', () => {
     const challengeId = randomUUID();
     const phone = options?.phone ?? `+98912${String(Date.now()).slice(-7)}`;
     const code = options?.code ?? '482913';
+    trackChallenge(challengeId, phone);
     const created = await store.createChallenge({
       challengeId,
       phone,
@@ -152,15 +180,17 @@ describe('Redis OTP store (integration)', () => {
     const { challengeId, code } = await createChallenge();
     const digest = digestOtpCode(code, hashSecret);
     const results = await Promise.all(
-      Array.from({ length: 20 }, (_, index) =>
-        store.consumeChallengeAndMintGrant({
+      Array.from({ length: 20 }, (_, index) => {
+        const grantId = randomUUID();
+        trackGrant(grantId);
+        return store.consumeChallengeAndMintGrant({
           challengeId,
           codeDigest: digest,
-          grantId: randomUUID(),
+          grantId,
           grantTtlSeconds: 120,
           grantCreatedAtUnixMs: Date.now() + index,
-        }),
-      ),
+        });
+      }),
     );
     const matched = results.filter((r) => r.status === 'matched');
     expect(matched).toHaveLength(1);
@@ -195,6 +225,7 @@ describe('Redis OTP store (integration)', () => {
     const phone = '+989121111111';
     await createChallenge({ phone, cooldownSeconds: 60 });
     const secondId = randomUUID();
+    trackChallenge(secondId, phone);
     const second = await store.createChallenge({
       challengeId: secondId,
       phone,
@@ -211,12 +242,14 @@ describe('Redis OTP store (integration)', () => {
   it('enforces phone request windows', async () => {
     const phone = '+989122222222';
     for (let i = 0; i < 5; i += 1) {
+      trackPhoneWindow(phone, 3600);
       const result = await store.incrementPhoneRequestCount(phone, {
         limit: 5,
         windowSeconds: 3600,
       });
       expect(result.allowed).toBe(true);
     }
+    trackPhoneWindow(phone, 3600);
     const blocked = await store.incrementPhoneRequestCount(phone, {
       limit: 5,
       windowSeconds: 3600,
@@ -227,9 +260,11 @@ describe('Redis OTP store (integration)', () => {
   it('serializes concurrent createChallenge for the same phone to one success', async () => {
     const phone = '+989123333333';
     const results = await Promise.all(
-      Array.from({ length: 10 }, (_, index) =>
-        store.createChallenge({
-          challengeId: randomUUID(),
+      Array.from({ length: 10 }, (_, index) => {
+        const challengeId = randomUUID();
+        trackChallenge(challengeId, phone);
+        return store.createChallenge({
+          challengeId,
           phone,
           purpose: OTP_PURPOSE_CUSTOMER_AUTH,
           codeDigest: digestOtpCode(String(100000 + index), hashSecret),
@@ -237,8 +272,8 @@ describe('Redis OTP store (integration)', () => {
           ttlSeconds: 120,
           resendCooldownSeconds: 60,
           createdAtUnixMs: Date.now(),
-        }),
-      ),
+        });
+      }),
     );
     expect(results.filter((r) => r.status === 'created')).toHaveLength(1);
     expect(results.filter((r) => r.status === 'cooldown')).toHaveLength(9);
@@ -246,9 +281,11 @@ describe('Redis OTP store (integration)', () => {
 
   it('cleans up OTP challenge keys without flushing unrelated namespaces', async () => {
     const sentinel = `${keyPrefix}:bullmq-sentinel`;
+    ownedKeys.add(sentinel);
     await client.set(sentinel, '1', 'EX', 60);
     const phone = '+989124444444';
     const id = randomUUID();
+    trackChallenge(id, phone);
     await store.createChallenge({
       challengeId: id,
       phone,

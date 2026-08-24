@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { INestApplicationContext } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { Prisma } from '../../../src/generated/prisma/client';
 import { postgresIntegrationImports } from '../support/postgres-testing-module';
 import { PrismaService } from '../../../src/infrastructure/database/prisma/prisma.service';
 import { TransactionRunner } from '../../../src/infrastructure/database/transaction';
@@ -11,10 +12,7 @@ import type { RegionRecord } from '../../../src/modules/regions/domain/region';
 import type { UserRecord } from '../../../src/modules/users/domain/user';
 import { RegionRepository } from '../../../src/modules/regions/infrastructure/region.repository';
 import { hashOrderCreatePayload } from '../../../src/modules/orders/domain/order-create-idempotency';
-import {
-  OrderIdempotencyConflictError,
-  OrderInvalidInputError,
-} from '../../../src/modules/orders/domain/order-errors';
+import { OrderInvalidInputError } from '../../../src/modules/orders/domain/order-errors';
 import type { TrustedCreateOrderInput } from '../../../src/modules/orders/domain/order';
 import { OrderRepository } from '../../../src/modules/orders/infrastructure/order.repository';
 import { OrdersModule } from '../../../src/modules/orders/orders.module';
@@ -277,7 +275,7 @@ describe('Order persistence (integration)', () => {
     ).rejects.toThrow();
   });
 
-  it('rejects duplicate idempotency keys for the same user', async () => {
+  it('preserves the database error for duplicate repository writes', async () => {
     const { user, region, product } = await seedOrderContext();
     const idempotencyKey = randomUUID();
 
@@ -289,7 +287,10 @@ describe('Order persistence (integration)', () => {
       orders.createWithTrustedSnapshots(
         trustedCreate({ user, region, product, idempotencyKey }),
       ),
-    ).rejects.toBeInstanceOf(OrderIdempotencyConflictError);
+    ).rejects.toMatchObject({
+      name: Prisma.PrismaClientKnownRequestError.name,
+      code: 'P2002',
+    });
   });
 
   it('rolls back order creation when a line violates constraints', async () => {

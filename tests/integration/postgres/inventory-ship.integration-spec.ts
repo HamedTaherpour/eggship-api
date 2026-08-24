@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { INestApplicationContext } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { Prisma } from '../../../src/generated/prisma/client';
 import {
   postgresIntegrationImports,
   unusedPricingServiceProvider,
@@ -521,11 +522,12 @@ describe('Inventory ship (integration)', () => {
 
     // Cannot set onHand < reserved (DB CHECK). Inflate the reservation
     // quantity instead so ship fails the reserved-balance predicate.
-    await prisma.$executeRawUnsafe(
-      `UPDATE "InventoryReservation" SET quantity = 100 WHERE "orderId" = $1::uuid AND "productId" = $2::uuid`,
-      orderId,
-      second,
-    );
+    await prisma.$executeRaw(Prisma.sql`
+      UPDATE "InventoryReservation"
+      SET quantity = 100
+      WHERE "orderId" = ${orderId}::uuid
+        AND "productId" = ${second}::uuid
+    `);
 
     await expect(
       inventory.shipForOrder({ orderId, actor: SYSTEM_ACTOR }),

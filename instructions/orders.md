@@ -100,6 +100,8 @@ Failure at any step rolls back Order, lines, and reservation. No Order without r
 - Same user + key + same logical payload → return the existing Order (no second reserve)
 - Same key + materially different payload → `ORDER_IDEMPOTENCY_CONFLICT`
 - Concurrent duplicates serialize on the advisory lock before Inventory side effects
+- A waiter that receives a structured unique violation under RR may read again only after rollback. Replay/conflict requires a fresh `(userId, idempotencyKey)` row; if none exists, preserve the original database failure.
+- Retry only exact Prisma `P2034` / PostgreSQL `40001` serialization failures, with bounded attempts. Message text alone is never a retry signal.
 
 Do not rely on frontend button disabling.
 

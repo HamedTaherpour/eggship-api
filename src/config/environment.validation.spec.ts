@@ -16,6 +16,9 @@ describe('validateEnvironment', () => {
       NODE_ENV: 'test',
       PORT: 3000,
       DATABASE_URL: 'postgresql://example.invalid/eggship',
+      DATABASE_POOL_MAX: 10,
+      DATABASE_CONNECTION_TIMEOUT_MS: 5_000,
+      DATABASE_IDLE_TIMEOUT_MS: 30_000,
       APP_VERSION: '0.1.0',
       GIT_SHA: 'local',
       JWT_ACCESS_SECRET: 'unit-test-jwt-access-secret-32chars!!',
@@ -46,6 +49,43 @@ describe('validateEnvironment', () => {
     expect(() =>
       validateEnvironment({ ...validEnvironment, DATABASE_URL: '' }),
     ).toThrow('DATABASE_URL is required.');
+  });
+
+  it('parses bounded PostgreSQL pool overrides', () => {
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        DATABASE_POOL_MAX: '32',
+        DATABASE_CONNECTION_TIMEOUT_MS: '10000',
+        DATABASE_IDLE_TIMEOUT_MS: '60000',
+      }),
+    ).toMatchObject({
+      DATABASE_POOL_MAX: 32,
+      DATABASE_CONNECTION_TIMEOUT_MS: 10_000,
+      DATABASE_IDLE_TIMEOUT_MS: 60_000,
+    });
+  });
+
+  it('rejects PostgreSQL pool settings outside conservative bounds', () => {
+    expect(() =>
+      validateEnvironment({ ...validEnvironment, DATABASE_POOL_MAX: '51' }),
+    ).toThrow('DATABASE_POOL_MAX must be an integer between 1 and 50.');
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        DATABASE_CONNECTION_TIMEOUT_MS: '60000',
+      }),
+    ).toThrow(
+      'DATABASE_CONNECTION_TIMEOUT_MS must be an integer between 250 and 30000.',
+    );
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        DATABASE_IDLE_TIMEOUT_MS: '500',
+      }),
+    ).toThrow(
+      'DATABASE_IDLE_TIMEOUT_MS must be an integer between 1000 and 300000.',
+    );
   });
 
   it('rejects invalid ports', () => {

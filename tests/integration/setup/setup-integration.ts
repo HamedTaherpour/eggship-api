@@ -8,7 +8,9 @@ import {
 
 const suite = parseSuite(process.env['INTEGRATION_SUITE']);
 
-mergeIntegrationKeysIntoProcessEnv(readIntegrationKeysFromEnvFile());
+mergeIntegrationKeysIntoProcessEnv(
+  readIntegrationKeysFromEnvFile(process.cwd(), process.env, suite),
+);
 const resolved = resolveIntegrationEnvironment({ suite });
 applyIntegrationEnvironment(resolved);
 

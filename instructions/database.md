@@ -2,11 +2,19 @@
 
 - PostgreSQL is the source of truth. Prisma is a persistence technology, not a domain API.
 - Transaction boundaries belong in the application/service layer. Never perform network calls inside a database transaction.
+- After a PostgreSQL statement error such as a unique violation, that transaction is aborted and must not be queried again. Recover only after rollback, using a fresh transaction/connection when a post-failure read is required.
 - Enforce important invariants with database constraints where appropriate, in addition to application checks.
 - Migrations are versioned, reviewed, and deployed with `prisma migrate deploy`. Never use `prisma db push` for production deployment.
 - Destructive or data-rewriting migrations require explicit review and an operational rollback or recovery plan.
 - Historical business records such as orders, audit events, and inventory ledger entries must not be casually hard-deleted.
 - When Redis is introduced later, it must never be authoritative for critical order or inventory state.
+
+## Connection budgeting
+
+- PostgreSQL pools are configured per process. The baseline is `DATABASE_POOL_MAX=10` (validated range `1`–`50`), a 5-second acquisition timeout, and a 30-second idle timeout.
+- Capacity planning must budget at least `API replicas × API pool max + worker replicas × worker DB pool max`, plus migrations and operator connections, within the database service limit.
+- Integration concurrency must not dictate production sizing. The real-PostgreSQL harness may use an explicit test-only override for deliberate stampedes.
+- Increasing a pool is not a substitute for bounded request concurrency, query/lock analysis, or database capacity review.
 
 ## Inventory raw SQL
 
@@ -28,6 +36,8 @@ CHECK constraints, unique indexes, and `ON DELETE RESTRICT` remain the database-
 | Generate Prisma Client                 | `pnpm prisma:generate`       |
 
 Development may create migrations with the Prisma development workflow and must commit the generated SQL. Staging and production deployment must use `migrate deploy` (or the repository-approved equivalent). Never use `prisma db push` for staging or production.
+
+Never rewrite a migration that has been applied to a shared environment. Correct it with a reviewed forward migration or an explicit migration-recovery procedure. Editing an existing migration is allowed only when deployment evidence proves it has not been attempted outside disposable/local resources; record that evidence with the change.
 
 Before destructive migrate, reset, or seed operations, the target environment identity must be explicit and non-production unless a separately approved production procedure exists.
 

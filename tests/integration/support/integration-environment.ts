@@ -46,12 +46,24 @@ const SYNTHETIC_UNIT_DATABASE_URL = 'postgresql://example.invalid/eggship_test';
  */
 export function readIntegrationKeysFromEnvFile(
   rootDir: string = process.cwd(),
+  env: NodeJS.ProcessEnv = process.env,
+  suite: IntegrationSuite = 'all',
 ): Record<string, string> {
   const envPath = join(rootDir, '.env');
   if (!existsSync(envPath)) {
     return {};
   }
-  return pickIntegrationKeys(parseEnvFile(readFileSync(envPath, 'utf8')));
+  const values = parseEnvFile(readFileSync(envPath, 'utf8'));
+  if (suite === 'all' || suite === 'redis') {
+    assertDistinctRedisTargets({
+      REDIS_URL: effectiveEnvValue(env['REDIS_URL'], values['REDIS_URL']),
+      TEST_REDIS_URL: effectiveEnvValue(
+        env['TEST_REDIS_URL'],
+        values['TEST_REDIS_URL'],
+      ),
+    });
+  }
+  return pickIntegrationKeys(values);
 }
 
 export function pickIntegrationKeys(
@@ -93,6 +105,9 @@ export function resolveIntegrationEnvironment(options: {
   const allowDestructive = isExactTrue(env['INTEGRATION_ALLOW_DESTRUCTIVE']);
   const needsDatabase = options.suite === 'all' || options.suite === 'postgres';
   const needsRedis = options.suite === 'all' || options.suite === 'redis';
+  if (needsRedis) {
+    assertDistinctRedisTargets(env);
+  }
   assertNotUsingRuntimeInfrastructureUrls(env, {
     needsDatabase,
     needsRedis,
@@ -100,10 +115,10 @@ export function resolveIntegrationEnvironment(options: {
 
   const databaseUrl = needsDatabase
     ? requireTestUrl(env, 'TEST_DATABASE_URL', 'postgres')
-    : optionalTestUrl(env, 'TEST_DATABASE_URL', 'postgres');
+    : undefined;
   const redisUrl = needsRedis
     ? requireTestUrl(env, 'TEST_REDIS_URL', 'redis')
-    : optionalTestUrl(env, 'TEST_REDIS_URL', 'redis');
+    : undefined;
 
   return {
     suite: options.suite,
@@ -163,6 +178,16 @@ export function applyIntegrationEnvironment(
   if (resolved.databaseUrl !== undefined) {
     env['TEST_DATABASE_URL'] = resolved.databaseUrl;
     env['DATABASE_URL'] = resolved.databaseUrl;
+    // The order-create integration suite deliberately creates a 20-way
+    // advisory-lock stampede. Keep that test budget out of production defaults.
+    env['DATABASE_POOL_MAX'] = '32';
+    env['DATABASE_CONNECTION_TIMEOUT_MS'] = '5000';
+    env['DATABASE_IDLE_TIMEOUT_MS'] = '10000';
+  } else {
+    // Environment validation requires this setting even when a Redis-only
+    // testing module never constructs Prisma. Keep runtime DB credentials out
+    // of that suite with the established non-routable unit/e2e placeholder.
+    env['DATABASE_URL'] = SYNTHETIC_UNIT_DATABASE_URL;
   }
   if (resolved.redisUrl !== undefined) {
     env['TEST_REDIS_URL'] = resolved.redisUrl;
@@ -213,6 +238,54 @@ function assertNotUsingRuntimeInfrastructureUrls(
       'Refusing to use REDIS_URL for integration tests. Set TEST_REDIS_URL to a dedicated disposable Redis resource.',
     );
   }
+}
+
+export function assertDistinctRedisTargets(
+  env: NodeJS.ProcessEnv | Record<string, string>,
+): void {
+  const runtimeUrl = env['REDIS_URL'];
+  const testUrl = env['TEST_REDIS_URL'];
+  if (!hasNonEmpty(runtimeUrl) || !hasNonEmpty(testUrl)) {
+    return;
+  }
+  const runtimeTarget = redisTargetIdentity(runtimeUrl);
+  const testTarget = redisTargetIdentity(testUrl);
+  if (
+    runtimeTarget === undefined ||
+    testTarget === undefined ||
+    runtimeTarget !== testTarget
+  ) {
+    return;
+  }
+  throw new IntegrationEnvironmentError(
+    'TEST_REDIS_URL must use a different Redis endpoint or database from REDIS_URL.',
+  );
+}
+
+function redisTargetIdentity(value: string): string | undefined {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'redis:' && url.protocol !== 'rediss:') {
+      return undefined;
+    }
+    const hostname = normalizeRedisHostname(url.hostname);
+    const rawDatabase = url.pathname.replace(/^\/+|\/+$/gu, '') || '0';
+    const database = /^\d+$/u.test(rawDatabase)
+      ? rawDatabase.replace(/^0+(?=\d)/u, '')
+      : rawDatabase;
+    return `${hostname}:${url.port || '6379'}/${database}`;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeRedisHostname(hostname: string): string {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/gu, '');
+  return normalized === 'localhost' ||
+    normalized === '127.0.0.1' ||
+    normalized === '::1'
+    ? 'loopback'
+    : normalized;
 }
 
 function requireTestUrl(
@@ -292,8 +365,15 @@ function isExactTrue(value: string | undefined): boolean {
   return value?.trim() === 'true';
 }
 
-function hasNonEmpty(value: string | undefined): boolean {
+function hasNonEmpty(value: string | undefined): value is string {
   return typeof value === 'string' && value.trim() !== '';
+}
+
+function effectiveEnvValue(
+  processValue: string | undefined,
+  fileValue: string | undefined,
+): string | undefined {
+  return hasNonEmpty(processValue) ? processValue : fileValue;
 }
 
 function parseEnvFile(contents: string): Record<string, string> {

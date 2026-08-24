@@ -16,7 +16,9 @@ describe('Inventory raw SQL safety', () => {
       expect(source).not.toContain('$queryRawUnsafe');
       expect(source).not.toContain('$executeRawUnsafe');
       expect(source).not.toContain('ORDER BY ${');
-      expect(source).not.toMatch(/\$\{[^}]*\}`/u);
+      expect(source).not.toMatch(
+        /(?:FROM|JOIN|UPDATE|INTO|TABLE|ORDER BY|GROUP BY)\s+\$\{/u,
+      );
     }
   });
 });

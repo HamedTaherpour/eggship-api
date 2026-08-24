@@ -11,25 +11,22 @@ import { RedisClientFactory } from '../../../src/infrastructure/redis/redis-clie
 import { RedisModule } from '../../../src/infrastructure/redis/redis.module';
 import { OTP_PURPOSE_CUSTOMER_AUTH } from '../../../src/modules/auth/domain/otp-challenge';
 import {
-  OTP_REDIS_KEY_PREFIX,
+  otpVerificationGrantConsumedKey,
   otpVerificationGrantKey,
 } from '../../../src/modules/auth/infrastructure/otp-redis-keys';
 import { RedisOtpVerificationGrantStore } from '../../../src/modules/auth/infrastructure/redis-otp-verification-grant-store';
-import { redisIntegrationKeyPrefix } from '../support/test-run-id';
 
 describe('Redis OTP verification grant store (integration)', () => {
   let app: INestApplicationContext;
   let store: RedisOtpVerificationGrantStore;
   let client: Redis;
-  let keyPrefix: string;
+  const ownedKeys = new Set<string>();
 
   beforeAll(async () => {
     const testRunId = process.env['EGGSHIP_TEST_RUN_ID'];
     if (testRunId === undefined || testRunId === '') {
       throw new Error('EGGSHIP_TEST_RUN_ID must be set by integration setup.');
     }
-    keyPrefix = redisIntegrationKeyPrefix(testRunId);
-
     const moduleRef = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot(createConfigModuleOptions()),
@@ -57,14 +54,7 @@ describe('Redis OTP verification grant store (integration)', () => {
   });
 
   afterAll(async () => {
-    const otpKeys = await client.keys(`${OTP_REDIS_KEY_PREFIX}:*`);
-    if (otpKeys.length > 0) {
-      await client.del(...otpKeys);
-    }
-    const integrationKeys = await client.keys(`${keyPrefix}:*`);
-    if (integrationKeys.length > 0) {
-      await client.del(...integrationKeys);
-    }
+    await deleteOwnedKeys();
     if (client.status === 'ready') {
       await client.quit();
     } else {
@@ -74,14 +64,24 @@ describe('Redis OTP verification grant store (integration)', () => {
   });
 
   afterEach(async () => {
-    const otpKeys = await client.keys(`${OTP_REDIS_KEY_PREFIX}:*`);
-    if (otpKeys.length > 0) {
-      await client.del(...otpKeys);
-    }
+    await deleteOwnedKeys();
   });
+
+  async function deleteOwnedKeys(): Promise<void> {
+    if (ownedKeys.size > 0) {
+      await client.del(...ownedKeys);
+      ownedKeys.clear();
+    }
+  }
+
+  function trackGrant(grantId: string): void {
+    ownedKeys.add(otpVerificationGrantKey(grantId));
+    ownedKeys.add(otpVerificationGrantConsumedKey(grantId));
+  }
 
   it('creates a grant bound to phone/purpose and consumes it once', async () => {
     const grantId = randomUUID();
+    trackGrant(grantId);
     const challengeId = randomUUID();
     await store.createGrant({
       grantId,
@@ -112,6 +112,7 @@ describe('Redis OTP verification grant store (integration)', () => {
 
   it('allows only one success among 20 concurrent grant consumes', async () => {
     const grantId = randomUUID();
+    trackGrant(grantId);
     await store.createGrant({
       grantId,
       phone: '+989129999999',
@@ -134,6 +135,7 @@ describe('Redis OTP verification grant store (integration)', () => {
 
   it('rejects expired grants', async () => {
     const grantId = randomUUID();
+    trackGrant(grantId);
     await store.createGrant({
       grantId,
       phone: '+989128888888',

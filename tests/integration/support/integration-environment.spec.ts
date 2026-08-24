@@ -1,5 +1,6 @@
 import {
   applyIntegrationEnvironment,
+  assertDistinctRedisTargets,
   assertDestructiveOperationsAllowed,
   IntegrationEnvironmentError,
   pickIntegrationKeys,
@@ -41,6 +42,52 @@ describe('integration environment guards', () => {
         },
       }),
     ).toThrow(/TEST_REDIS_URL/u);
+  });
+
+  it('rejects runtime and test Redis URLs that target the same database', () => {
+    expect(() =>
+      assertDistinctRedisTargets({
+        REDIS_URL: 'redis://runtime:secret@localhost:6379',
+        TEST_REDIS_URL: 'redis://test:secret@127.0.0.1:6379/00/',
+      }),
+    ).toThrow(
+      'TEST_REDIS_URL must use a different Redis endpoint or database from REDIS_URL.',
+    );
+    expect(() =>
+      assertDistinctRedisTargets({
+        REDIS_URL: 'redis://127.0.0.1:6379/0',
+        TEST_REDIS_URL: 'redis://127.0.0.1:6379/1',
+      }),
+    ).not.toThrow();
+  });
+
+  it('does not map or validate Redis targets for a PostgreSQL-only suite', () => {
+    const resolved = resolveIntegrationEnvironment({
+      suite: 'postgres',
+      env: {
+        INTEGRATION_TESTS_ENABLED: 'true',
+        TEST_DATABASE_URL: 'postgresql://test:test@127.0.0.1:5432/eggship_it',
+        REDIS_URL: 'redis://127.0.0.1:6379/0',
+        TEST_REDIS_URL: 'redis://127.0.0.1:6379/0',
+      },
+    });
+
+    expect(resolved.redisUrl).toBeUndefined();
+  });
+
+  it('uses a non-routable database placeholder for Redis-only validation', () => {
+    const env: NodeJS.ProcessEnv = {
+      INTEGRATION_TESTS_ENABLED: 'true',
+      TEST_REDIS_URL: 'redis://127.0.0.1:6379/1',
+      DATABASE_URL: 'postgresql://runtime:secret@db.example.com/eggship',
+    };
+    const resolved = resolveIntegrationEnvironment({ suite: 'redis', env });
+
+    applyIntegrationEnvironment(resolved, env);
+
+    expect(env['DATABASE_URL']).toBe(
+      'postgresql://example.invalid/eggship_test',
+    );
   });
 
   it('rejects the synthetic unit/e2e database URL', () => {
@@ -105,6 +152,9 @@ describe('integration environment guards', () => {
 
     applyIntegrationEnvironment(resolved, env);
     expect(env['DATABASE_URL']).toBe(resolved.databaseUrl);
+    expect(env['DATABASE_POOL_MAX']).toBe('32');
+    expect(env['DATABASE_CONNECTION_TIMEOUT_MS']).toBe('5000');
+    expect(env['DATABASE_IDLE_TIMEOUT_MS']).toBe('10000');
     expect(env['REDIS_URL']).toBe(resolved.redisUrl);
     expect(env['EGGSHIP_TEST_RUN_ID']).toBe('run_fixed');
   });

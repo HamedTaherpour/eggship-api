@@ -15,7 +15,7 @@ const root = process.cwd();
 const suite = parseSuite(process.argv);
 const env = { ...process.env };
 
-mergeIntegrationKeysFromDotEnv(env);
+mergeIntegrationKeysFromDotEnv(env, suite);
 assertEnabled(env);
 assertSuiteTargets(env, suite);
 
@@ -25,6 +25,11 @@ if (suite === 'all' || suite === 'postgres') {
 
 env['INTEGRATION_SUITE'] = suite;
 env['NODE_ENV'] = 'test';
+if (suite === 'redis') {
+  // Config validation requires DATABASE_URL, but Redis-only tests must not
+  // inherit runtime PostgreSQL credentials or contact PostgreSQL.
+  env['DATABASE_URL'] = 'postgresql://example.invalid/eggship_test';
+}
 
 const jestArgs = [
   'exec',
@@ -62,12 +67,21 @@ function parseSuite(argv) {
   );
 }
 
-function mergeIntegrationKeysFromDotEnv(env) {
+function mergeIntegrationKeysFromDotEnv(env, suiteName) {
   const envPath = join(root, '.env');
   if (!existsSync(envPath)) {
     return;
   }
   const values = parseEnvFile(readFileSync(envPath, 'utf8'));
+  if (suiteName === 'all' || suiteName === 'redis') {
+    assertDistinctRedisTargets({
+      REDIS_URL: effectiveEnvValue(env['REDIS_URL'], values['REDIS_URL']),
+      TEST_REDIS_URL: effectiveEnvValue(
+        env['TEST_REDIS_URL'],
+        values['TEST_REDIS_URL'],
+      ),
+    });
+  }
   for (const key of [
     'INTEGRATION_TESTS_ENABLED',
     'INTEGRATION_ALLOW_DESTRUCTIVE',
@@ -102,6 +116,9 @@ function assertSuiteTargets(env, suiteName) {
   const needsDatabase = suiteName === 'all' || suiteName === 'postgres';
   const needsRedis = suiteName === 'all' || suiteName === 'redis';
   const needsStorage = suiteName === 'storage';
+  if (needsRedis) {
+    assertDistinctRedisTargets(env);
+  }
 
   if (
     needsDatabase &&
@@ -156,6 +173,52 @@ function assertSuiteTargets(env, suiteName) {
   }
 }
 
+function assertDistinctRedisTargets(env) {
+  const runtimeUrl = env['REDIS_URL'];
+  const testUrl = env['TEST_REDIS_URL'];
+  if (!hasValue(runtimeUrl) || !hasValue(testUrl)) {
+    return;
+  }
+  const runtimeTarget = redisTargetIdentity(runtimeUrl);
+  const testTarget = redisTargetIdentity(testUrl);
+  if (
+    runtimeTarget === undefined ||
+    testTarget === undefined ||
+    runtimeTarget !== testTarget
+  ) {
+    return;
+  }
+  fail(
+    'TEST_REDIS_URL must use a different Redis endpoint or database from REDIS_URL.',
+  );
+}
+
+function redisTargetIdentity(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'redis:' && url.protocol !== 'rediss:') {
+      return undefined;
+    }
+    const hostname = normalizeRedisHostname(url.hostname);
+    const rawDatabase = url.pathname.replace(/^\/+|\/+$/gu, '') || '0';
+    const database = /^\d+$/u.test(rawDatabase)
+      ? rawDatabase.replace(/^0+(?=\d)/u, '')
+      : rawDatabase;
+    return `${hostname}:${url.port || '6379'}/${database}`;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeRedisHostname(hostname) {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/gu, '');
+  return normalized === 'localhost' ||
+    normalized === '127.0.0.1' ||
+    normalized === '::1'
+    ? 'loopback'
+    : normalized;
+}
+
 function runMigrations(env) {
   process.stdout.write(
     'integration: applying Prisma migrations to TEST_DATABASE_URL via migrate deploy\n',
@@ -203,6 +266,10 @@ function parseEnvFile(contents) {
 
 function hasValue(value) {
   return typeof value === 'string' && value.trim() !== '';
+}
+
+function effectiveEnvValue(processValue, fileValue) {
+  return hasValue(processValue) ? processValue : fileValue;
 }
 
 function assertNonProductionStorageTarget(env) {

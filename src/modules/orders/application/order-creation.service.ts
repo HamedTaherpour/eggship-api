@@ -35,11 +35,7 @@ import type {
   CreateOrderResult,
 } from './order-creation.commands';
 
-/**
- * Bounded retries when RR + Inventory row updates hit SQLSTATE 40001 / P2034,
- * or when an advisory-lock waiter inherits a pre-lock RR snapshot and misses
- * the winner's committed idempotency row (unique / conflict → fresh tx).
- */
+/** Bounded retries when RR + Inventory row updates hit SQLSTATE 40001 / P2034. */
 const CREATE_SERIALIZATION_MAX_ATTEMPTS = 5;
 
 /**
@@ -87,46 +83,51 @@ export class OrderCreationService {
       attempt += 1
     ) {
       try {
-        return await this.createOnce({
+        const result = await this.createOnce({
           userId,
           regionId,
           idempotencyKey,
           payloadHash,
           normalizedLines,
         });
+        if (result.created) {
+          this.logger.info(
+            {
+              module: 'orders',
+              operation: 'order.created',
+              orderId: result.order.id,
+              userId,
+              lineCount: result.order.lines.length,
+            },
+            'Order created with inventory reservation',
+          );
+        }
+        return result;
       } catch (error: unknown) {
         lastError = error;
 
         // REPEATABLE READ takes its snapshot at the first statement. A waiter
         // blocked on pg_advisory_xact_lock can therefore miss the winner's
-        // committed Order row and hit the unique index. Recover with a fresh
-        // read outside the aborted transaction, or retry createOnce so a new
-        // RR snapshot is taken after the lock wait completes.
+        // committed Order row and hit the unique index. Recover only when a
+        // fresh read outside the rolled-back transaction proves that exact
+        // idempotency row committed. Otherwise preserve the original failure.
         if (
           error instanceof OrderIdempotencyConflictError ||
           isUniqueConstraintFailure(error)
         ) {
-          const existing = await this.orders.findByUserIdAndIdempotencyKey(
-            userId,
-            idempotencyKey,
-          );
+          let existing: OrderRecord | null;
+          try {
+            existing = await this.orders.findByUserIdAndIdempotencyKey(
+              userId,
+              idempotencyKey,
+            );
+          } catch {
+            throw error;
+          }
           if (existing !== null) {
             return this.replayOrConflict(existing, payloadHash);
           }
-          if (attempt < CREATE_SERIALIZATION_MAX_ATTEMPTS) {
-            this.logger.info(
-              {
-                module: 'orders',
-                operation: 'order.create.idempotency_retry',
-                attempt,
-              },
-              'Retrying order create after idempotency unique miss under RR',
-            );
-            continue;
-          }
-          if (error instanceof OrderIdempotencyConflictError) {
-            throw error;
-          }
+          throw error;
         }
 
         if (
@@ -220,17 +221,6 @@ export class OrderCreationService {
         tx,
       );
 
-      this.logger.info(
-        {
-          module: 'orders',
-          operation: 'order.created',
-          orderId: created.id,
-          userId: input.userId,
-          lineCount: created.lines.length,
-        },
-        'Order created with inventory reservation',
-      );
-
       return { order: created, created: true };
     });
   }
@@ -314,11 +304,6 @@ export class OrderCreationService {
     if (error instanceof OrderInvalidMoneyError) {
       return new OrderInvalidMoneyError(OrderMessage.INVALID_INPUT);
     }
-    if (isUniqueConstraintFailure(error)) {
-      return new OrderIdempotencyConflictError(
-        OrderMessage.IDEMPOTENCY_CONFLICT,
-      );
-    }
     if (isSerializationFailure(error)) {
       return new OrderInvalidInputError(OrderMessage.CREATE_CONFLICT);
     }
@@ -339,15 +324,7 @@ function isSerializationFailure(error: unknown): boolean {
   ) {
     return true;
   }
-  if (error instanceof Error) {
-    const message = error.message.toLowerCase();
-    return (
-      message.includes('could not serialize access') ||
-      message.includes('serialization failure') ||
-      message.includes('40001')
-    );
-  }
-  return false;
+  return hasStructuredDatabaseCode(error, 'P2034', '40001');
 }
 
 function isUniqueConstraintFailure(error: unknown): boolean {
@@ -357,22 +334,47 @@ function isUniqueConstraintFailure(error: unknown): boolean {
   ) {
     return true;
   }
+  return hasStructuredDatabaseCode(error, 'P2002', '23505');
+}
+
+function hasStructuredDatabaseCode(
+  error: unknown,
+  prismaCode: string,
+  postgresCode: string,
+): boolean {
   if (typeof error !== 'object' || error === null) {
     return false;
   }
   const record = error as {
     code?: unknown;
-    message?: unknown;
-    meta?: { driverAdapterError?: { cause?: { code?: unknown } } };
+    cause?: { code?: unknown; originalCode?: unknown };
+    meta?: {
+      code?: unknown;
+      driverAdapterError?: {
+        cause?: { code?: unknown; originalCode?: unknown };
+      };
+    };
   };
-  if (record.code === '23505' || record.code === 'P2002') {
-    return true;
-  }
-  if (record.meta?.driverAdapterError?.cause?.code === '23505') {
-    return true;
-  }
-  if (typeof record.message === 'string') {
-    return /unique constraint|23505|p2002/i.test(record.message);
-  }
-  return false;
+  const supportedCodes = new Set([prismaCode, postgresCode]);
+  return (
+    isSupportedDatabaseCode(record.code, supportedCodes) ||
+    isSupportedDatabaseCode(record.cause?.code, supportedCodes) ||
+    isSupportedDatabaseCode(record.cause?.originalCode, supportedCodes) ||
+    isSupportedDatabaseCode(record.meta?.code, supportedCodes) ||
+    isSupportedDatabaseCode(
+      record.meta?.driverAdapterError?.cause?.code,
+      supportedCodes,
+    ) ||
+    isSupportedDatabaseCode(
+      record.meta?.driverAdapterError?.cause?.originalCode,
+      supportedCodes,
+    )
+  );
+}
+
+function isSupportedDatabaseCode(
+  value: unknown,
+  supportedCodes: ReadonlySet<string>,
+): boolean {
+  return typeof value === 'string' && supportedCodes.has(value);
 }

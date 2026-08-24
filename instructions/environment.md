@@ -52,6 +52,9 @@ Nest runtime variables are accepted only through `validateEnvironment`. Do not i
 | `NODE_ENV`                                            | Yes      | No     | All runtimes          | Node runtime mode                                                            | `development`                                                                                       |
 | `PORT`                                                | Yes      | No     | All runtimes          | HTTP listen port (1–65535)                                                   | `3000`                                                                                              |
 | `DATABASE_URL`                                        | Yes      | Yes    | App start, Prisma CLI | PostgreSQL connection URL (`postgresql://` or `postgres://`)                 | Placeholder only in docs; never commit real credentials                                             |
+| `DATABASE_POOL_MAX`                                   | No       | No     | App/worker DB pool    | Connections per process (default `10`, range `1`–`50`)                       | Budget across every API and worker replica; integration tests override to `32`                      |
+| `DATABASE_CONNECTION_TIMEOUT_MS`                      | No       | No     | App/worker DB pool    | Pool acquisition timeout ms (default `5000`, range `250`–`30000`)            | Keep bounded so saturation fails promptly                                                           |
+| `DATABASE_IDLE_TIMEOUT_MS`                            | No       | No     | App/worker DB pool    | Idle connection lifetime ms (default `30000`, range `1000`–`300000`)         | Avoid retaining oversized idle pools                                                                |
 | `APP_VERSION`                                         | Yes      | No     | All runtimes          | Semantic application version for logs, health, OpenAPI `info.version`        | Must be SemVer; local example `0.1.0`. Deployments inject the release version.                      |
 | `GIT_SHA`                                             | Yes      | No     | All runtimes          | Source revision metadata for logs                                            | Local example `local`. Deployments inject the build commit SHA; do not hand-maintain in production. |
 | `JWT_ACCESS_SECRET`                                   | Yes      | Yes    | Auth token signing    | HS256 secret for access tokens (≥ 32 non-trivial characters)                 | Synthetic local secret only; never commit production values                                         |
@@ -189,6 +192,8 @@ Reliable automated protections in this repository:
 - Jest unit and e2e `setupFiles` force synthetic test values and delete Redis/OpenAPI overrides.
 - OpenAPI CLI/process bootstrap overwrites ambient env with non-routable targets.
 - Real infrastructure suites require `INTEGRATION_TESTS_ENABLED=true` and dedicated `TEST_*` URLs; they refuse to reuse `DATABASE_URL` / `REDIS_URL`.
+- When both Redis URLs are visible, integration setup rejects `TEST_REDIS_URL` targeting the same Redis endpoint/database as `REDIS_URL`. Integration setup never copies the runtime URL as its test target.
+- PostgreSQL integration setup explicitly uses `DATABASE_POOL_MAX=32` for the 20-way order-create stampede. This test-only budget does not change runtime defaults.
 
 Documented limitations (not guessed automatically):
 

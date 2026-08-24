@@ -285,6 +285,103 @@ describe('OrderCreationService', () => {
       expect.anything(),
     );
     expect(result).toEqual({ order: created, created: true });
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'order.created',
+        orderId: created.id,
+      }),
+      'Order created with inventory reservation',
+    );
+  });
+
+  it('logs order.created once only after a serialization retry commits', async () => {
+    const priced = pricingSnapshot();
+    const created = orderFromSnapshot(priced);
+    pricing.priceOrderLines.mockResolvedValue(priced);
+    orders.createWithTrustedSnapshots.mockResolvedValue(created);
+    let transactionAttempt = 0;
+    jest
+      .spyOn(transactions, 'runRepeatableRead')
+      .mockImplementation(async (fn) => {
+        transactionAttempt += 1;
+        const result = await fn({ [TRANSACTION_CONTEXT_BRAND]: true });
+        if (transactionAttempt === 1) {
+          throw Object.assign(new Error('serialization failure'), {
+            code: 'P2034',
+          });
+        }
+        return result;
+      });
+
+    await expect(create()).resolves.toEqual({ order: created, created: true });
+
+    expect(transactionAttempt).toBe(2);
+    expect(
+      logger.info.mock.calls.filter(
+        ([fields]) => fields.operation === 'order.created',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('does not retry errors that only mention a serialization code in text', async () => {
+    const error = new Error('upstream context mentioned 40001');
+    pricing.priceOrderLines.mockRejectedValue(error);
+
+    await expect(create()).rejects.toBe(error);
+
+    expect(transactions.isolationCalls).toBe(1);
+  });
+
+  it('retries the Prisma adapter PostgreSQL serialization metadata shape', async () => {
+    const priced = pricingSnapshot();
+    const created = orderFromSnapshot(priced);
+    pricing.priceOrderLines.mockResolvedValue(priced);
+    orders.createWithTrustedSnapshots.mockResolvedValue(created);
+    let transactionAttempt = 0;
+    jest
+      .spyOn(transactions, 'runRepeatableRead')
+      .mockImplementation(async (fn) => {
+        transactionAttempt += 1;
+        const result = await fn({ [TRANSACTION_CONTEXT_BRAND]: true });
+        if (transactionAttempt === 1) {
+          throw Object.assign(new Error('adapter serialization failure'), {
+            code: 'P2010',
+            meta: {
+              driverAdapterError: {
+                cause: {
+                  originalCode: '40001',
+                  kind: 'TransactionWriteConflict',
+                },
+              },
+            },
+          });
+        }
+        return result;
+      });
+
+    await expect(create()).resolves.toEqual({ order: created, created: true });
+    expect(transactionAttempt).toBe(2);
+  });
+
+  it('bounds serialization retries to five transaction attempts', async () => {
+    const failure = Object.assign(new Error('serialization failure'), {
+      code: 'P2034',
+    });
+    pricing.priceOrderLines.mockRejectedValue(failure);
+
+    await expect(create()).rejects.toBeInstanceOf(OrderInvalidInputError);
+
+    expect(transactions.isolationCalls).toBe(5);
+    expect(
+      logger.info.mock.calls.filter(
+        ([fields]) => fields.operation === 'order.create.serialization_retry',
+      ),
+    ).toHaveLength(4);
+    expect(
+      logger.info.mock.calls.filter(
+        ([fields]) => fields.operation === 'order.created',
+      ),
+    ).toHaveLength(0);
   });
 
   it('persists LINE discount snapshots from PRC-05', async () => {
@@ -525,6 +622,51 @@ describe('OrderCreationService', () => {
     expect(pricing.priceOrderLines).not.toHaveBeenCalled();
     expect(orders.createWithTrustedSnapshots).not.toHaveBeenCalled();
     expect(inventory.reserveForOrder).not.toHaveBeenCalled();
+  });
+
+  it('recovers a structured unique race only when a fresh lookup finds the order', async () => {
+    const priced = pricingSnapshot();
+    const existing = orderFromSnapshot(priced);
+    const uniqueFailure = { code: 'P2002' };
+    pricing.priceOrderLines.mockResolvedValue(priced);
+    orders.createWithTrustedSnapshots.mockRejectedValue(uniqueFailure);
+    orders.findByUserIdAndIdempotencyKey
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(existing);
+
+    await expect(create()).resolves.toEqual({
+      order: existing,
+      created: false,
+    });
+    expect(transactions.isolationCalls).toBe(1);
+    expect(inventory.reserveForOrder).not.toHaveBeenCalled();
+  });
+
+  it('rethrows a structured unique failure when no idempotent order committed', async () => {
+    const priced = pricingSnapshot();
+    const uniqueFailure = { code: '23505' };
+    pricing.priceOrderLines.mockResolvedValue(priced);
+    orders.createWithTrustedSnapshots.mockRejectedValue(uniqueFailure);
+
+    await expect(create()).rejects.toBe(uniqueFailure);
+
+    expect(transactions.isolationCalls).toBe(1);
+    expect(orders.findByUserIdAndIdempotencyKey).toHaveBeenCalledTimes(2);
+    expect(inventory.reserveForOrder).not.toHaveBeenCalled();
+  });
+
+  it('preserves the original unique failure if the proof lookup fails', async () => {
+    const priced = pricingSnapshot();
+    const uniqueFailure = { code: 'P2002' };
+    pricing.priceOrderLines.mockResolvedValue(priced);
+    orders.createWithTrustedSnapshots.mockRejectedValue(uniqueFailure);
+    orders.findByUserIdAndIdempotencyKey
+      .mockResolvedValueOnce(null)
+      .mockRejectedValueOnce(new Error('lookup unavailable'));
+
+    await expect(create()).rejects.toBe(uniqueFailure);
+
+    expect(transactions.isolationCalls).toBe(1);
   });
 
   it('conflicts when the same idempotency key has a different payload', async () => {

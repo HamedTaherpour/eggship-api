@@ -348,16 +348,16 @@ Customer storefront authentication uses Iranian mobile OTP. AUTH-05 delivers app
 
 ### Lifecycle
 
-| Event            | Behavior                                                                                       |
-| ---------------- | ---------------------------------------------------------------------------------------------- |
-| Request          | Peek cooldown (no window charge) → rate-limit windows → create challenge + cooldown → send SMS |
-| Delivery failure | Delete challenge; keep cooldown; return `AUTH_OTP_DELIVERY_FAILED`                             |
-| Verify success   | Atomically consume once and mint verification grant in one Redis Lua script                    |
-| Verify failure   | Atomic attempt increment; lock/delete at max attempts                                          |
-| Expiry           | Challenge TTL; expired consume returns `AUTH_OTP_EXPIRED`                                      |
-| Redis key grace  | Challenge/grant Redis `EXPIRE` is logical TTL + 60s so `expired` is observable before eviction |
-| Resend           | Cooldown SET NX per phone; replacement deletes prior active challenge                          |
-| Redis outage     | OTP operations fail with `AUTH_OTP_UNAVAILABLE`; no in-memory fallback                         |
+| Event            | Behavior                                                                                                                                                                            |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Request          | Peek cooldown (no window charge) → rate-limit windows → create challenge + cooldown → send SMS                                                                                      |
+| Delivery failure | Delete challenge; keep cooldown; return `AUTH_OTP_DELIVERY_FAILED`                                                                                                                  |
+| Verify success   | Atomically consume once and mint verification grant in one Redis Lua script                                                                                                         |
+| Verify failure   | Atomic attempt increment; lock/delete at max attempts                                                                                                                               |
+| Expiry           | Challenge TTL; expired consume returns `AUTH_OTP_EXPIRED`                                                                                                                           |
+| Redis key grace  | Challenge/grant Redis `EXPIRE` is logical TTL + 60s so `expired` is observable before eviction; physical retention is classification-only, and key existence never implies validity |
+| Resend           | Cooldown SET NX per phone; replacement deletes prior active challenge                                                                                                               |
+| Redis outage     | OTP operations fail with `AUTH_OTP_UNAVAILABLE`; no in-memory fallback                                                                                                              |
 
 ### Initial configurable defaults (not immutable product constants)
 

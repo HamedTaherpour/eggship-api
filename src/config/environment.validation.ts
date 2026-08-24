@@ -48,6 +48,11 @@ export const DEFAULT_OTP_IP_WINDOW_LIMIT = 20;
 /** Default verification-grant TTL after successful OTP verify (10 minutes). */
 export const DEFAULT_OTP_VERIFICATION_GRANT_TTL_SECONDS = 600;
 
+/** Conservative per-process PostgreSQL pool defaults. */
+export const DEFAULT_DATABASE_POOL_MAX = 10;
+export const DEFAULT_DATABASE_CONNECTION_TIMEOUT_MS = 5_000;
+export const DEFAULT_DATABASE_IDLE_TIMEOUT_MS = 30_000;
+
 const MIN_JWT_ACCESS_SECRET_LENGTH = 32;
 const MIN_OTP_HASH_SECRET_LENGTH = 32;
 const MAX_JWT_ACCESS_TTL_SECONDS = 3_600;
@@ -58,6 +63,11 @@ const MAX_OTP_RESEND_COOLDOWN_SECONDS = 600;
 const MAX_OTP_WINDOW_SECONDS = 86_400;
 const MAX_OTP_WINDOW_LIMIT = 100;
 const MAX_OTP_VERIFICATION_GRANT_TTL_SECONDS = 900;
+const MAX_DATABASE_POOL_MAX = 50;
+const MIN_DATABASE_CONNECTION_TIMEOUT_MS = 250;
+const MAX_DATABASE_CONNECTION_TIMEOUT_MS = 30_000;
+const MIN_DATABASE_IDLE_TIMEOUT_MS = 1_000;
+const MAX_DATABASE_IDLE_TIMEOUT_MS = 300_000;
 
 const OTP_PROVIDER_VALUES = ['development', 'kavenegar'] as const;
 const STORAGE_PROVIDER_VALUES = ['memory', 's3'] as const;
@@ -71,6 +81,9 @@ export interface EnvironmentVariables {
   NODE_ENV: NodeEnvironment;
   PORT: number;
   DATABASE_URL: string;
+  DATABASE_POOL_MAX: number;
+  DATABASE_CONNECTION_TIMEOUT_MS: number;
+  DATABASE_IDLE_TIMEOUT_MS: number;
   APP_VERSION: string;
   GIT_SHA: string;
   JWT_ACCESS_SECRET: string;
@@ -128,6 +141,28 @@ export function validateEnvironment(
       'DATABASE_URL must use the postgresql:// or postgres:// protocol.',
     );
   }
+
+  const databasePoolMax = parseIntegerInRange(
+    values,
+    'DATABASE_POOL_MAX',
+    DEFAULT_DATABASE_POOL_MAX,
+    1,
+    MAX_DATABASE_POOL_MAX,
+  );
+  const databaseConnectionTimeoutMs = parseIntegerInRange(
+    values,
+    'DATABASE_CONNECTION_TIMEOUT_MS',
+    DEFAULT_DATABASE_CONNECTION_TIMEOUT_MS,
+    MIN_DATABASE_CONNECTION_TIMEOUT_MS,
+    MAX_DATABASE_CONNECTION_TIMEOUT_MS,
+  );
+  const databaseIdleTimeoutMs = parseIntegerInRange(
+    values,
+    'DATABASE_IDLE_TIMEOUT_MS',
+    DEFAULT_DATABASE_IDLE_TIMEOUT_MS,
+    MIN_DATABASE_IDLE_TIMEOUT_MS,
+    MAX_DATABASE_IDLE_TIMEOUT_MS,
+  );
 
   const redisUrl = optionalString(values, 'REDIS_URL');
   if (redisUrl !== undefined && !isRedisUrl(redisUrl)) {
@@ -280,6 +315,9 @@ export function validateEnvironment(
     NODE_ENV: nodeEnv,
     PORT: port,
     DATABASE_URL: databaseUrl,
+    DATABASE_POOL_MAX: databasePoolMax,
+    DATABASE_CONNECTION_TIMEOUT_MS: databaseConnectionTimeoutMs,
+    DATABASE_IDLE_TIMEOUT_MS: databaseIdleTimeoutMs,
     APP_VERSION: appVersion,
     GIT_SHA: requiredString(values, 'GIT_SHA'),
     JWT_ACCESS_SECRET: accessSecret,
@@ -519,6 +557,22 @@ function parsePositiveIntSeconds(
     throw new Error(`${envName} must be a positive integer.`);
   }
   return parsed;
+}
+
+function parseIntegerInRange(
+  values: Record<string, unknown>,
+  envName: string,
+  defaultValue: number,
+  minimum: number,
+  maximum: number,
+): number {
+  const value = parsePositiveIntSeconds(values, envName, defaultValue);
+  if (value < minimum || value > maximum) {
+    throw new Error(
+      `${envName} must be an integer between ${minimum} and ${maximum}.`,
+    );
+  }
+  return value;
 }
 
 function requiredString(values: Record<string, unknown>, name: string): string {

@@ -12,7 +12,6 @@ import { DiscountTarget, DiscountType } from '../../pricing/domain/discount';
 import { normalizeOrderLineProductName } from '../domain/order-line-name';
 import { assertTrustedCreateOrderMoney } from '../domain/order-money-invariants';
 import {
-  OrderIdempotencyConflictError,
   OrderInvalidInputError,
   OrderInvalidProductError,
   OrderInvalidRegionError,
@@ -355,12 +354,6 @@ export class OrderRepository {
       return mapOrder(created);
     } catch (error: unknown) {
       throwTranslatedCreateError(error);
-      if (
-        isPostgresUniqueViolation(error) ||
-        looksLikeUniqueConstraintViolation(error)
-      ) {
-        throw new OrderIdempotencyConflictError();
-      }
       throw error;
     }
   }
@@ -591,12 +584,6 @@ function throwTranslatedCreateError(error: unknown): void {
       throw new OrderInvalidProductError(OrderMessage.PRODUCT_UNAVAILABLE);
     }
   }
-
-  if (error.code === 'P2002') {
-    // Order create only has one business unique: (userId, idempotencyKey).
-    // Prisma/driver meta shapes vary across adapters; do not require field names.
-    throw new OrderIdempotencyConflictError();
-  }
 }
 
 function isPrismaKnownRequestError(
@@ -614,47 +601,6 @@ function isPrismaKnownRequestError(
     'code' in error &&
     typeof (error as { code: unknown }).code === 'string'
   );
-}
-
-function isPostgresUniqueViolation(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) {
-    return false;
-  }
-  const record = error as {
-    code?: unknown;
-    meta?: {
-      code?: unknown;
-      driverAdapterError?: { cause?: { code?: unknown } };
-    };
-    cause?: { code?: unknown };
-  };
-  if (record.code === '23505' || record.code === 'P2002') {
-    return true;
-  }
-  if (record.cause?.code === '23505') {
-    return true;
-  }
-  if (record.meta?.code === '23505') {
-    return true;
-  }
-  if (record.meta?.driverAdapterError?.cause?.code === '23505') {
-    return true;
-  }
-  return false;
-}
-
-function looksLikeUniqueConstraintViolation(error: unknown): boolean {
-  try {
-    const text = JSON.stringify(
-      error,
-      Object.getOwnPropertyNames(Object(error)),
-    );
-    return /23505|P2002|unique constraint|Unique constraint|idempotencyKey/i.test(
-      text,
-    );
-  } catch {
-    return false;
-  }
 }
 
 function buildTransitionSql(

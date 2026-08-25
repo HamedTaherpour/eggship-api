@@ -1,10 +1,20 @@
 import { randomUUID } from 'node:crypto';
 import type { INestApplicationContext } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { AdminRole } from '../../../src/common/authz/admin-role';
 import { postgresIntegrationImports } from '../support/postgres-testing-module';
 import { PrismaService } from '../../../src/infrastructure/database/prisma/prisma.service';
 import { TransactionRunner } from '../../../src/infrastructure/database/transaction';
 import { CategoryRepository } from '../../../src/modules/categories/infrastructure/category.repository';
+import { CommercePolicyService } from '../../../src/modules/commerce-policy/application/commerce-policy.service';
+import { CommercePolicyModule } from '../../../src/modules/commerce-policy/commerce-policy.module';
+import { CommerceOverrideMode } from '../../../src/modules/commerce-policy/domain/commerce-policy';
+import { toTehranLocalWallClock } from '../../../src/modules/commerce-policy/domain/order-acceptance';
+import {
+  OrderingClosedError,
+  OrderingPolicyUnavailableError,
+  OrderMinimumQuantityNotMetError,
+} from '../../../src/modules/commerce-policy/domain/commerce-policy-errors';
 import {
   InventoryService,
   SYSTEM_ACTOR,
@@ -43,7 +53,7 @@ function uniquePhone(suffix: number): string {
 async function truncateTables(prisma: PrismaService): Promise<void> {
   assertDestructiveOperationsAllowed();
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "InventoryLedger", "InventoryReservation", "Inventory", "Discount", "PriceHistory", "OrderLine", "Order", "Product", "Category", "Region", "User" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "InventoryLedger", "InventoryReservation", "Inventory", "Discount", "PriceHistory", "OrderLine", "Order", "Product", "Category", "Region", "User", "CommerceScheduleOverride", "CommerceSettings" RESTART IDENTITY CASCADE',
   );
 }
 
@@ -58,6 +68,7 @@ describe('Order creation (integration)', () => {
   let discounts: DiscountService;
   let pricing: PricingService;
   let creation: OrderCreationService;
+  let commercePolicy: CommercePolicyService;
   let transactions: TransactionRunner;
   let phoneCounter = 0;
   let adminActorId: string;
@@ -71,6 +82,7 @@ describe('Order creation (integration)', () => {
           PricingModule,
           UsersModule,
           OrdersModule,
+          CommercePolicyModule,
         ]),
       ],
       providers: [CategoryRepository, RegionRepository],
@@ -86,13 +98,33 @@ describe('Order creation (integration)', () => {
     discounts = moduleRef.get(DiscountService);
     pricing = moduleRef.get(PricingService);
     creation = moduleRef.get(OrderCreationService);
+    commercePolicy = moduleRef.get(CommercePolicyService);
     transactions = moduleRef.get(TransactionRunner);
-    adminActorId = randomUUID();
     await app.init();
   });
 
   beforeEach(async () => {
     await truncateTables(prisma);
+    const admin = await prisma.admin.upsert({
+      where: { email: 'order-create-integration@example.test' },
+      update: { isActive: true, role: AdminRole.SUPER_ADMIN },
+      create: {
+        email: 'order-create-integration@example.test',
+        passwordHash: 'integration-placeholder-hash',
+        role: AdminRole.SUPER_ADMIN,
+      },
+    });
+    adminActorId = admin.id;
+    await commercePolicy.initialize(
+      {
+        orderingScheduleEnabled: false,
+        orderingOpensAtLocalMinute: 7 * 60,
+        orderingClosesAtLocalMinute: 16 * 60,
+        minimumOrderQuantity: 1,
+      },
+      0,
+      adminActorId,
+    );
   }, 30_000);
 
   afterAll(async () => {
@@ -467,5 +499,131 @@ describe('Order creation (integration)', () => {
     expect(result.order.appliedOrderDiscount).not.toBeNull();
     expect(result.order.lines[0]!.appliedLineDiscount).not.toBeNull();
     expect(result.order.pricingEvaluatedAt).toBeInstanceOf(Date);
+    expect(result.order.commercePolicyRevision).toBe(1);
+  });
+
+  it('rejects when commerce policy is absent (fail closed) with no side effects', async () => {
+    assertDestructiveOperationsAllowed();
+    await prisma.$executeRawUnsafe(
+      'TRUNCATE TABLE "CommerceScheduleOverride", "CommerceSettings" RESTART IDENTITY CASCADE',
+    );
+    const { user, regionId, productId } = await seedBase({ onHand: 10 });
+
+    await expect(
+      creation.createOrder({
+        actor: { type: OrderActorType.USER, id: user.id },
+        regionId,
+        idempotencyKey: randomUUID(),
+        lines: [{ productId, quantity: 1 }],
+      }),
+    ).rejects.toBeInstanceOf(OrderingPolicyUnavailableError);
+
+    expect(await prisma.order.count()).toBe(0);
+    expect(await prisma.inventoryReservation.count()).toBe(0);
+    expect(await inventory.getBalance(productId)).toMatchObject({
+      reserved: 0,
+    });
+  });
+
+  it('rejects CLOSED overrides and below-minimum carts without Order/Inventory mutations', async () => {
+    const { user, regionId, productId } = await seedBase({ onHand: 10 });
+    const wall = await prisma.$queryRaw<Array<{ now: Date }>>`
+      SELECT CURRENT_TIMESTAMP AS "now"
+    `;
+    const { localDate } = toTehranLocalWallClock(wall[0]!.now);
+
+    await commercePolicy.putOverride(
+      localDate,
+      {
+        mode: CommerceOverrideMode.CLOSED,
+        opensAtLocalMinute: null,
+        closesAtLocalMinute: null,
+      },
+      1,
+      adminActorId,
+    );
+
+    await expect(
+      creation.createOrder({
+        actor: { type: OrderActorType.USER, id: user.id },
+        regionId,
+        idempotencyKey: randomUUID(),
+        lines: [{ productId, quantity: 1 }],
+      }),
+    ).rejects.toBeInstanceOf(OrderingClosedError);
+
+    expect(await prisma.order.count()).toBe(0);
+    expect(await prisma.inventoryReservation.count()).toBe(0);
+
+    await commercePolicy.removeOverride(localDate, 2, adminActorId);
+    await commercePolicy.update(
+      {
+        orderingScheduleEnabled: false,
+        orderingOpensAtLocalMinute: 7 * 60,
+        orderingClosesAtLocalMinute: 16 * 60,
+        minimumOrderQuantity: 5,
+      },
+      3,
+      adminActorId,
+    );
+
+    await expect(
+      creation.createOrder({
+        actor: { type: OrderActorType.USER, id: user.id },
+        regionId,
+        idempotencyKey: randomUUID(),
+        lines: [{ productId, quantity: 2 }],
+      }),
+    ).rejects.toBeInstanceOf(OrderMinimumQuantityNotMetError);
+    expect(await prisma.order.count()).toBe(0);
+  });
+
+  it('allows a later success with the same idempotency key after a policy rejection', async () => {
+    const { user, regionId, productId } = await seedBase({ onHand: 10 });
+    const idempotencyKey = randomUUID();
+
+    await commercePolicy.update(
+      {
+        orderingScheduleEnabled: false,
+        orderingOpensAtLocalMinute: 7 * 60,
+        orderingClosesAtLocalMinute: 16 * 60,
+        minimumOrderQuantity: 5,
+      },
+      1,
+      adminActorId,
+    );
+
+    await expect(
+      creation.createOrder({
+        actor: { type: OrderActorType.USER, id: user.id },
+        regionId,
+        idempotencyKey,
+        lines: [{ productId, quantity: 2 }],
+      }),
+    ).rejects.toBeInstanceOf(OrderMinimumQuantityNotMetError);
+
+    expect(await prisma.order.count()).toBe(0);
+
+    await commercePolicy.update(
+      {
+        orderingScheduleEnabled: false,
+        orderingOpensAtLocalMinute: 7 * 60,
+        orderingClosesAtLocalMinute: 16 * 60,
+        minimumOrderQuantity: 1,
+      },
+      2,
+      adminActorId,
+    );
+
+    const result = await creation.createOrder({
+      actor: { type: OrderActorType.USER, id: user.id },
+      regionId,
+      idempotencyKey,
+      lines: [{ productId, quantity: 2 }],
+    });
+
+    expect(result.created).toBe(true);
+    expect(result.order.commercePolicyRevision).toBe(3);
+    expect(await prisma.order.count()).toBe(1);
   });
 });

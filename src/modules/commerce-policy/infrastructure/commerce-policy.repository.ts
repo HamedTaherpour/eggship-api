@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '../../../generated/prisma/client';
+import {
+  resolvePrismaConnection,
+  type PrismaConnection,
+} from '../../../infrastructure/database/prisma/prisma-transaction-context';
 import { PrismaService } from '../../../infrastructure/database/prisma/prisma.service';
+import type { TransactionContext } from '../../../infrastructure/database/transaction';
 import {
   COMMERCE_SETTINGS_SINGLETON_ID,
   type CommerceOverrideInput,
@@ -13,6 +18,7 @@ import {
   CommerceOverrideNotFoundError,
   CommercePolicyNotInitializedError,
   CommercePolicyRevisionConflictError,
+  OrderingPolicyUnavailableError,
 } from '../domain/commerce-policy-errors';
 
 export interface PolicyMutationResult {
@@ -53,8 +59,14 @@ type OverrideRow = {
 export class CommercePolicyRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getSettings(): Promise<CommerceSettingsRecord | null> {
-    const row = await this.prisma.commerceSettings.findUnique({
+  private db(tx?: TransactionContext): PrismaConnection {
+    return resolvePrismaConnection(this.prisma, tx);
+  }
+
+  async getSettings(
+    tx?: TransactionContext,
+  ): Promise<CommerceSettingsRecord | null> {
+    const row = await this.db(tx).commerceSettings.findUnique({
       where: { id: COMMERCE_SETTINGS_SINGLETON_ID },
     });
     return row === null ? null : mapSettings(row);
@@ -63,10 +75,45 @@ export class CommercePolicyRepository {
   async listOverrides(
     from: string,
     to: string,
+    tx?: TransactionContext,
   ): Promise<CommerceScheduleOverrideRecord[]> {
-    const rows = await this.prisma.commerceScheduleOverride.findMany({
+    const rows = await this.db(tx).commerceScheduleOverride.findMany({
       where: { localDate: { gte: toDate(from), lte: toDate(to) } },
       orderBy: { localDate: 'asc' },
+    });
+    return rows.map(mapOverride);
+  }
+
+  /**
+   * COM-03: stable PostgreSQL transaction instant for Order acceptance.
+   * Uses CURRENT_TIMESTAMP (transaction_timestamp) — one value per attempt.
+   */
+  async readEvaluationInstant(tx: TransactionContext): Promise<Date> {
+    const rows = await this.db(tx).$queryRaw<Array<{ evaluatedAt: Date }>>(
+      Prisma.sql`SELECT CURRENT_TIMESTAMP AS "evaluatedAt"`,
+    );
+    const evaluatedAt = rows[0]?.evaluatedAt;
+    if (!(evaluatedAt instanceof Date) || Number.isNaN(evaluatedAt.getTime())) {
+      throw new OrderingPolicyUnavailableError();
+    }
+    return evaluatedAt;
+  }
+
+  /**
+   * COM-03: lock-free override reads for the current and preceding local dates.
+   */
+  async findOverridesForLocalDates(
+    localDates: readonly string[],
+    tx: TransactionContext,
+  ): Promise<CommerceScheduleOverrideRecord[]> {
+    if (localDates.length === 0) {
+      return [];
+    }
+    const uniqueDates = [...new Set(localDates)];
+    const rows = await this.db(tx).commerceScheduleOverride.findMany({
+      where: {
+        localDate: { in: uniqueDates.map(toDate) },
+      },
     });
     return rows.map(mapOverride);
   }
@@ -102,16 +149,16 @@ export class CommercePolicyRepository {
     expectedRevision: number,
     actorId: string,
   ): Promise<PolicyMutationResult> {
-    return this.prisma.$transaction(async (tx) => {
-      await lockSettings(tx);
-      const current = await tx.commerceSettings.findUnique({
+    return this.prisma.$transaction(async (client) => {
+      await lockSettings(client);
+      const current = await client.commerceSettings.findUnique({
         where: { id: COMMERCE_SETTINGS_SINGLETON_ID },
       });
       assertExpectedRevision(current, expectedRevision);
       if (settingsEqual(current!, input))
         return { settings: mapSettings(current!), changed: false };
 
-      const advanced = await tx.commerceSettings.updateMany({
+      const advanced = await client.commerceSettings.updateMany({
         where: {
           id: COMMERCE_SETTINGS_SINGLETON_ID,
           revision: expectedRevision,
@@ -122,8 +169,8 @@ export class CommercePolicyRepository {
           revision: { increment: 1 },
         },
       });
-      if (advanced.count !== 1) throw await revisionConflict(tx);
-      const updated = await tx.commerceSettings.findUniqueOrThrow({
+      if (advanced.count !== 1) throw await revisionConflict(client);
+      const updated = await client.commerceSettings.findUniqueOrThrow({
         where: { id: COMMERCE_SETTINGS_SINGLETON_ID },
       });
       return { settings: mapSettings(updated), changed: true };
@@ -136,14 +183,14 @@ export class CommercePolicyRepository {
     expectedRevision: number,
     actorId: string,
   ): Promise<OverrideMutationResult> {
-    return this.prisma.$transaction(async (tx) => {
-      await lockSettings(tx);
-      const settings = await tx.commerceSettings.findUnique({
+    return this.prisma.$transaction(async (client) => {
+      await lockSettings(client);
+      const settings = await client.commerceSettings.findUnique({
         where: { id: COMMERCE_SETTINGS_SINGLETON_ID },
       });
       assertExpectedRevision(settings, expectedRevision);
       const date = toDate(localDate);
-      const existing = await tx.commerceScheduleOverride.findUnique({
+      const existing = await client.commerceScheduleOverride.findUnique({
         where: { localDate: date },
       });
       if (existing !== null && overrideEqual(existing, input)) {
@@ -155,18 +202,18 @@ export class CommercePolicyRepository {
         };
       }
 
-      const advanced = await tx.commerceSettings.updateMany({
+      const advanced = await client.commerceSettings.updateMany({
         where: {
           id: COMMERCE_SETTINGS_SINGLETON_ID,
           revision: expectedRevision,
         },
         data: { revision: { increment: 1 }, updatedByAdminId: actorId },
       });
-      if (advanced.count !== 1) throw await revisionConflict(tx);
+      if (advanced.count !== 1) throw await revisionConflict(client);
 
       const override =
         existing === null
-          ? await tx.commerceScheduleOverride.create({
+          ? await client.commerceScheduleOverride.create({
               data: {
                 localDate: date,
                 ...input,
@@ -174,11 +221,11 @@ export class CommercePolicyRepository {
                 updatedByAdminId: actorId,
               },
             })
-          : await tx.commerceScheduleOverride.update({
+          : await client.commerceScheduleOverride.update({
               where: { id: existing.id },
               data: { ...input, updatedByAdminId: actorId },
             });
-      const updatedSettings = await tx.commerceSettings.findUniqueOrThrow({
+      const updatedSettings = await client.commerceSettings.findUniqueOrThrow({
         where: { id: COMMERCE_SETTINGS_SINGLETON_ID },
       });
       return {
@@ -195,27 +242,29 @@ export class CommercePolicyRepository {
     expectedRevision: number,
     actorId: string,
   ): Promise<PolicyMutationResult> {
-    return this.prisma.$transaction(async (tx) => {
-      await lockSettings(tx);
-      const settings = await tx.commerceSettings.findUnique({
+    return this.prisma.$transaction(async (client) => {
+      await lockSettings(client);
+      const settings = await client.commerceSettings.findUnique({
         where: { id: COMMERCE_SETTINGS_SINGLETON_ID },
       });
       assertExpectedRevision(settings, expectedRevision);
-      const existing = await tx.commerceScheduleOverride.findUnique({
+      const existing = await client.commerceScheduleOverride.findUnique({
         where: { localDate: toDate(localDate) },
       });
       if (existing === null) throw new CommerceOverrideNotFoundError();
 
-      const advanced = await tx.commerceSettings.updateMany({
+      const advanced = await client.commerceSettings.updateMany({
         where: {
           id: COMMERCE_SETTINGS_SINGLETON_ID,
           revision: expectedRevision,
         },
         data: { revision: { increment: 1 }, updatedByAdminId: actorId },
       });
-      if (advanced.count !== 1) throw await revisionConflict(tx);
-      await tx.commerceScheduleOverride.delete({ where: { id: existing.id } });
-      const updated = await tx.commerceSettings.findUniqueOrThrow({
+      if (advanced.count !== 1) throw await revisionConflict(client);
+      await client.commerceScheduleOverride.delete({
+        where: { id: existing.id },
+      });
+      const updated = await client.commerceSettings.findUniqueOrThrow({
         where: { id: COMMERCE_SETTINGS_SINGLETON_ID },
       });
       return { settings: mapSettings(updated), changed: true };

@@ -28,6 +28,14 @@ export function assertTrustedCreateOrderMoney(
       'Order pricingEvaluatedAt must be a valid Date.',
     );
   }
+  if (
+    !Number.isInteger(input.commercePolicyRevision) ||
+    input.commercePolicyRevision < 1
+  ) {
+    throw new OrderInvalidInputError(
+      'Order commercePolicyRevision must be a positive integer.',
+    );
+  }
   if (input.lines.length === 0) {
     throw new OrderInvalidInputError('Order must have at least one line.');
   }

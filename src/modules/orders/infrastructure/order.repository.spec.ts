@@ -20,6 +20,7 @@ function baseInput(
     idempotencyKey: KEY,
     idempotencyPayloadHash: 'a'.repeat(64),
     pricingEvaluatedAt: EVALUATED_AT,
+    commercePolicyRevision: 1,
     grossSubtotal: 2_000n,
     lineDiscountTotal: 0n,
     subtotalAfterLineDiscounts: 2_000n,

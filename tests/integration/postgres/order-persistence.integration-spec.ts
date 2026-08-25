@@ -53,6 +53,7 @@ function trustedCreate(input: {
       lines: [{ productId: input.product.id, quantity }],
     }),
     pricingEvaluatedAt: new Date('2026-08-22T12:00:00.000Z'),
+    commercePolicyRevision: 1,
     grossSubtotal: gross,
     lineDiscountTotal: 0n,
     subtotalAfterLineDiscounts: gross,

@@ -6,14 +6,14 @@ This is the authoritative execution plan for completing the standalone EggShip A
 
 | Measure     | Count |
 | ----------- | ----: |
-| Total       |    95 |
-| DONE        |    39 |
+| Total       |   103 |
+| DONE        |    44 |
 | IN_PROGRESS |     0 |
-| READY       |     2 |
-| BLOCKED     |     0 |
-| PLANNED     |    55 |
+| READY       |     1 |
+| BLOCKED     |     2 |
+| PLANNED     |    56 |
 
-- Current task: none in progress. Next recommended: `ORD-04 — Customer order list and detail`, `ORD-05 — Customer cancellation and stock release` (after ORD-03 HTTP binding), or `CAT-05 — Admin catalog APIs` as dependencies allow.
+- Current task: none in progress. Exact next READY after COM-03: `CAT-05 — Admin catalog APIs` (unrelated catalog work). Commerce Phase 4A is complete; customer create HTTP remains `ORD-03A` (PLANNED; depends on COM-03, DLU-02, AUTH-08). `DLU-01` and `SET-01` remain separate BLOCKED decision tasks and must not be folded into Commerce implementation.
 - Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
@@ -42,6 +42,9 @@ Do not load unrelated domain implementations by default. Agents should follow re
 ```text
 Foundation → Identity → Catalog → Inventory → Orders
                          Pricing ────────┘
+                 Commerce Policy ───────┤
+          Discount Lifetime Usage ──────┤
+                         Settlement ← Delivered Orders + Media
 
 Redis/BullMQ foundation → Transactional Outbox → Business-critical delivery workers
 
@@ -458,9 +461,21 @@ Scope: Implement multi-item order creation, price/discount snapshots, idempotenc
 
 Acceptance criteria: Duplicate requests yield one logical order; SKU locks use deterministic ordering; partial reservation/order creation cannot persist; concurrency tests cover hot inventory.
 
-Explicitly out of scope: Asynchronous side effects and payment collection. HTTP create/list/detail (ORD-04–ORD-06), returns, and payments.
+Explicitly out of scope: Asynchronous side effects and payment collection. Customer create/list/detail HTTP (ORD-03A/ORD-04), Admin HTTP (ORD-06), returns, and payments.
 
 Delivered: `OrderCreationService.createOrder` (no HTTP) in one REPEATABLE READ transaction — create idempotency advisory lock, PRC-05 `priceOrderLines`, trusted snapshot persistence (`createWithTrustedSnapshots`), `reserveForOrder`; bounded retry on RR serialization failures; inactive User/Region rejected; Order/OrderLine migration for discounted money + applied-discount evidence + `pricingEvaluatedAt` + payload hash; unit + PostgreSQL integration/concurrency specs (live `TEST_DATABASE_URL` run environment-dependent). Security/concurrency/migration reviews recorded in task handoff.
+
+Checkpoint finding (2026-08-24): the actual service passes the outer transaction to Pricing, Order persistence, and Inventory, but its User and Region repository reads currently use their default clients. Preserve ORD-03 history; ORD-03A must close this authoritative-read transaction-context gap before exposing customer create HTTP.
+
+### ORD-03A — Customer order-create HTTP contract
+
+Status: PLANNED | Depends on: ORD-03, COM-03, DLU-02, AUTH-08 | Primary: Codex | Review: Claude/Cursor security/concurrency review
+
+Scope: Close the current User/Region transaction-context gap, then bind the approved transactional create service to a customer Order-create endpoint with strict DTOs, principal-derived ownership, UUID idempotency key, commerce-policy/lifetime-discount enforcement, stable errors, OpenAPI, and e2e coverage. This closes the pre-existing ORD-03 HTTP-create gap without overloading the read-only ORD-04 task.
+
+Acceptance criteria: User, Region, Product, Discount, Commerce policy, Order, discount usage, and Inventory work share the approved outer transaction/snapshot where required; clients cannot submit authoritative price/snapshot/owner fields; retries map to ORD-03 replay/conflict; COM-03/DLU-02 cannot be bypassed; Inventory/policy/discount errors follow the approved structured contract; cookie-authenticated mutation security follows the shared CSRF production blocker.
+
+Explicitly out of scope: Order list/detail (ORD-04), cancellation/transitions, policy or discount-usage persistence, and frontend behavior.
 
 ### ORD-04 — Customer order list and detail
 
@@ -474,7 +489,7 @@ Explicitly out of scope: Mutation and admin fields.
 
 ### ORD-05 — Customer cancellation and stock release
 
-Status: PLANNED | Depends on: ORD-02, ORD-03 | Primary: Codex | Review: Claude/Cursor concurrency review
+Status: PLANNED | Depends on: ORD-02, ORD-03, DLU-02 | Primary: Codex | Review: Claude/Cursor concurrency review
 
 Scope: Implement authorized idempotent cancellation for approved states and release Inventory reservations through its application contract.
 
@@ -494,7 +509,7 @@ Explicitly out of scope: Bulk operations, dispatch board, and returns.
 
 ### ORD-07 — Returns, bulk transitions, and dispatch board
 
-Status: PLANNED | Depends on: ORD-05, ORD-06 | Primary: Codex after Human business approval | Review: Claude/Cursor concurrency review, Human approval
+Status: PLANNED | Depends on: ORD-05, ORD-06, DLU-02 | Primary: Codex after Human business approval | Review: Claude/Cursor concurrency review, Human approval
 
 Scope: Implement separately approved return semantics, bounded bulk transition behavior, and dispatch-board queries without bypassing the order state machine.
 
@@ -504,13 +519,51 @@ Explicitly out of scope: Inventing refund, carrier, or physical-return rules.
 
 ### ORD-08 — Order audit, concurrency, and load verification
 
-Status: PLANNED | Depends on: ORD-03, ORD-05, ORD-06, AUD-01 | Primary: Codex | Review: Claude/Cursor concurrency/performance review
+Status: PLANNED | Depends on: ORD-03, ORD-05, ORD-06, COM-03, DLU-02, SET-02, AUD-01 | Primary: Codex | Review: Claude/Cursor concurrency/performance review
 
 Scope: Complete order audit events, race-condition suites, idempotency verification, query analysis, and representative create/list/transition load tests.
 
 Acceptance criteria: Duplicate creation, hot-SKU reservation, cancel/transition races, and normal/spike behavior have measurable assertions with no invariant loss.
 
 Explicitly out of scope: Changing business rules to meet performance targets.
+
+## Phase 4A — Commerce Order-Acceptance Policy
+
+### COM-01 — Commerce order-acceptance policy decisions
+
+Status: DONE | Depends on: ORD-03, AUTH-08 | Primary: Human + ChatGPT architecture process | Review: Claude/Cursor concurrency/security review, Human approval
+
+Scope: Accept or revise the typed Commerce Settings recommendation in `instructions/commerce-policy.md` for configurable ordering hours and minimum summed cart quantity, including Order-creation placement, lock order, validation, security, and cache non-authority.
+
+Acceptance criteria: Approved decisions are recorded in an ADR and durable instruction policy; the model is typed rather than generic JSON; only new logical Order acceptance is affected; PostgreSQL transaction/clock semantics and migration defaults are unambiguous; no implementation is performed in this task.
+
+Delivered: accepted [ADR 0016](adr/0016-commerce-order-acceptance-policy.md) and durable [Commerce policy](../instructions/commerce-policy.md): immutable `Asia/Tehran` business timezone; minute-precision half-open regular/special windows with cross-midnight support; `CLOSED` / `SPECIAL_HOURS` date overrides unique per local date; fail-closed absent/invalid settings with explicit first Admin creation; normalized summed minimum quantity; one policy-wide monotonic revision; optimistic Admin mutation serialization; lock-free REPEATABLE READ Order snapshot evaluation; minimal Order revision/time evidence; `COMMERCE_POLICY_MANAGE` for `SUPER_ADMIN` only; stable error/status/message taxonomy; public-read minimization and audit candidates. No schema, migration, API, source, controller, or test implementation.
+
+Explicitly out of scope: Prisma/schema/API/application/test changes, discount usage limits, settlement, and frontend rendering.
+
+### COM-02 — Typed Commerce Settings persistence and Admin API
+
+Status: DONE | Depends on: COM-01, AUTH-08 | Primary: Codex | Review: Claude/Cursor security/concurrency review, Human migration review
+
+Scope: Implement the accepted typed Commerce Settings and `CommerceScheduleOverride` models, explicit first-settings creation plus validated Admin read/update/override APIs, `SUPER_ADMIN`-only `COMMERCE_POLICY_MANAGE` permission through central RBAC, global revision/concurrency behavior, database constraints, OpenAPI, audit hooks, and PostgreSQL tests.
+
+Acceptance criteria: No generic key-value/JSON settings store exists; `CLOSED` / `SPECIAL_HOURS` shape and unique Tehran local dates are constrained; missing/invalid configuration follows COM-01; unauthorized Admins cannot read or mutate Admin policy; concurrent settings/override updates deterministically compare and increment one revision; migration leaves the singleton absent rather than inventing business values.
+
+Delivered: Typed `CommerceSettings` singleton and unique `CommerceScheduleOverride` PostgreSQL models with minute-of-day and `date` persistence, shape/range/singleton/FK constraints, explicit absent-state initialization (`expectedRevision=0` → revision `1`), actor metadata, lock-serialized compare/increment transactions across settings and override create/update/remove, bounded override management reads, strict Admin DTOs and stable errors, safe structured mutation events, `COMMERCE_POLICY_MANAGE` granted only to `SUPER_ADMIN`, OpenAPI, unit/E2E/real-PostgreSQL concurrency and rollback coverage. No Order evaluation, public policy read, Redis authority, or AuditLog persistence.
+
+Explicitly out of scope: Order-create enforcement, Redis-authoritative caching, discount usage, settlement, and unrelated operational settings.
+
+### COM-03 — Transactional Order acceptance enforcement
+
+Status: DONE | Depends on: COM-02, ORD-03 | Primary: Codex | Review: Claude/Cursor concurrency/security review
+
+Scope: Integrate regular/date-override ordering availability and minimum-total-quantity evaluation into `OrderCreationService` after idempotency replay/conflict detection and before User/Region reads, pricing, persistence, or reservation, inside the existing REPEATABLE READ snapshot without pessimistic policy row locks.
+
+Acceptance criteria: Closed hours and below-minimum carts return distinct stable displayable errors; replays do not re-evaluate current policy; settings/current-date/preceding-date override reads share one committed snapshot and persist revision/time evidence; concurrent configuration changes cannot produce a hybrid policy; failures persist no Order/reservation/usage; frontend checks remain non-authoritative; unit and real-PostgreSQL boundary/concurrency tests cover midnight, equality, override precedence/carry/truncation, policy updates, and retries.
+
+Delivered: `CommercePolicyService.evaluateOrderAcceptance` joins ORD-03 create after idempotency and before User/Region/pricing/persist/reserve; Asia/Tehran minute half-open regular/SPECIAL_HOURS + CLOSED + prior-date cross-midnight tails; normalized summed minimum; fail-closed absent/invalid policy; one DB `CURRENT_TIMESTAMP` evaluation instant shared with PRC-05; additive nullable `Order.commercePolicyRevision`; stable `ORDERING_POLICY_UNAVAILABLE` / `ORDERING_CLOSED` / `ORDER_MINIMUM_QUANTITY_NOT_MET`; policy rejection leaves no Order/Inventory/idempotency residue; unit + PostgreSQL RR snapshot/concurrency specs. ORD-03A User/Region tx gap preserved. No customer HTTP, public policy read, or Redis authority.
+
+Explicitly out of scope: Customer HTTP binding (ORD-03A), Inventory availability semantics, Redis locks/cache authority, and discount lifetime usage.
 
 ## Phase 5 — Pricing & Discounts
 
@@ -571,6 +624,52 @@ Acceptance criteria: Displayed and ordered pricing share approved rules; changes
 Delivered: Persistence-neutral `OrderPricingService.priceOrderLines` composing PRC-03 LINE then ORDER on the discounted subtotal ([ADR 0015](adr/0015-line-then-order-discount-composition.md)); server-authoritative Product price/name/category with CAT-06 sale visibility; one shared `evaluatedAt`; batch Product/Discount reads (no N+1); REPEATABLE READ snapshot reads with joinable `TransactionContext` for ORD-03; explicit line/order snapshot fields including applied-discount evidence; no Order schema migration (ORD-03 owns persistence); unit + PostgreSQL concurrency/consistency specs; `instructions/pricing.md` / `orders.md` updates.
 
 Explicitly out of scope: Payment settlement, Order HTTP/create, promo codes, usage limits, cache authority, and Order/OrderLine discount column migration.
+
+### DLU-01 — Product-discount lifetime-limit decisions
+
+Status: BLOCKED | Depends on: PRC-05, ORD-03 | Primary: Human + ChatGPT architecture process | Review: Claude/Cursor concurrency/financial-rule review, Human approval
+
+Blocker / decision owner: Product and architecture owner must decide over-limit behavior (reject, partial discount, or no discount), allowance consumption event, cancellation release, return effect, reactivation semantics, and snapshot evidence for partial eligibility.
+
+Scope: Approve the complete lifecycle and concurrency contract for optional per-customer lifetime quantity caps on PRODUCT discounts only, including idempotency and PostgreSQL usage persistence. Compare all three required over-limit options and record the accepted V1 rule.
+
+Acceptance criteria: No `SUM(OrderLine)` read-check-write or Redis authority; consumption/release events reconcile with Order lifecycle; existing null caps remain unlimited; lock order and invariant are explicit; no implementation is performed in this task.
+
+Explicitly out of scope: ORDER/CATEGORY discount caps, per-day/per-order limits, promo codes, rewards, and implementation.
+
+### DLU-02 — Atomic discount allowance and pricing integration
+
+Status: PLANNED | Depends on: DLU-01, PRC-04, ORD-03 | Primary: Codex | Review: Claude/Cursor concurrency/financial-rule review, Human migration review
+
+Scope: Add the approved optional PRODUCT-discount cap, PostgreSQL usage aggregate/append-only event persistence, Admin DTO/API support, deterministic allowance locking, PRC-05 calculation integration, ORD-03 atomic consume/release behavior, idempotency, and immutable Order snapshot evidence.
+
+Acceptance criteria: Concurrent Orders for one User/Discount cannot exceed the cap; replay consumes once; cancellation/return behavior matches DLU-01; unlimited existing discounts remain unchanged; usage and Order/reservation commit or roll back together; real PostgreSQL races and OpenAPI/error contracts are verified.
+
+Explicitly out of scope: Redis counters/locks, unrelated discount stacking changes, generic promotion engines, and customer-visible usage-history APIs.
+
+## Phase 5A — Deferred Settlement
+
+### SET-01 — Deferred-settlement lifecycle decisions
+
+Status: BLOCKED | Depends on: ORD-02A, CAT-04, AUTH-08 | Primary: Human + ChatGPT architecture process | Review: Claude/Cursor security/operations review, Human approval
+
+Blocker / decision owner: Product and operations owner must decide one versus multiple receipts, receipt-required/auto-settle versus explicit confirmation, correction/reopen/detach behavior, exact Admin role grants, and stable conflict/error semantics.
+
+Scope: Accept or revise the separate Settlement aggregate recommendation in `instructions/settlement.md`, preserving the no-payment-gateway and Order-state separation decisions while defining due-date, receipt, settlement, overdue, audit, Media, timezone, and authorization semantics.
+
+Acceptance criteria: Lifecycle and correction rules are explicit; `dueAt` is allowed only after `DELIVERED`; overdue is derived; Media deletion is restricted; no provider/card/bank/accounting fields exist; no implementation is performed in this task.
+
+Explicitly out of scope: Online payment processing, accounting, refunds, customer credit flags, implementation, and unapproved reminders.
+
+### SET-02 — Deferred-settlement persistence and Admin operations
+
+Status: PLANNED | Depends on: SET-01, ORD-02, CAT-04, AUTH-08 | Primary: Codex | Review: Claude/Cursor security/concurrency review, Human migration review
+
+Scope: Implement the accepted Settlement aggregate, receipt Media reference(s), explicit application commands, permissioned Admin detail/list/filter/sort APIs, derived overdue behavior, conditional concurrency/idempotency, audit hooks, OpenAPI, and real PostgreSQL coverage.
+
+Acceptance criteria: Only delivered Orders receive due dates; settlement state never mutates Order status; arbitrary Media IDs/BOLA are prevented; referenced Media deletion is restricted; receipt/settle retries cannot duplicate or lose evidence; no sensitive payment data is accepted or logged.
+
+Explicitly out of scope: Customer settlement APIs, gateway/provider integration, automated accounting, and reminders/notifications not separately approved.
 
 ## Phase 6 — Referrals & Visitors
 
@@ -898,9 +997,9 @@ Explicitly out of scope: Production provisioning.
 
 ### REL-02 — Inventory and idempotency concurrency suites
 
-Status: PLANNED | Depends on: REL-01, INV-06, ORD-03 | Primary: Codex | Review: Claude/Cursor concurrency review
+Status: PLANNED | Depends on: REL-01, INV-06, ORD-03, COM-03, DLU-02, SET-02 | Primary: Codex | Review: Claude/Cursor concurrency review
 
-Scope: Build repeatable real-PostgreSQL races for inventory invariants, deterministic locking, order idempotency, duplicate cancellation, and retry behavior.
+Scope: Build repeatable real-PostgreSQL races for inventory invariants, deterministic locking, order idempotency, commerce-policy updates, discount allowance, settlement commands, duplicate cancellation, and retry behavior.
 
 Acceptance criteria: Tests assert durable final state/ledger/history rather than only HTTP status and detect oversell, duplicate orders, deadlocks, or double release.
 
@@ -950,9 +1049,9 @@ Explicitly out of scope: Chaos tooling or external monitoring vendors without ap
 
 ### DATA-01 — Data classification and retention decision register
 
-Status: PLANNED | Depends on: AUD-01, NOT-01, REF-02 | Primary: Human + ChatGPT architecture process | Review: Human legal/privacy/operations approval
+Status: PLANNED | Depends on: AUD-01, NOT-01, REF-02, COM-02, DLU-02, SET-02 | Primary: Human + ChatGPT architecture process | Review: Human legal/privacy/operations approval
 
-Scope: Classify AuditLog, application logs, inventory ledger, price history, orders/business records, push installations/tokens, visitor/referral raw data, media, temporary auth state, and backups.
+Scope: Classify AuditLog, application logs, inventory ledger, price history, orders/business records, commerce-policy audit evidence, discount-usage records, settlement/receipt references, push installations/tokens, visitor/referral raw data, media, temporary auth state, and backups.
 
 Acceptance criteria: Legal, privacy, volume, cost, recovery, access, deletion, and hold requirements are recorded per class; missing retention periods remain unresolved rather than guessed.
 
@@ -1117,6 +1216,9 @@ Explicitly out of scope: Autonomous AI cutover and deleting legacy data/services
 | Admin Inventory                 | INV-01A through INV-06                        |
 | Admin Discounts                 | PRC-02 through PRC-04                         |
 | Admin Orders                    | ORD-06, ORD-07                                |
+| Commerce ordering policy        | COM-01 through COM-03                         |
+| Discount lifetime limits        | DLU-01, DLU-02                                |
+| Deferred settlement             | SET-01, SET-02                                |
 | Admin Analytics                 | ANL-01 through ANL-04                         |
 | Admin Stores / Customers        | ADM-02                                        |
 | Admin Visitors                  | REF-02 through REF-04                         |
@@ -1141,7 +1243,7 @@ Complete when CAT-01 through CAT-06 and INV-01A through INV-06 are DONE, includi
 
 ### M4 — Ordering complete
 
-Complete when PRC-01 through PRC-05 and ORD-01 through ORD-08 are DONE: historical snapshots, pricing/discount rules, transactional idempotent multi-item creation, inventory integration, customer/admin flows, cancellation/returns/dispatch behavior, audit, and load/concurrency checks are approved.
+Complete when PRC-01 through PRC-05, ORD-01 through ORD-08 (including ORD-03A), COM-01 through COM-03, DLU-01/DLU-02, and SET-01/SET-02 are DONE: historical snapshots, pricing/discount rules and lifetime allowance, configurable Order acceptance, transactional idempotent multi-item creation, Inventory integration, customer/Admin flows, deferred settlement, cancellation/returns/dispatch behavior, audit, and load/concurrency checks are approved.
 
 ### M5 — Feature parity complete
 
@@ -1166,11 +1268,12 @@ The following are not implementation assumptions:
 - Customer/store business profile fields required at registration vs later completion (store name, manager name, address, region, coordinates): no in-repo legacy inventory yet (`MIG-01`); AUTH-07 shipped Pattern A phone-only identity with empty profile update allowlist. Region **reference** rows exist (CAT-02); profile `regionId` FK remains deferred.
 - Category/Region legacy parity gaps (MIG-01): name uniqueness, public slug, sortOrder, category hierarchy/parent, shipping-related Region fields, and whether hard delete is ever allowed after Product/profile FKs land.
 - Product legacy parity gaps (MIG-01): SKU/code uniqueness, description, unit/package semantics, media/image attachment once CAT-04 exists, whether zero-price products should be allowed, and whether product name uniqueness is ever required.
-- Order transition runtime (ORD-02) is implemented as internal application commands; HTTP surfaces (ORD-05/ORD-06) remain PLANNED. V1 state machine, actors, concurrency, and Inventory orchestration rules are settled in ADR 0014 / [instructions/orders.md](../instructions/orders.md). Shipping/address snapshot fields, dispatch board, return HTTP beyond ORD-07 scope, and payment/refund semantics remain deferred.
+- Order transition runtime (ORD-02) is implemented as internal application commands; customer create/list/detail and transition HTTP surfaces (ORD-03A/ORD-04/ORD-05) plus Admin Orders HTTP (ORD-06) remain PLANNED. V1 state machine, actors, concurrency, and Inventory orchestration rules are settled in ADR 0014 / [instructions/orders.md](../instructions/orders.md). Shipping/address snapshot fields, dispatch board, return HTTP beyond ORD-07 scope, and payment/refund semantics remain deferred. Deferred settlement is separately planned in SET-01/SET-02 and must not become Order state.
 - Whether a future `PACKED`/`PICKED` state should move the physical `onHand` decrement earlier than `SHIPPED`.
 - Whether partial fulfillment or split shipment is ever allowed after V1.
 - Public exposure of exact inventory `available`, and any preferred-customer allocation/fairness policy under contention.
-- Discount eligibility limits, usage accounting, promo codes, and promo-banner behavior beyond evidenced legacy requirements. V1 LINE-then-ORDER composition and single-winner-per-scope rules are locked in PRC-03 / PRC-05 / [ADR 0015](adr/0015-line-then-order-discount-composition.md).
+- Product-discount lifetime caps are approved in principle, but DLU-01 is BLOCKED on over-limit behavior, consumption event, cancellation release, return effect, reactivation semantics, and partial-discount snapshot evidence. V1 LINE-then-ORDER composition and single-winner-per-scope rules remain locked in PRC-03 / PRC-05 / [ADR 0015](adr/0015-line-then-order-discount-composition.md). Promo codes and promo-banner behavior remain unapproved.
+- Deferred settlement SET-01 is BLOCKED on receipt count, receipt-versus-explicit-settle behavior, receipt-required rule, correction/reopen/detach semantics, exact Admin role grants, and stable conflicts. No gateway, card/bank fields, refunds, or accounting subsystem is approved.
 - Referral attribution window/source/reassignment, duplicate/self-referral treatment, visitor conversion, and whether rewards exist at all.
 - Notification type/content rules, push provider/consent, delivery guarantees, and token lifecycle.
 - Media historical-reference behavior when Product/Blog/Category attach to Media (MED-01). Upload limits/types and the S3-compatible provider abstraction are decided in CAT-04 / ADR 0011; orphan cleanup remains DATA-02 (no retention periods invented). Live production-bucket verification remains pending credentials (DEP-02).

@@ -46,6 +46,7 @@ type PrismaOrderWithLines = {
   orderDiscountAmount: bigint;
   total: bigint;
   pricingEvaluatedAt: Date;
+  commercePolicyRevision: number | null;
   appliedOrderDiscountId: string | null;
   appliedOrderDiscountName: string | null;
   appliedOrderDiscountType: string | null;
@@ -330,6 +331,7 @@ export class OrderRepository {
           orderDiscountAmount: normalized.orderDiscountAmount,
           total: normalized.total,
           pricingEvaluatedAt: normalized.pricingEvaluatedAt,
+          commercePolicyRevision: normalized.commercePolicyRevision,
           ...mapOrderDiscountColumns(normalized.appliedOrderDiscount),
           idempotencyKey: normalized.idempotencyKey,
           idempotencyPayloadHash: normalized.idempotencyPayloadHash,
@@ -490,6 +492,7 @@ function mapOrder(row: PrismaOrderWithLines): OrderRecord {
     orderDiscountAmount: row.orderDiscountAmount,
     total: row.total,
     pricingEvaluatedAt: row.pricingEvaluatedAt,
+    commercePolicyRevision: row.commercePolicyRevision,
     appliedOrderDiscount: mapAppliedOrderDiscount(row),
     idempotencyKey: row.idempotencyKey,
     idempotencyPayloadHash: row.idempotencyPayloadHash,

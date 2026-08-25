@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ApplicationLogger } from '../../../common/observability/application-logger.service';
+import type { TransactionContext } from '../../../infrastructure/database/transaction';
 import {
   CommerceOverrideMode,
   type CommerceOverrideInput,
@@ -18,6 +19,13 @@ import {
   CommercePolicyRevisionConflictError,
 } from '../domain/commerce-policy-errors';
 import {
+  evaluateOrderAcceptance,
+  previousLocalDate,
+  toTehranLocalWallClock,
+  type OrderAcceptanceEvaluationResult,
+  type OrderAcceptanceLineQuantity,
+} from '../domain/order-acceptance';
+import {
   CommercePolicyRepository,
   type OverrideMutationResult,
   type PolicyMutationResult,
@@ -32,6 +40,37 @@ export class CommercePolicyService {
 
   getSettings(): Promise<CommerceSettingsRecord | null> {
     return this.repository.getSettings();
+  }
+
+  /**
+   * COM-03 Order-acceptance contract.
+   * Must join the caller's outer REPEATABLE READ transaction (no policy row locks).
+   */
+  async evaluateOrderAcceptance(
+    normalizedLines: readonly OrderAcceptanceLineQuantity[],
+    tx: TransactionContext,
+  ): Promise<OrderAcceptanceEvaluationResult> {
+    const evaluatedAt = await this.repository.readEvaluationInstant(tx);
+    const { localDate } = toTehranLocalWallClock(evaluatedAt);
+    const precedingDate = previousLocalDate(localDate);
+
+    const settings = await this.repository.getSettings(tx);
+    const overrides = await this.repository.findOverridesForLocalDates(
+      [localDate, precedingDate],
+      tx,
+    );
+
+    const byDate = new Map(
+      overrides.map((override) => [override.localDate, override]),
+    );
+
+    return evaluateOrderAcceptance({
+      settings,
+      currentDateOverride: byDate.get(localDate) ?? null,
+      previousDateOverride: byDate.get(precedingDate) ?? null,
+      evaluatedAt,
+      normalizedLines,
+    });
   }
   listOverrides(
     from: string,

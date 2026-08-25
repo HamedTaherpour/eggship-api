@@ -31,6 +31,8 @@ export interface OrderRecord {
   orderDiscountAmount: bigint;
   total: bigint;
   pricingEvaluatedAt: Date;
+  /** Commerce policy revision at create (COM-03). Null only for pre-COM-03 rows. */
+  commercePolicyRevision: number | null;
   appliedOrderDiscount: AppliedDiscountSnapshot | null;
   idempotencyKey: string | null;
   idempotencyPayloadHash: string | null;
@@ -72,6 +74,8 @@ export interface TrustedCreateOrderInput {
   idempotencyKey: string;
   idempotencyPayloadHash: string;
   pricingEvaluatedAt: Date;
+  /** Positive CommerceSettings.revision observed for this create attempt. */
+  commercePolicyRevision: number;
   grossSubtotal: bigint;
   lineDiscountTotal: bigint;
   subtotalAfterLineDiscounts: bigint;

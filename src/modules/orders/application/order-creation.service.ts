@@ -3,6 +3,7 @@ import { Prisma } from '../../../generated/prisma/client';
 import { ApplicationError } from '../../../common/errors/application-error';
 import { ApplicationLogger } from '../../../common/observability/application-logger.service';
 import { TransactionRunner } from '../../../infrastructure/database/transaction';
+import { CommercePolicyService } from '../../commerce-policy/application/commerce-policy.service';
 import { InventoryService } from '../../inventory/application/inventory.service';
 import { InventoryLedgerActorType } from '../../inventory/domain/inventory-ledger';
 import { OrderPricingService } from '../../pricing/application/order-pricing.service';
@@ -39,15 +40,18 @@ import type {
 const CREATE_SERIALIZATION_MAX_ATTEMPTS = 5;
 
 /**
- * ORD-03 transactional order creation.
- * One REPEATABLE READ transaction: price → persist snapshots → reserve.
+ * ORD-03 / COM-03 transactional order creation.
+ * One REPEATABLE READ transaction: policy → price → persist snapshots → reserve.
  * No HTTP. Callers supply trusted USER actor + region + lines + idempotency key.
+ *
+ * ORD-03A owns joining User/Region reads to this outer transaction before HTTP.
  */
 @Injectable()
 export class OrderCreationService {
   constructor(
     private readonly transactions: TransactionRunner,
     private readonly orders: OrderRepository,
+    private readonly commercePolicy: CommercePolicyService,
     private readonly pricing: OrderPricingService,
     private readonly inventory: InventoryService,
     private readonly users: UserRepository,
@@ -174,6 +178,14 @@ export class OrderCreationService {
         return this.replayOrConflict(existing, input.payloadHash);
       }
 
+      // COM-03: one coherent policy snapshot + DB evaluation instant.
+      // Rejects before User/Region/pricing/persist/reserve. No policy row locks.
+      const acceptance = await this.commercePolicy.evaluateOrderAcceptance(
+        input.normalizedLines,
+        tx,
+      );
+
+      // ORD-03A: User/Region reads must join this outer transaction before HTTP.
       const user = await this.users.findById(input.userId);
       if (user === null || !user.isActive) {
         throw new OrderInvalidUserError(OrderMessage.INVALID_USER);
@@ -186,6 +198,7 @@ export class OrderCreationService {
 
       const priced = await this.pricing.priceOrderLines(input.normalizedLines, {
         tx,
+        evaluatedAt: acceptance.evaluatedAt,
       });
 
       const createInput = this.toTrustedCreateInput({
@@ -195,6 +208,8 @@ export class OrderCreationService {
         regionName: region.name,
         idempotencyKey: input.idempotencyKey,
         payloadHash: input.payloadHash,
+        commercePolicyRevision: acceptance.revision,
+        evaluatedAt: acceptance.evaluatedAt,
         priced,
       });
 
@@ -247,6 +262,8 @@ export class OrderCreationService {
     regionName: string;
     idempotencyKey: string;
     payloadHash: string;
+    commercePolicyRevision: number;
+    evaluatedAt: Date;
     priced: OrderPricingSnapshot;
   }): TrustedCreateOrderInput {
     return {
@@ -256,7 +273,8 @@ export class OrderCreationService {
       regionName: input.regionName,
       idempotencyKey: input.idempotencyKey,
       idempotencyPayloadHash: input.payloadHash,
-      pricingEvaluatedAt: input.priced.evaluatedAt,
+      pricingEvaluatedAt: input.evaluatedAt,
+      commercePolicyRevision: input.commercePolicyRevision,
       grossSubtotal: input.priced.grossSubtotal,
       lineDiscountTotal: input.priced.lineDiscountTotal,
       subtotalAfterLineDiscounts: input.priced.subtotalAfterLineDiscounts,

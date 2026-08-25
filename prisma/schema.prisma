@@ -504,6 +504,8 @@ model Order {
   total                            BigInt
   /// Shared pricing evaluation instant (PRC-05 evaluatedAt). Immutable.
   pricingEvaluatedAt               DateTime      @db.Timestamptz(3)
+  /// Commerce policy revision observed at create (COM-03 / ADR 0016). Immutable.
+  commercePolicyRevision           Int?
   /// Applied ORDER discount evidence (null when none). No FK — historical only.
   appliedOrderDiscountId           String?       @db.Uuid
   appliedOrderDiscountName         String?       @db.VarChar(100)

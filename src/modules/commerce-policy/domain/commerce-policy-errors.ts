@@ -43,3 +43,37 @@ export class CommerceOverrideNotFoundError extends ApplicationError {
     );
   }
 }
+
+/** Customer/Order submit: missing or invalid Commerce policy (COM-03). */
+export class OrderingPolicyUnavailableError extends ApplicationError {
+  constructor() {
+    super(
+      'ORDERING_POLICY_UNAVAILABLE',
+      'Ordering is temporarily unavailable. Please try again.',
+      HttpStatus.SERVICE_UNAVAILABLE,
+    );
+  }
+}
+
+/** Customer/Order submit: outside approved ordering windows (COM-03). */
+export class OrderingClosedError extends ApplicationError {
+  constructor() {
+    super(
+      'ORDERING_CLOSED',
+      'Ordering is currently closed.',
+      HttpStatus.CONFLICT,
+    );
+  }
+}
+
+/** Customer/Order submit: normalized cart quantity below minimum (COM-03). */
+export class OrderMinimumQuantityNotMetError extends ApplicationError {
+  constructor(minimumQuantity: number, actualQuantity: number) {
+    super(
+      'ORDER_MINIMUM_QUANTITY_NOT_MET',
+      'The order does not meet the minimum quantity.',
+      HttpStatus.UNPROCESSABLE_ENTITY,
+      { minimumQuantity, actualQuantity },
+    );
+  }
+}

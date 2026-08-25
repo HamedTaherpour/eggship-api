@@ -5,6 +5,13 @@ import {
   TransactionRunner,
   type TransactionContext,
 } from '../../../infrastructure/database/transaction';
+import type { CommercePolicyService } from '../../commerce-policy/application/commerce-policy.service';
+import {
+  OrderingClosedError,
+  OrderingPolicyUnavailableError,
+  OrderMinimumQuantityNotMetError,
+} from '../../commerce-policy/domain/commerce-policy-errors';
+import type { OrderAcceptanceEvaluationResult } from '../../commerce-policy/domain/order-acceptance';
 import type { InventoryService } from '../../inventory/application/inventory.service';
 import { InventoryInsufficientStockError } from '../../inventory/domain/inventory-errors';
 import { InventoryLedgerActorType } from '../../inventory/domain/inventory-ledger';
@@ -154,6 +161,7 @@ function orderFromSnapshot(
     orderDiscountAmount: priced.orderDiscountAmount,
     total: priced.total,
     pricingEvaluatedAt: priced.evaluatedAt,
+    commercePolicyRevision: 1,
     appliedOrderDiscount: priced.appliedOrderDiscount,
     idempotencyKey: IDEMPOTENCY_KEY,
     idempotencyPayloadHash: payloadHash,
@@ -192,6 +200,9 @@ describe('OrderCreationService', () => {
       | 'createWithTrustedSnapshots'
     >
   >;
+  let commercePolicy: jest.Mocked<
+    Pick<CommercePolicyService, 'evaluateOrderAcceptance'>
+  >;
   let pricing: jest.Mocked<Pick<OrderPricingService, 'priceOrderLines'>>;
   let inventory: jest.Mocked<Pick<InventoryService, 'reserveForOrder'>>;
   let users: jest.Mocked<Pick<UserRepository, 'findById'>>;
@@ -199,12 +210,29 @@ describe('OrderCreationService', () => {
   let logger: jest.Mocked<Pick<ApplicationLogger, 'info'>>;
   let service: OrderCreationService;
 
+  function acceptance(
+    overrides: Partial<OrderAcceptanceEvaluationResult> = {},
+  ): OrderAcceptanceEvaluationResult {
+    return {
+      revision: 1,
+      evaluatedAt: EVALUATED_AT,
+      minimumOrderQuantity: 1,
+      actualQuantity: 2,
+      localDate: '2026-08-22',
+      localMinute: 930,
+      ...overrides,
+    };
+  }
+
   beforeEach(() => {
     transactions = new ImmediateTransactionRunner();
     orders = {
       lockCreateIdempotencyScope: jest.fn().mockResolvedValue(undefined),
       findByUserIdAndIdempotencyKey: jest.fn().mockResolvedValue(null),
       createWithTrustedSnapshots: jest.fn(),
+    };
+    commercePolicy = {
+      evaluateOrderAcceptance: jest.fn().mockResolvedValue(acceptance()),
     };
     pricing = { priceOrderLines: jest.fn() };
     inventory = {
@@ -219,6 +247,7 @@ describe('OrderCreationService', () => {
     service = new OrderCreationService(
       transactions,
       orders as unknown as OrderRepository,
+      commercePolicy as unknown as CommercePolicyService,
       pricing as unknown as OrderPricingService,
       inventory as unknown as InventoryService,
       users as unknown as UserRepository,
@@ -261,6 +290,7 @@ describe('OrderCreationService', () => {
     expect(pricing.priceOrderLines.mock.calls[0]![1]).toEqual(
       expect.objectContaining({
         tx: { [TRANSACTION_CONTEXT_BRAND]: true },
+        evaluatedAt: EVALUATED_AT,
       }),
     );
     expect(orders.createWithTrustedSnapshots).toHaveBeenCalledWith(
@@ -272,6 +302,7 @@ describe('OrderCreationService', () => {
         grossSubtotal: 20_000n,
         total: 20_000n,
         pricingEvaluatedAt: EVALUATED_AT,
+        commercePolicyRevision: 1,
         appliedOrderDiscount: null,
       }),
       expect.anything(),
@@ -619,6 +650,7 @@ describe('OrderCreationService', () => {
     const result = await create();
 
     expect(result).toEqual({ order: existing, created: false });
+    expect(commercePolicy.evaluateOrderAcceptance).not.toHaveBeenCalled();
     expect(pricing.priceOrderLines).not.toHaveBeenCalled();
     expect(orders.createWithTrustedSnapshots).not.toHaveBeenCalled();
     expect(inventory.reserveForOrder).not.toHaveBeenCalled();
@@ -750,5 +782,93 @@ describe('OrderCreationService', () => {
     const pricedLines = pricing.priceOrderLines.mock.calls[0]![0];
     const reservedLines = inventory.reserveForOrder.mock.calls[0]![0].lines;
     expect(pricedLines).toEqual(reservedLines);
+  });
+
+  it('rejects closed ordering before pricing or persistence', async () => {
+    commercePolicy.evaluateOrderAcceptance.mockRejectedValue(
+      new OrderingClosedError(),
+    );
+
+    await expect(create()).rejects.toBeInstanceOf(OrderingClosedError);
+    expect(users.findById).not.toHaveBeenCalled();
+    expect(pricing.priceOrderLines).not.toHaveBeenCalled();
+    expect(orders.createWithTrustedSnapshots).not.toHaveBeenCalled();
+    expect(inventory.reserveForOrder).not.toHaveBeenCalled();
+  });
+
+  it('rejects below-minimum carts before pricing or persistence', async () => {
+    commercePolicy.evaluateOrderAcceptance.mockRejectedValue(
+      new OrderMinimumQuantityNotMetError(5, 2),
+    );
+
+    await expect(create()).rejects.toMatchObject({
+      code: 'ORDER_MINIMUM_QUANTITY_NOT_MET',
+      httpStatus: 422,
+      details: { minimumQuantity: 5, actualQuantity: 2 },
+    });
+    expect(pricing.priceOrderLines).not.toHaveBeenCalled();
+    expect(orders.createWithTrustedSnapshots).not.toHaveBeenCalled();
+    expect(inventory.reserveForOrder).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when commerce policy is unavailable', async () => {
+    commercePolicy.evaluateOrderAcceptance.mockRejectedValue(
+      new OrderingPolicyUnavailableError(),
+    );
+
+    await expect(create()).rejects.toMatchObject({
+      code: 'ORDERING_POLICY_UNAVAILABLE',
+      httpStatus: 503,
+      details: {},
+    });
+    expect(orders.createWithTrustedSnapshots).not.toHaveBeenCalled();
+    expect(inventory.reserveForOrder).not.toHaveBeenCalled();
+  });
+
+  it('keeps ORDERING_CLOSED details empty (no revision/Admin leakage)', async () => {
+    commercePolicy.evaluateOrderAcceptance.mockRejectedValue(
+      new OrderingClosedError(),
+    );
+
+    await expect(create()).rejects.toMatchObject({
+      code: 'ORDERING_CLOSED',
+      httpStatus: 409,
+      details: {},
+    });
+  });
+
+  it('passes normalized lines into commerce policy evaluation', async () => {
+    const priced = pricingSnapshot({
+      lines: [
+        {
+          productId: PRODUCT_A,
+          productName: 'Fresh eggs',
+          categoryId: '99999999-9999-4999-8999-999999999999',
+          unitPrice: 10_000,
+          quantity: 5,
+          grossLineTotal: 50_000n,
+          lineDiscountAmount: 0n,
+          finalLineTotal: 50_000n,
+          appliedLineDiscount: null,
+        },
+      ],
+      grossSubtotal: 50_000n,
+      subtotalAfterLineDiscounts: 50_000n,
+      total: 50_000n,
+    });
+    pricing.priceOrderLines.mockResolvedValue(priced);
+    orders.createWithTrustedSnapshots.mockResolvedValue(
+      orderFromSnapshot(priced),
+    );
+
+    await create([
+      { productId: PRODUCT_A, quantity: 2 },
+      { productId: PRODUCT_A, quantity: 3 },
+    ]);
+
+    expect(commercePolicy.evaluateOrderAcceptance).toHaveBeenCalledWith(
+      [{ productId: PRODUCT_A, quantity: 5 }],
+      expect.anything(),
+    );
   });
 });

@@ -1,6 +1,6 @@
 # Orders
 
-EggShip V1 has **no online payment gateway**. Warehouse/operations ships goods; payment and settlement occur outside the application. Do not introduce Payment, gateway, card, checkout-payment, or transaction-id models without an approved phase. No payment-dependent state or transition exists in V1 ([ADR 0014](../docs/adr/0014-order-state-machine-and-transition-authorization.md)).
+EggShip V1 has **no online payment gateway**. Warehouse/operations ships goods; receipt/proof originates outside EggShip. Approved deferred-settlement tracking is planned as a separate bounded module; it is not online payment processing and does not add payment-dependent Order states or transitions ([ADR 0014](../docs/adr/0014-order-state-machine-and-transition-authorization.md)). Do not introduce gateway, card, checkout-payment, provider transaction-id, refund, or accounting models.
 
 ## Historical snapshot principle
 
@@ -8,18 +8,19 @@ Orders are durable business records. **Historical display must not depend on mut
 
 At order creation the backend persists immutable snapshots:
 
-| Field                                                                                                        | Source at creation              | Mutable later? |
-| ------------------------------------------------------------------------------------------------------------ | ------------------------------- | -------------- |
-| `OrderLine.productName`                                                                                      | `Product.name`                  | No             |
-| `OrderLine.unitPrice`                                                                                        | `Product.price` (integer Toman) | No             |
-| `OrderLine.grossLineTotal`                                                                                   | server `unitPrice × quantity`   | No             |
-| `OrderLine.lineDiscountAmount` / `finalLineTotal`                                                            | PRC-05 LINE composition         | No             |
-| `OrderLine` applied LINE discount columns                                                                    | PRC-05 `appliedLineDiscount`    | No             |
-| `Order.customerPhone`                                                                                        | canonical `User.phone`          | No             |
-| `Order.regionName`                                                                                           | `Region.name`                   | No             |
-| `Order.grossSubtotal` / `lineDiscountTotal` / `subtotalAfterLineDiscounts` / `orderDiscountAmount` / `total` | PRC-05 order aggregates         | No             |
-| `Order.pricingEvaluatedAt`                                                                                   | PRC-05 `evaluatedAt`            | No             |
-| `Order` applied ORDER discount columns                                                                       | PRC-05 `appliedOrderDiscount`   | No             |
+| Field                                                                                                        | Source at creation                          | Mutable later? |
+| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------- | -------------- |
+| `OrderLine.productName`                                                                                      | `Product.name`                              | No             |
+| `OrderLine.unitPrice`                                                                                        | `Product.price` (integer Toman)             | No             |
+| `OrderLine.grossLineTotal`                                                                                   | server `unitPrice × quantity`               | No             |
+| `OrderLine.lineDiscountAmount` / `finalLineTotal`                                                            | PRC-05 LINE composition                     | No             |
+| `OrderLine` applied LINE discount columns                                                                    | PRC-05 `appliedLineDiscount`                | No             |
+| `Order.customerPhone`                                                                                        | canonical `User.phone`                      | No             |
+| `Order.regionName`                                                                                           | `Region.name`                               | No             |
+| `Order.grossSubtotal` / `lineDiscountTotal` / `subtotalAfterLineDiscounts` / `orderDiscountAmount` / `total` | PRC-05 order aggregates                     | No             |
+| `Order.pricingEvaluatedAt`                                                                                   | PRC-05 `evaluatedAt` (shared with COM-03)   | No             |
+| `Order.commercePolicyRevision`                                                                               | COM-03 observed `CommerceSettings.revision` | No             |
+| `Order` applied ORDER discount columns                                                                       | PRC-05 `appliedOrderDiscount`               | No             |
 
 `OrderLine.productId` and `Order.regionId` retain traceability (`ON DELETE RESTRICT`). Applied discount columns store historical evidence **without FK** to `Discount` — deactivated or changed Discount rows must not be required to reconstruct totals.
 
@@ -85,13 +86,18 @@ Flow in one RR transaction:
 
 1. Advisory-lock create idempotency scope `(userId, idempotencyKey)`
 2. Replay or conflict on existing Order for that key + payload hash
-3. Resolve User phone / Region name
-4. `priceOrderLines({ tx })`
-5. `createWithTrustedSnapshots`
-6. `reserveForOrder(orderId, normalized lines, USER actor, tx)`
-7. Commit — status is always `PENDING_REVIEW`
+3. Evaluate one coherent Commerce policy revision from the same REPEATABLE READ snapshot (COM-03)
+4. Resolve User phone / Region name
+5. Price, including any approved lifetime-discount allowance contract (DLU-01/DLU-02; not implemented yet)
+6. Persist trusted snapshots, `commercePolicyRevision`, and any approved discount-usage evidence
+7. Reserve Inventory through `reserveForOrder(orderId, normalized lines, USER actor, tx)`
+8. Commit — status is always `PENDING_REVIEW`
 
-Failure at any step rolls back Order, lines, and reservation. No Order without reservation; no reservation without Order.
+Failure at any step rolls back policy/discount usage, Order, lines, and reservation. No Order without reservation; no reservation or discount allowance consumption without Order. Until DLU-02 lands, lifetime-discount allowance remains unimplemented.
+
+COM-03 persists the accepted `commercePolicyRevision` and reuses the shared database evaluation instant as `pricingEvaluatedAt`; it does not copy regular hours, minimum quantity, override fields, or Admin metadata onto Order. Commerce policy reads do not require pessimistic row locks: settings and relevant date overrides join the outer REPEATABLE READ transaction so one committed snapshot governs the attempt. See [ADR 0016](../docs/adr/0016-commerce-order-acceptance-policy.md) and [commerce-policy.md](commerce-policy.md).
+
+The pre-existing ORD-03 User/Region default-client gap remains owned by **ORD-03A** and is not absorbed into COM-03.
 
 ### Idempotency
 
@@ -330,3 +336,4 @@ When profile/address support lands, Orders must snapshot address at creation —
 - [0013 — Order historical snapshots](../docs/adr/0013-order-historical-snapshots.md)
 - [0014 — Order state machine and transition authorization](../docs/adr/0014-order-state-machine-and-transition-authorization.md)
 - [0015 — V1 LINE then ORDER discount composition](../docs/adr/0015-line-then-order-discount-composition.md)
+- [0016 — Commerce order-acceptance policy](../docs/adr/0016-commerce-order-acceptance-policy.md)

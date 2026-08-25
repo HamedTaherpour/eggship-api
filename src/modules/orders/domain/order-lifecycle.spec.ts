@@ -18,6 +18,7 @@ function order(overrides: Partial<OrderRecord> = {}): OrderRecord {
     orderDiscountAmount: 0n,
     total: 1000n,
     pricingEvaluatedAt: NOW,
+    commercePolicyRevision: 1,
     appliedOrderDiscount: null,
     idempotencyKey: null,
     idempotencyPayloadHash: null,

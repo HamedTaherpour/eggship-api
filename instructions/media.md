@@ -13,7 +13,7 @@ CAT-04 implements the Media domain. Product, Blog, and Category attachment is la
 | Public URL derivation            | storage provider + `STORAGE_PUBLIC_BASE_URL`      |
 | Product/Blog/Category references | future owning modules; FK `ON DELETE RESTRICT`    |
 
-Media is not owned by Products. Other domains may store a media id later.
+Media is not owned by Products. Other domains may store a media id. Approved deferred-settlement tracking will reference Media for externally received receipt/proof metadata; Settlement owns that relationship and must use `ON DELETE RESTRICT` ([settlement.md](settlement.md)).
 
 ## Storage abstraction
 
@@ -87,7 +87,7 @@ Crashes can still leave an object without a row. That is an **orphan**; cleanup 
 
 If storage delete fails, the row is kept and the API returns `MEDIA_DELETE_FAILED` so the client can retry. If storage succeeds and the row is already gone (concurrent delete or a retry after the row was removed), the API returns **200** with the previously loaded metadata. If storage succeeds and the row delete then throws, the API returns `MEDIA_DELETE_FAILED`; retry is the recovery path (missing-key object delete is success at the S3-compatible adapter).
 
-No Product/Blog FKs exist yet. When attachment lands, deletion must become `RESTRICT` (or equivalent) so referenced Media cannot be removed silently.
+No Product/Blog/Settlement FKs exist yet. When any attachment lands, deletion must become `RESTRICT` (or equivalent) so referenced Media cannot be removed silently. Settlement proof must not be detached by deleting the Media row.
 
 ## List and detail
 
@@ -131,3 +131,4 @@ Upload and delete are auditable Admin candidates for AUD-01. Do not write fake A
 - Orphan object reconciliation, failed-delete retry, unused-Media policy (DATA-02; no retention periods invented here)
 - Live production-bucket verification (DEP-02 / credentials)
 - Historical-reference rules when content starts pointing at Media (CNT/PRC)
+- Deferred-settlement receipt/proof references (SET-02); image allowlist remains unchanged unless separately approved

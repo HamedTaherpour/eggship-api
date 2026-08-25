@@ -63,11 +63,14 @@ MEDIA_READ        MEDIA_MANAGE
 INVENTORY_READ    INVENTORY_ADJUST
 ORDER_READ        ORDER_TRANSITION
 DISCOUNT_READ     DISCOUNT_MANAGE
+COMMERCE_POLICY_MANAGE
 CUSTOMER_READ     VISITOR_READ
 CONTENT_READ      CONTENT_MANAGE
 ANALYTICS_READ    AUDIT_READ
 ADMIN_READ        ADMIN_MANAGE
 ```
+
+`COMMERCE_POLICY_MANAGE` is implemented by COM-02. It gates both Commerce policy Admin reads and mutations in V1 and is granted only to `SUPER_ADMIN` through the central role policy enumeration; there is no separate commerce read permission or role branch. Settlement tasks must likewise extend the catalog with explicit named permissions rather than role checks, but Settlement role grants remain **human decision required** in SET-01. No planned permission grants anything until code, guards, tests, and the role-policy update land together.
 
 Role → permission policy is centralized in `src/common/authz/role-permissions.ts`:
 

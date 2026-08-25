@@ -64,6 +64,7 @@ describe('role to permission mapping', () => {
       const permissions = permissionsForRole(role);
       expect(permissions.has(Permission.ADMIN_MANAGE)).toBe(false);
       expect(permissions.has(Permission.ADMIN_READ)).toBe(false);
+      expect(permissions.has(Permission.COMMERCE_POLICY_MANAGE)).toBe(false);
     }
   });
 

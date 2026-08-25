@@ -32,7 +32,53 @@ model Admin {
   createdAt    DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt    DateTime  @updatedAt @db.Timestamptz(3)
 
-  sessions AdminAuthSession[]
+  sessions                 AdminAuthSession[]
+  commerceSettingsCreated  CommerceSettings[]         @relation("CommerceSettingsCreatedBy")
+  commerceSettingsUpdated  CommerceSettings[]         @relation("CommerceSettingsUpdatedBy")
+  commerceOverridesCreated CommerceScheduleOverride[] @relation("CommerceOverrideCreatedBy")
+  commerceOverridesUpdated CommerceScheduleOverride[] @relation("CommerceOverrideUpdatedBy")
+}
+
+enum CommerceScheduleOverrideMode {
+  CLOSED
+  SPECIAL_HOURS
+}
+
+/// Singleton, PostgreSQL-authoritative commerce policy (ADR 0016). Wall-clock
+/// values are Tehran-local minutes since midnight, never fake UTC timestamps.
+model CommerceSettings {
+  id                          Int      @id @default(1)
+  orderingScheduleEnabled     Boolean
+  orderingOpensAtLocalMinute  Int
+  orderingClosesAtLocalMinute Int
+  minimumOrderQuantity        Int
+  revision                    Int
+  createdByAdminId            String   @db.Uuid
+  updatedByAdminId            String   @db.Uuid
+  createdAt                   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt                   DateTime @updatedAt @db.Timestamptz(3)
+
+  createdByAdmin Admin @relation("CommerceSettingsCreatedBy", fields: [createdByAdminId], references: [id], onDelete: Restrict)
+  updatedByAdmin Admin @relation("CommerceSettingsUpdatedBy", fields: [updatedByAdminId], references: [id], onDelete: Restrict)
+}
+
+/// One date-specific Tehran-local schedule override. Absence means fallback;
+/// removal is a hard delete coupled to the global settings revision.
+model CommerceScheduleOverride {
+  id                  String                       @id @default(uuid()) @db.Uuid
+  localDate           DateTime                     @unique @db.Date
+  mode                CommerceScheduleOverrideMode
+  opensAtLocalMinute  Int?
+  closesAtLocalMinute Int?
+  createdByAdminId    String                       @db.Uuid
+  updatedByAdminId    String                       @db.Uuid
+  createdAt           DateTime                     @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime                     @updatedAt @db.Timestamptz(3)
+
+  createdByAdmin Admin @relation("CommerceOverrideCreatedBy", fields: [createdByAdminId], references: [id], onDelete: Restrict)
+  updatedByAdmin Admin @relation("CommerceOverrideUpdatedBy", fields: [updatedByAdminId], references: [id], onDelete: Restrict)
+
+  @@index([localDate])
 }
 
 /// Customer/store identity. The authenticated storefront subject is this record.

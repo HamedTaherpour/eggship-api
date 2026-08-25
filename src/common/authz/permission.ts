@@ -25,6 +25,8 @@ export const Permission = {
   /** Discount lifecycle and pricing administration (PRC-02–PRC-04). */
   DISCOUNT_READ: 'DISCOUNT_READ',
   DISCOUNT_MANAGE: 'DISCOUNT_MANAGE',
+  /** Server-authoritative ordering schedule and minimum quantity (COM-02). */
+  COMMERCE_POLICY_MANAGE: 'COMMERCE_POLICY_MANAGE',
   /** Store/customer back-office views (ADM-02). */
   CUSTOMER_READ: 'CUSTOMER_READ',
   /** Visitor and referral administration views (REF-04). */

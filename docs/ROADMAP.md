@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   103 |
-| DONE        |    45 |
+| DONE        |    46 |
 | IN_PROGRESS |     0 |
-| READY       |     2 |
+| READY       |     1 |
 | BLOCKED     |     1 |
 | PLANNED     |    55 |
 
-- Current task: none in progress. Exact next READY: `CAT-05 — Admin catalog APIs` or `DLU-02 — Atomic discount usage and pricing integration`. Commerce Phase 4A is complete; DLU-01 decisions are accepted ([ADR 0017](adr/0017-discount-lifetime-quantity-limit.md)). Customer create HTTP remains `ORD-03A` (PLANNED; depends on COM-03, DLU-02, AUTH-08). `SET-01` remains the separate BLOCKED settlement decision task.
+- Current task: none in progress. Exact next READY: `CAT-05 — Admin catalog APIs`. Commerce Phase 4A and DLU-02 are complete ([ADR 0017](adr/0017-discount-lifetime-quantity-limit.md)). Customer create HTTP remains `ORD-03A` (PLANNED; depends on COM-03, DLU-02, AUTH-08). `SET-01` remains the separate BLOCKED settlement decision task.
 - Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
@@ -639,13 +639,15 @@ Delivered: Accepted [ADR 0017](adr/0017-discount-lifetime-quantity-limit.md); du
 
 ### DLU-02 — Atomic discount usage and pricing integration
 
-Status: READY | Depends on: DLU-01, PRC-04, ORD-03 | Primary: Codex | Review: Claude/Cursor concurrency/financial-rule review, Human migration review
+Status: DONE | Depends on: DLU-01, PRC-04, ORD-03 | Primary: Codex | Review: Claude/Cursor concurrency/financial-rule review, Human migration review
 
 Scope: Add the approved optional PRODUCT-discount `maxQuantityPerCustomer`, PostgreSQL `DiscountCustomerUsage` aggregate + append-only `DiscountUsageRecord` persistence, Admin DTO/API support, deterministic usage locking, PRC-05 partial-quantity calculation integration, ORD-03 atomic consume behavior, ORD-05 release wiring, idempotency, and immutable OrderLine `discountedQuantity` snapshot evidence.
 
 Acceptance criteria: Concurrent Orders for one User/Discount cannot exceed the cap; replay consumes once; pre-ship cancellation releases matching DLU-01; returns do not restore entitlement; unlimited existing discounts remain unchanged; usage and Order/reservation commit or roll back together; real PostgreSQL races and OpenAPI/error contracts are verified.
 
 Explicitly out of scope: Redis counters/locks, CATEGORY/ORDER quantity caps, unrelated discount stacking changes, generic promotion engines, customer-visible usage-history APIs, and ORD-07 entitlement restoration.
+
+Delivered: Additive migration for `Discount.maxQuantityPerCustomer` (PRODUCT-only CHECK), `DiscountCustomerUsage`, append-only `DiscountUsageRecord` (CONSUME/RELEASE uniqueness), and `OrderLine.discountedQuantity` with historical backfill; Admin create/update/response DTO field; PRC-05 partial-base LINE math + lifetime eligibility (exhausted capped PRODUCT not LINE-eligible); ORD-03 sorted `discountId` FOR UPDATE locks → price → persist → CONSUME → Inventory reserve in one RR transaction; pre-SHIPPED cancel RELEASE before Inventory release; idempotent create/cancel via usage-record uniqueness; unit + real-PostgreSQL concurrency/integration suite (`discount-lifetime-usage.integration-spec.ts`).
 
 ## Phase 5A — Deferred Settlement
 
@@ -1272,7 +1274,7 @@ The following are not implementation assumptions:
 - Whether a future `PACKED`/`PICKED` state should move the physical `onHand` decrement earlier than `SHIPPED`.
 - Whether partial fulfillment or split shipment is ever allowed after V1.
 - Public exposure of exact inventory `available`, and any preferred-customer allocation/fairness policy under contention.
-- Product-discount lifetime caps are decided in [ADR 0017](adr/0017-discount-lifetime-quantity-limit.md) / DLU-01 (partial discount; PRODUCT LINE only; create consume / pre-ship release; no return restore). Implementation remains DLU-02. V1 LINE-then-ORDER composition and single-winner-per-scope rules remain locked in PRC-03 / PRC-05 / [ADR 0015](adr/0015-line-then-order-discount-composition.md). Promo codes and promo-banner behavior remain unapproved.
+- Product-discount lifetime caps are decided in [ADR 0017](adr/0017-discount-lifetime-quantity-limit.md) / DLU-01 (partial discount; PRODUCT LINE only; create consume / pre-ship release; no return restore) and implemented in DLU-02. V1 LINE-then-ORDER composition and single-winner-per-scope rules remain locked in PRC-03 / PRC-05 / [ADR 0015](adr/0015-line-then-order-discount-composition.md). Promo codes and promo-banner behavior remain unapproved.
 - Deferred settlement SET-01 is BLOCKED on receipt count, receipt-versus-explicit-settle behavior, receipt-required rule, correction/reopen/detach semantics, exact Admin role grants, and stable conflicts. No gateway, card/bank fields, refunds, or accounting subsystem is approved.
 - Referral attribution window/source/reassignment, duplicate/self-referral treatment, visitor conversion, and whether rewards exist at all.
 - Notification type/content rules, push provider/consent, delivery guarantees, and token lifecycle.

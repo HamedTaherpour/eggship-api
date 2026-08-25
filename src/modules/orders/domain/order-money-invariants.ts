@@ -99,6 +99,30 @@ function assertTrustedLineMoney(line: TrustedOrderLineSnapshot): void {
       'Order line grossLineTotal must equal unitPrice × quantity.',
     );
   }
+  if (
+    typeof line.discountedQuantity !== 'number' ||
+    !Number.isInteger(line.discountedQuantity) ||
+    line.discountedQuantity < 0 ||
+    line.discountedQuantity > line.quantity
+  ) {
+    throw new OrderInvalidMoneyError(
+      'Order line discountedQuantity must be an integer between 0 and quantity.',
+    );
+  }
+  if (line.appliedLineDiscount === null && line.discountedQuantity !== 0) {
+    throw new OrderInvalidMoneyError(
+      'Order line discountedQuantity requires applied LINE discount evidence.',
+    );
+  }
+  if (
+    line.appliedLineDiscount !== null &&
+    line.discountedQuantity < 1 &&
+    line.lineDiscountAmount !== 0n
+  ) {
+    throw new OrderInvalidMoneyError(
+      'Order line with LINE discount evidence requires discountedQuantity >= 1.',
+    );
+  }
   assertOrderMoneyAmount(line.lineDiscountAmount, 'lineDiscountAmount');
   assertOrderMoneyAmount(line.finalLineTotal, 'finalLineTotal');
   if (line.finalLineTotal !== line.grossLineTotal - line.lineDiscountAmount) {

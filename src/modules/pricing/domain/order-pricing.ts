@@ -1,14 +1,23 @@
 import { INVENTORY_INT4_MAX } from '../../inventory/domain/inventory-quantity';
-import type { DiscountRecord } from './discount';
+import { DiscountTarget, type DiscountRecord } from './discount';
+import {
+  isLifetimeEligibleForLineWinner,
+  resolveDiscountedQuantity,
+} from './discount-lifetime-quantity';
 import {
   assertDiscountMoneyAmount,
   calculateDiscount,
+  computeDiscountAmount,
   computeLineBaseAmount,
   DiscountCalculationInvalidBaseAmountError,
   DiscountCalculationOverflowError,
   DiscountCalculationScope,
+  filterEligibleDiscounts,
+  selectWinningDiscount,
+  toAppliedDiscountSnapshot,
   type AppliedDiscountSnapshot,
 } from './discount-calculation';
+import type { DiscountUsageConsumeIntent } from './discount-usage';
 import {
   OrderPricingInvalidInputError,
   OrderPricingInvalidLineError,
@@ -42,6 +51,8 @@ export interface OrderPricingLineSnapshot {
   categoryId: string;
   unitPrice: number;
   quantity: number;
+  /** Units that received the LINE discount (0…quantity). DLU-02. */
+  discountedQuantity: number;
   grossLineTotal: bigint;
   lineDiscountAmount: bigint;
   finalLineTotal: bigint;
@@ -62,12 +73,31 @@ export interface OrderPricingSnapshot {
   orderDiscountAmount: bigint;
   total: bigint;
   appliedOrderDiscount: AppliedDiscountSnapshot | null;
+  /**
+   * Capped PRODUCT LINE winners that must CONSUME usage on successful create.
+   * Empty when no lifetime-capped PRODUCT discount won a line.
+   */
+  lifetimeConsumptions: DiscountUsageConsumeIntent[];
 }
+
+/**
+ * Remaining eligible quantity by discountId for capped PRODUCT discounts.
+ * `null` value means unlimited (should not appear for capped rows).
+ * Missing key for a capped PRODUCT discount → that discount is LINE-ineligible.
+ */
+export type LifetimeRemainingByDiscountId = ReadonlyMap<string, number>;
 
 export interface ComposeOrderPricingInput {
   evaluatedAt: Date;
   lines: readonly OrderPricingProductContext[];
   discounts: readonly DiscountRecord[];
+  /**
+   * Locked remaining entitlement for capped PRODUCT discounts (DLU-02).
+   * When omitted, lifetime caps are not applied (standalone/preview pricing).
+   * When provided (even empty), capped PRODUCT discounts missing from the map
+   * are LINE-ineligible.
+   */
+  lifetimeRemainingByDiscountId?: LifetimeRemainingByDiscountId;
 }
 
 /**
@@ -106,10 +136,10 @@ export function normalizeOrderPricingLineInputs(
 
 /**
  * V1 composition (ADR 0015 / instructions/pricing.md):
- * 1. At most one LINE winner per line (PRODUCT/CATEGORY)
+ * 1. At most one LINE winner per line (PRODUCT/CATEGORY), with DLU-02 partial qty
  * 2. Sum final line totals → subtotalAfterLineDiscounts
  * 3. At most one ORDER winner against that subtotal
- * Reuses PRC-03 `calculateDiscount` — does not fork discount math.
+ * Reuses PRC-03 discount math — does not fork percent/fixed/precedence rules.
  */
 export function composeOrderPricing(
   input: ComposeOrderPricingInput,
@@ -128,12 +158,22 @@ export function composeOrderPricing(
     );
   }
 
+  const applyLifetimeLimits = input.lifetimeRemainingByDiscountId !== undefined;
+  const lifetimeRemaining =
+    input.lifetimeRemainingByDiscountId ?? new Map<string, number>();
+
   const lineSnapshots: OrderPricingLineSnapshot[] = [];
   let grossSubtotal = 0n;
   let subtotalAfterLineDiscounts = 0n;
+  const lifetimeConsumptions: DiscountUsageConsumeIntent[] = [];
 
   for (const line of input.lines) {
-    const priced = priceSingleLine(line, input.discounts, input.evaluatedAt);
+    const priced = priceSingleLine(
+      line,
+      input.discounts,
+      input.evaluatedAt,
+      applyLifetimeLimits ? lifetimeRemaining : null,
+    );
     lineSnapshots.push(priced);
     grossSubtotal = addMoney(
       grossSubtotal,
@@ -145,6 +185,15 @@ export function composeOrderPricing(
       priced.finalLineTotal,
       'subtotalAfterLineDiscounts',
     );
+
+    const consumption = lifetimeConsumeIntentForLine(
+      priced,
+      input.discounts,
+      applyLifetimeLimits,
+    );
+    if (consumption !== null) {
+      lifetimeConsumptions.push(consumption);
+    }
   }
 
   const lineDiscountTotal = assertMoney(
@@ -173,6 +222,7 @@ export function composeOrderPricing(
     orderDiscountAmount: orderResult.discountAmount,
     total: orderResult.finalAmount,
     appliedOrderDiscount: orderResult.appliedDiscount,
+    lifetimeConsumptions,
   };
 }
 
@@ -180,6 +230,7 @@ function priceSingleLine(
   line: OrderPricingProductContext,
   discounts: readonly DiscountRecord[],
   evaluatedAt: Date,
+  lifetimeRemaining: LifetimeRemainingByDiscountId | null,
 ): OrderPricingLineSnapshot {
   try {
     const grossLineTotal = computeLineBaseAmount({
@@ -187,16 +238,75 @@ function priceSingleLine(
       quantity: line.quantity,
     });
 
-    const lineResult = calculateDiscount({
-      baseAmount: grossLineTotal,
+    const lineContext = {
+      productId: line.productId,
+      categoryId: line.categoryId,
+    };
+
+    let eligible = filterEligibleDiscounts({
       scope: DiscountCalculationScope.LINE,
-      lineContext: {
-        productId: line.productId,
-        categoryId: line.categoryId,
-      },
+      lineContext,
       discounts,
       evaluatedAt,
     });
+    if (lifetimeRemaining !== null) {
+      eligible = eligible.filter((discount) =>
+        isLifetimeEligibleForLineWinner(
+          discount,
+          lifetimeRemaining.get(discount.id),
+        ),
+      );
+    }
+
+    const winner = selectWinningDiscount(eligible);
+    if (winner === null) {
+      return {
+        productId: line.productId,
+        productName: line.productName,
+        categoryId: line.categoryId,
+        unitPrice: line.unitPrice,
+        quantity: line.quantity,
+        discountedQuantity: 0,
+        grossLineTotal,
+        lineDiscountAmount: 0n,
+        finalLineTotal: grossLineTotal,
+        appliedLineDiscount: null,
+      };
+    }
+
+    let discountedQuantity = line.quantity;
+    if (lifetimeRemaining !== null && winner.maxQuantityPerCustomer !== null) {
+      discountedQuantity = resolveDiscountedQuantity({
+        requestedQuantity: line.quantity,
+        remainingEligibleQuantity: lifetimeRemaining.get(winner.id) ?? 0,
+      });
+    }
+
+    if (discountedQuantity === 0) {
+      // Exhausted capped PRODUCT should already be filtered; defense in depth.
+      return {
+        productId: line.productId,
+        productName: line.productName,
+        categoryId: line.categoryId,
+        unitPrice: line.unitPrice,
+        quantity: line.quantity,
+        discountedQuantity: 0,
+        grossLineTotal,
+        lineDiscountAmount: 0n,
+        finalLineTotal: grossLineTotal,
+        appliedLineDiscount: null,
+      };
+    }
+
+    const discountBase = computeLineBaseAmount({
+      unitPrice: line.unitPrice,
+      quantity: discountedQuantity,
+    });
+    const lineDiscountAmount = computeDiscountAmount(winner, discountBase);
+    const finalLineTotal = assertMoney(
+      grossLineTotal - lineDiscountAmount,
+      'finalLineTotal',
+    );
 
     return {
       productId: line.productId,
@@ -204,14 +314,43 @@ function priceSingleLine(
       categoryId: line.categoryId,
       unitPrice: line.unitPrice,
       quantity: line.quantity,
+      discountedQuantity,
       grossLineTotal,
-      lineDiscountAmount: lineResult.discountAmount,
-      finalLineTotal: lineResult.finalAmount,
-      appliedLineDiscount: lineResult.appliedDiscount,
+      lineDiscountAmount,
+      finalLineTotal,
+      appliedLineDiscount: toAppliedDiscountSnapshot(winner),
     };
   } catch (error: unknown) {
     throw mapCalculationError(error);
   }
+}
+
+function lifetimeConsumeIntentForLine(
+  line: OrderPricingLineSnapshot,
+  discounts: readonly DiscountRecord[],
+  applyLifetimeLimits: boolean,
+): DiscountUsageConsumeIntent | null {
+  if (!applyLifetimeLimits) {
+    return null;
+  }
+  const applied = line.appliedLineDiscount;
+  if (applied === null || line.discountedQuantity < 1) {
+    return null;
+  }
+  const definition = discounts.find(
+    (discount) => discount.id === applied.discountId,
+  );
+  if (
+    definition === undefined ||
+    definition.maxQuantityPerCustomer === null ||
+    applied.target !== DiscountTarget.PRODUCT
+  ) {
+    return null;
+  }
+  return {
+    discountId: applied.discountId,
+    quantity: line.discountedQuantity,
+  };
 }
 
 function addMoney(left: bigint, right: bigint, field: string): bigint {

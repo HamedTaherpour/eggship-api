@@ -31,6 +31,8 @@ export interface DiscountRecord {
   startsAt: Date | null;
   endsAt: Date | null;
   precedence: number;
+  /** PRODUCT-only lifetime cap; null = unlimited (DLU-02 / ADR 0017). */
+  maxQuantityPerCustomer: number | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -47,6 +49,7 @@ export interface CreateDiscountInput {
   startsAt?: Date | null;
   endsAt?: Date | null;
   precedence?: number;
+  maxQuantityPerCustomer?: number | null;
 }
 
 export interface UpdateDiscountInput {
@@ -61,6 +64,7 @@ export interface UpdateDiscountInput {
   startsAt?: Date | null;
   endsAt?: Date | null;
   precedence?: number;
+  maxQuantityPerCustomer?: number | null;
 }
 
 export type DiscountSortField =
@@ -90,4 +94,5 @@ export interface DiscountPayload {
   startsAt: Date | null;
   endsAt: Date | null;
   precedence: number;
+  maxQuantityPerCustomer: number | null;
 }

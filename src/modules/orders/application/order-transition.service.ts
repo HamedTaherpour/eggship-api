@@ -12,6 +12,7 @@ import {
   InventoryLedgerActorType,
   type InventoryActor,
 } from '../../inventory/domain/inventory-ledger';
+import { DiscountUsageService } from '../../pricing/application/discount-usage.service';
 import {
   assertAdminActor,
   assertUserActor,
@@ -46,15 +47,16 @@ import type {
 } from './order-transition.commands';
 
 /**
- * Orders-owned transition orchestration (ORD-02). No HTTP.
- * Inventory joins the same opaque TransactionContext after the Order
- * conditional UPDATE wins — never the reverse lock order.
+ * Orders-owned transition orchestration (ORD-02 / DLU-02). No HTTP.
+ * Discount usage release and Inventory join the same opaque TransactionContext
+ * after the Order conditional UPDATE wins — never the reverse lock order.
  */
 @Injectable()
 export class OrderTransitionService {
   constructor(
     private readonly transactions: TransactionRunner,
     private readonly orders: OrderRepository,
+    private readonly discountUsage: DiscountUsageService,
     private readonly inventory: InventoryService,
     private readonly logger: ApplicationLogger,
   ) {}
@@ -116,6 +118,7 @@ export class OrderTransitionService {
         });
       }
 
+      await this.releaseDiscountUsage(orderId, actor.id, ctx);
       await this.releaseInventoryForCustomer(orderId, actor, ctx);
       return this.succeeded(
         won,
@@ -233,6 +236,7 @@ export class OrderTransitionService {
         ctx,
       });
     }
+    await this.releaseDiscountUsage(orderId, won.userId, ctx);
     await this.inventory.releaseForOrder(
       { orderId, actor: toInventoryActor(actor) },
       ctx,
@@ -265,11 +269,20 @@ export class OrderTransitionService {
         ctx,
       });
     }
+    await this.releaseDiscountUsage(orderId, won.userId, ctx);
     await this.inventory.releaseForOrder(
       { orderId, actor: toInventoryActor(actor) },
       ctx,
     );
     return this.succeeded(won, actor, 'order.cancelled', OrderStatus.CONFIRMED);
+  }
+
+  private async releaseDiscountUsage(
+    orderId: string,
+    userId: string,
+    ctx: TransactionContext,
+  ): Promise<void> {
+    await this.discountUsage.releaseForOrder({ orderId, userId }, ctx);
   }
 
   private async releaseInventoryForCustomer(

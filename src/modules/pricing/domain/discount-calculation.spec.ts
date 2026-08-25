@@ -44,6 +44,7 @@ function buildDiscount(
     startsAt: overrides.startsAt ?? null,
     endsAt: overrides.endsAt ?? null,
     precedence: overrides.precedence ?? 0,
+    maxQuantityPerCustomer: overrides.maxQuantityPerCustomer ?? null,
     createdAt: overrides.createdAt ?? new Date('2026-08-01T00:00:00.000Z'),
     updatedAt: overrides.updatedAt ?? new Date('2026-08-01T00:00:00.000Z'),
   };

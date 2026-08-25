@@ -56,6 +56,13 @@ export class AdminDiscountDto {
   })
   precedence!: number;
 
+  @ApiPropertyOptional({
+    description:
+      'Per-customer lifetime discounted-quantity cap (PRODUCT only). Null = unlimited.',
+    nullable: true,
+  })
+  maxQuantityPerCustomer!: number | null;
+
   @ApiProperty({ type: String, format: 'date-time' })
   createdAt!: string;
 
@@ -87,6 +94,7 @@ export function toAdminDiscountDto(record: DiscountRecord): AdminDiscountDto {
     startsAt: record.startsAt?.toISOString() ?? null,
     endsAt: record.endsAt?.toISOString() ?? null,
     precedence: record.precedence,
+    maxQuantityPerCustomer: record.maxQuantityPerCustomer,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
   };

@@ -11,6 +11,7 @@ import {
 } from '../domain/order-pricing';
 import { OrderPricingProductUnavailableError } from '../domain/order-pricing-errors';
 import { DiscountRepository } from '../infrastructure/discount.repository';
+import { DiscountUsageService } from './discount-usage.service';
 
 export interface PriceOrderLinesOptions {
   /**
@@ -24,10 +25,17 @@ export interface PriceOrderLinesOptions {
    * Discount loads.
    */
   tx?: TransactionContext;
+  /**
+   * Customer identity for DLU-02 lifetime caps. When set with `tx`, locks
+   * DiscountCustomerUsage for capped PRODUCT candidates before composition.
+   * Standalone pricing without userId treats capped PRODUCT discounts as
+   * unlimited for read-only preview (no usage mutation).
+   */
+  userId?: string;
 }
 
 /**
- * Server-authoritative order pricing composition (PRC-05).
+ * Server-authoritative order pricing composition (PRC-05 + DLU-02).
  * Persistence-neutral: returns a snapshot ORD-03 can write later.
  * No HTTP, no Order mutation, no promo codes.
  */
@@ -36,6 +44,7 @@ export class OrderPricingService {
   constructor(
     private readonly products: ProductRepository,
     private readonly discounts: DiscountRepository,
+    private readonly discountUsage: DiscountUsageService,
     private readonly transactions: TransactionRunner,
   ) {}
 
@@ -47,7 +56,12 @@ export class OrderPricingService {
     const normalizedLines = normalizeOrderPricingLineInputs(lines);
 
     const run = async (tx: TransactionContext): Promise<OrderPricingSnapshot> =>
-      this.priceWithinTransaction(normalizedLines, evaluatedAt, tx);
+      this.priceWithinTransaction(
+        normalizedLines,
+        evaluatedAt,
+        tx,
+        options.userId,
+      );
 
     if (options.tx !== undefined) {
       return this.transactions.runIn(options.tx, run);
@@ -59,6 +73,7 @@ export class OrderPricingService {
     normalizedLines: OrderPricingLineInput[],
     evaluatedAt: Date,
     tx: TransactionContext,
+    userId: string | undefined,
   ): Promise<OrderPricingSnapshot> {
     const productIds = normalizedLines.map((line) => line.productId);
     const products = await this.products.findPublicByIds(productIds, tx);
@@ -89,10 +104,20 @@ export class OrderPricingService {
       tx,
     );
 
+    let lifetimeRemainingByDiscountId: Map<string, number> | undefined;
+    if (userId !== undefined) {
+      lifetimeRemainingByDiscountId =
+        await this.discountUsage.lockRemainingForPricing(
+          { userId, discounts: candidates },
+          tx,
+        );
+    }
+
     return composeOrderPricing({
       evaluatedAt,
       lines: pricedContexts,
       discounts: candidates,
+      lifetimeRemainingByDiscountId,
     });
   }
 }

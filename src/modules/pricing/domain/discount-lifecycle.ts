@@ -1,4 +1,5 @@
 import type { DiscountPayload, DiscountRecord } from './discount';
+import { normalizeMaxQuantityPerCustomer } from './discount-lifetime-quantity';
 import { normalizeDiscountTargetScope } from './discount-target';
 import { normalizeDiscountTypeValues } from './discount-value';
 import { normalizeDiscountWindow } from './discount-window';
@@ -46,10 +47,15 @@ export function buildDiscountPayload(base: {
   startsAt?: Date | null;
   endsAt?: Date | null;
   precedence: number;
+  maxQuantityPerCustomer?: number | null;
 }): DiscountPayload {
   const typeValues = normalizeDiscountTypeValues(base);
   const targetScope = normalizeDiscountTargetScope(base);
   const window = normalizeDiscountWindow(base);
+  const maxQuantityPerCustomer = normalizeMaxQuantityPerCustomer({
+    target: base.target,
+    maxQuantityPerCustomer: base.maxQuantityPerCustomer,
+  });
 
   return {
     name: base.name,
@@ -60,5 +66,6 @@ export function buildDiscountPayload(base: {
     isActive: base.isActive,
     ...window,
     precedence: base.precedence,
+    maxQuantityPerCustomer,
   };
 }

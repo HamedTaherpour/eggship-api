@@ -7,16 +7,19 @@ import { AdminDiscountsController } from './api/admin-discounts.controller';
 import { AdminPricingController } from './api/admin-pricing.controller';
 import { AdminPricingQueryService } from './application/admin-pricing-query.service';
 import { DiscountService } from './application/discount.service';
+import { DiscountUsageService } from './application/discount-usage.service';
 import { OrderPricingService } from './application/order-pricing.service';
 import { PricingService } from './application/pricing.service';
 import { DiscountRepository } from './infrastructure/discount.repository';
+import { DiscountUsageRepository } from './infrastructure/discount-usage.repository';
 import { PriceHistoryRepository } from './infrastructure/price-history.repository';
 
 /**
  * Product price mutations with durable PriceHistory (PRC-01) and Discount
  * persistence/lifecycle (PRC-02), pure discount calculation (PRC-03),
- * Admin pricing/discount HTTP APIs (PRC-04), and persistence-neutral order
- * pricing composition for ORD-03 (PRC-05).
+ * Admin pricing/discount HTTP APIs (PRC-04), persistence-neutral order
+ * pricing composition for ORD-03 (PRC-05), and lifetime discounted-quantity
+ * usage accounting (DLU-02 / ADR 0017).
  */
 @Module({
   imports: [
@@ -32,6 +35,8 @@ import { PriceHistoryRepository } from './infrastructure/price-history.repositor
     AdminPricingQueryService,
     DiscountRepository,
     DiscountService,
+    DiscountUsageRepository,
+    DiscountUsageService,
     OrderPricingService,
   ],
   exports: [
@@ -39,6 +44,8 @@ import { PriceHistoryRepository } from './infrastructure/price-history.repositor
     PriceHistoryRepository,
     DiscountService,
     DiscountRepository,
+    DiscountUsageService,
+    DiscountUsageRepository,
     OrderPricingService,
   ],
 })

@@ -27,6 +27,7 @@ function discount(overrides: Partial<DiscountRecord> = {}): DiscountRecord {
     startsAt: null,
     endsAt: null,
     precedence: 0,
+    maxQuantityPerCustomer: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,

@@ -74,6 +74,7 @@ export class DiscountService {
       startsAt: input.startsAt,
       endsAt: input.endsAt,
       precedence: input.precedence ?? 0,
+      maxQuantityPerCustomer: input.maxQuantityPerCustomer,
     });
 
     const created = await this.discounts.create(payload);
@@ -124,6 +125,12 @@ export class DiscountService {
       endsAt: input.endsAt !== undefined ? input.endsAt : existing.endsAt,
       precedence:
         input.precedence !== undefined ? input.precedence : existing.precedence,
+      maxQuantityPerCustomer:
+        input.maxQuantityPerCustomer !== undefined
+          ? input.maxQuantityPerCustomer
+          : target === DiscountTarget.PRODUCT
+            ? existing.maxQuantityPerCustomer
+            : null,
     });
 
     const updated = await this.discounts.update(id, payload);
@@ -163,6 +170,7 @@ export class DiscountService {
     startsAt?: Date | null;
     endsAt?: Date | null;
     precedence: number;
+    maxQuantityPerCustomer?: number | null;
   }): Promise<DiscountPayload> {
     const payload = buildDiscountPayload({
       name: normalizeDiscountName(input.name),
@@ -176,6 +184,7 @@ export class DiscountService {
       startsAt: input.startsAt,
       endsAt: input.endsAt,
       precedence: normalizeDiscountPrecedence(input.precedence),
+      maxQuantityPerCustomer: input.maxQuantityPerCustomer,
     });
 
     await this.assertTargetReferencesExist(payload);

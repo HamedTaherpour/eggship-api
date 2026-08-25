@@ -16,6 +16,7 @@ import type { InventoryService } from '../../inventory/application/inventory.ser
 import { InventoryInsufficientStockError } from '../../inventory/domain/inventory-errors';
 import { InventoryLedgerActorType } from '../../inventory/domain/inventory-ledger';
 import type { OrderPricingService } from '../../pricing/application/order-pricing.service';
+import type { DiscountUsageService } from '../../pricing/application/discount-usage.service';
 import { DiscountTarget, DiscountType } from '../../pricing/domain/discount';
 import type { OrderPricingSnapshot } from '../../pricing/domain/order-pricing';
 import { OrderPricingProductUnavailableError } from '../../pricing/domain/order-pricing-errors';
@@ -109,6 +110,7 @@ function pricingSnapshot(
       categoryId: '99999999-9999-4999-8999-999999999999',
       unitPrice: 10_000,
       quantity: 2,
+      discountedQuantity: 0,
       grossLineTotal: 20_000n,
       lineDiscountAmount: 0n,
       finalLineTotal: 20_000n,
@@ -134,6 +136,7 @@ function pricingSnapshot(
     orderDiscountAmount,
     total: overrides.total ?? subtotalAfterLineDiscounts - orderDiscountAmount,
     appliedOrderDiscount: overrides.appliedOrderDiscount ?? null,
+    lifetimeConsumptions: overrides.lifetimeConsumptions ?? [],
   };
 }
 
@@ -180,6 +183,7 @@ function orderFromSnapshot(
       productName: line.productName,
       unitPrice: line.unitPrice,
       quantity: line.quantity,
+      discountedQuantity: line.discountedQuantity,
       grossLineTotal: line.grossLineTotal,
       lineDiscountAmount: line.lineDiscountAmount,
       finalLineTotal: line.finalLineTotal,
@@ -204,6 +208,12 @@ describe('OrderCreationService', () => {
     Pick<CommercePolicyService, 'evaluateOrderAcceptance'>
   >;
   let pricing: jest.Mocked<Pick<OrderPricingService, 'priceOrderLines'>>;
+  let discountUsage: jest.Mocked<
+    Pick<
+      DiscountUsageService,
+      'lockRemainingForPricing' | 'consumeForOrder' | 'releaseForOrder'
+    >
+  >;
   let inventory: jest.Mocked<Pick<InventoryService, 'reserveForOrder'>>;
   let users: jest.Mocked<Pick<UserRepository, 'findById'>>;
   let regions: jest.Mocked<Pick<RegionRepository, 'findById'>>;
@@ -235,6 +245,11 @@ describe('OrderCreationService', () => {
       evaluateOrderAcceptance: jest.fn().mockResolvedValue(acceptance()),
     };
     pricing = { priceOrderLines: jest.fn() };
+    discountUsage = {
+      lockRemainingForPricing: jest.fn().mockResolvedValue(new Map()),
+      consumeForOrder: jest.fn().mockResolvedValue(undefined),
+      releaseForOrder: jest.fn().mockResolvedValue(undefined),
+    };
     inventory = {
       reserveForOrder: jest.fn().mockResolvedValue({
         orderId: ORDER_ID,
@@ -249,6 +264,7 @@ describe('OrderCreationService', () => {
       orders as unknown as OrderRepository,
       commercePolicy as unknown as CommercePolicyService,
       pricing as unknown as OrderPricingService,
+      discountUsage as unknown as DiscountUsageService,
       inventory as unknown as InventoryService,
       users as unknown as UserRepository,
       regions as unknown as RegionRepository,
@@ -323,6 +339,62 @@ describe('OrderCreationService', () => {
       }),
       'Order created with inventory reservation',
     );
+  });
+
+  it('consumes priced lifetime usage after persist and before reserve', async () => {
+    const lifetimeConsumptions = [{ discountId: DISCOUNT_LINE, quantity: 2 }];
+    const priced = pricingSnapshot({
+      lines: [
+        {
+          productId: PRODUCT_A,
+          productName: 'Fresh eggs',
+          categoryId: '99999999-9999-4999-8999-999999999999',
+          unitPrice: 10_000,
+          quantity: 2,
+          discountedQuantity: 2,
+          grossLineTotal: 20_000n,
+          lineDiscountAmount: 2_000n,
+          finalLineTotal: 18_000n,
+          appliedLineDiscount: {
+            discountId: DISCOUNT_LINE,
+            name: 'Line 10%',
+            type: DiscountType.PERCENT,
+            target: DiscountTarget.PRODUCT,
+            percentValue: 10,
+            fixedAmount: null,
+            precedence: 10,
+            productId: PRODUCT_A,
+            categoryId: null,
+          },
+        },
+      ],
+      lineDiscountTotal: 2_000n,
+      subtotalAfterLineDiscounts: 18_000n,
+      total: 18_000n,
+      lifetimeConsumptions,
+    });
+    pricing.priceOrderLines.mockResolvedValue(priced);
+    const created = orderFromSnapshot(priced);
+    orders.createWithTrustedSnapshots.mockResolvedValue(created);
+
+    const result = await create();
+
+    expect(result).toEqual({ order: created, created: true });
+    expect(discountUsage.consumeForOrder).toHaveBeenCalledTimes(1);
+    expect(discountUsage.consumeForOrder).toHaveBeenCalledWith(
+      {
+        orderId: ORDER_ID,
+        userId: USER_ID,
+        consumptions: lifetimeConsumptions,
+      },
+      expect.anything(),
+    );
+    expect(
+      orders.createWithTrustedSnapshots.mock.invocationCallOrder[0],
+    ).toBeLessThan(discountUsage.consumeForOrder.mock.invocationCallOrder[0]!);
+    expect(
+      discountUsage.consumeForOrder.mock.invocationCallOrder[0],
+    ).toBeLessThan(inventory.reserveForOrder.mock.invocationCallOrder[0]!);
   });
 
   it('logs order.created once only after a serialization retry commits', async () => {
@@ -424,6 +496,7 @@ describe('OrderCreationService', () => {
           categoryId: '99999999-9999-4999-8999-999999999999',
           unitPrice: 10_000,
           quantity: 2,
+          discountedQuantity: 2,
           grossLineTotal: 20_000n,
           lineDiscountAmount: 2_000n,
           finalLineTotal: 18_000n,
@@ -455,6 +528,7 @@ describe('OrderCreationService', () => {
     expect(persisted.lineDiscountTotal).toBe(2_000n);
     expect(persisted.subtotalAfterLineDiscounts).toBe(18_000n);
     expect(persisted.lines[0]).toMatchObject({
+      discountedQuantity: 2,
       lineDiscountAmount: 2_000n,
       finalLineTotal: 18_000n,
     });
@@ -504,6 +578,7 @@ describe('OrderCreationService', () => {
           categoryId: '99999999-9999-4999-8999-999999999999',
           unitPrice: 10_000,
           quantity: 2,
+          discountedQuantity: 2,
           grossLineTotal: 20_000n,
           lineDiscountAmount: 2_000n,
           finalLineTotal: 18_000n,
@@ -556,6 +631,7 @@ describe('OrderCreationService', () => {
           categoryId: '99999999-9999-4999-8999-999999999999',
           unitPrice: 10_000,
           quantity: 5,
+          discountedQuantity: 0,
           grossLineTotal: 50_000n,
           lineDiscountAmount: 0n,
           finalLineTotal: 50_000n,
@@ -653,6 +729,7 @@ describe('OrderCreationService', () => {
     expect(commercePolicy.evaluateOrderAcceptance).not.toHaveBeenCalled();
     expect(pricing.priceOrderLines).not.toHaveBeenCalled();
     expect(orders.createWithTrustedSnapshots).not.toHaveBeenCalled();
+    expect(discountUsage.consumeForOrder).not.toHaveBeenCalled();
     expect(inventory.reserveForOrder).not.toHaveBeenCalled();
   });
 
@@ -748,6 +825,7 @@ describe('OrderCreationService', () => {
           categoryId: '99999999-9999-4999-8999-999999999999',
           unitPrice: 1_000,
           quantity: 1,
+          discountedQuantity: 0,
           grossLineTotal: 1_000n,
           lineDiscountAmount: 0n,
           finalLineTotal: 1_000n,
@@ -759,6 +837,7 @@ describe('OrderCreationService', () => {
           categoryId: '99999999-9999-4999-8999-999999999999',
           unitPrice: 2_000,
           quantity: 3,
+          discountedQuantity: 0,
           grossLineTotal: 6_000n,
           lineDiscountAmount: 0n,
           finalLineTotal: 6_000n,
@@ -846,6 +925,7 @@ describe('OrderCreationService', () => {
           categoryId: '99999999-9999-4999-8999-999999999999',
           unitPrice: 10_000,
           quantity: 5,
+          discountedQuantity: 0,
           grossLineTotal: 50_000n,
           lineDiscountAmount: 0n,
           finalLineTotal: 50_000n,

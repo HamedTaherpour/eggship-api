@@ -9,6 +9,7 @@ import type { DiscountRecord } from '../domain/discount';
 import { DiscountTarget, DiscountType } from '../domain/discount';
 import { OrderPricingProductUnavailableError } from '../domain/order-pricing-errors';
 import type { DiscountRepository } from '../infrastructure/discount.repository';
+import type { DiscountUsageService } from './discount-usage.service';
 import { OrderPricingService } from './order-pricing.service';
 
 const PRODUCT_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -73,6 +74,7 @@ function discount(overrides: Partial<DiscountRecord> = {}): DiscountRecord {
     startsAt: overrides.startsAt ?? null,
     endsAt: overrides.endsAt ?? null,
     precedence: overrides.precedence ?? 0,
+    maxQuantityPerCustomer: overrides.maxQuantityPerCustomer ?? null,
     createdAt: overrides.createdAt ?? new Date('2026-08-01T00:00:00.000Z'),
     updatedAt: overrides.updatedAt ?? new Date('2026-08-01T00:00:00.000Z'),
   };
@@ -82,6 +84,12 @@ describe('OrderPricingService', () => {
   let products: jest.Mocked<Pick<ProductRepository, 'findPublicByIds'>>;
   let discounts: jest.Mocked<
     Pick<DiscountRepository, 'findCandidatesForOrderPricing'>
+  >;
+  let discountUsage: jest.Mocked<
+    Pick<
+      DiscountUsageService,
+      'lockRemainingForPricing' | 'consumeForOrder' | 'releaseForOrder'
+    >
   >;
   let transactions: ImmediateTransactionRunner;
   let service: OrderPricingService;
@@ -93,10 +101,16 @@ describe('OrderPricingService', () => {
     discounts = {
       findCandidatesForOrderPricing: jest.fn().mockResolvedValue([]),
     };
+    discountUsage = {
+      lockRemainingForPricing: jest.fn().mockResolvedValue(new Map()),
+      consumeForOrder: jest.fn().mockResolvedValue(undefined),
+      releaseForOrder: jest.fn().mockResolvedValue(undefined),
+    };
     transactions = new ImmediateTransactionRunner();
     service = new OrderPricingService(
       products as unknown as ProductRepository,
       discounts as unknown as DiscountRepository,
+      discountUsage as unknown as DiscountUsageService,
       transactions,
     );
   });

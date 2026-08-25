@@ -132,11 +132,11 @@ Missing or non-saleable products raise `PRODUCT_NOT_FOUND` (`OrderPricingProduct
 
 Returned for ORD-03 persistence later. Explicit fields — not a generic JSON blob:
 
-**Per line:** `productId`, `productName`, `categoryId`, `unitPrice`, `quantity`, `grossLineTotal`, `lineDiscountAmount`, `finalLineTotal`, `appliedLineDiscount` (or null). DLU-02 extends the persistence-neutral result with `discountedQuantity` when lifetime caps apply ([ADR 0017](../docs/adr/0017-discount-lifetime-quantity-limit.md)).
+**Per line:** `productId`, `productName`, `categoryId`, `unitPrice`, `quantity`, `discountedQuantity`, `grossLineTotal`, `lineDiscountAmount`, `finalLineTotal`, `appliedLineDiscount` (or null). `discountedQuantity` is the DLU-02 / ADR 0017 snapshot of units that received the LINE discount (`0…quantity`).
 
-**Order:** `grossSubtotal`, `lineDiscountTotal`, `subtotalAfterLineDiscounts`, `orderDiscountAmount`, `total`, `appliedOrderDiscount` (or null), `evaluatedAt`.
+**Order:** `grossSubtotal`, `lineDiscountTotal`, `subtotalAfterLineDiscounts`, `orderDiscountAmount`, `total`, `appliedOrderDiscount` (or null), `evaluatedAt`, plus `lifetimeConsumptions` intents for ORD-03 CONSUME.
 
-PRC-05 does **not** migrate Order/OrderLine schema. ORD-03 persists discounted amounts and applied-discount evidence into explicit columns (`grossLineTotal` / `finalLineTotal`, order aggregates, applied-discount snapshot fields, `pricingEvaluatedAt`) without re-reading mutable Product/Discount state after pricing. Lifetime-cap columns and usage mutation belong to DLU-02.
+PRC-05 composes persistence-neutral snapshots. ORD-03 persists discounted amounts, applied-discount evidence, and `discountedQuantity` into explicit columns (`grossLineTotal` / `finalLineTotal`, order aggregates, applied-discount snapshot fields, `pricingEvaluatedAt`) without re-reading mutable Product/Discount state after pricing. Lifetime-cap configuration and usage mutation are owned by DLU-02.
 
 ### Reads, transactions, and concurrency
 
@@ -147,16 +147,16 @@ PRC-05 does **not** migrate Order/OrderLine schema. ORD-03 persists discounted a
 
 ### Out of scope in PRC-05
 
-Order HTTP/create, payments, promo codes, Order schema migration, and Redis-backed pricing. Lifetime quantity caps are designed in DLU-01 / ADR 0017 and implemented in DLU-02 — PRC-05 must not invent them independently.
+Order HTTP/create, payments, promo codes, and Redis-backed pricing. Lifetime quantity caps follow DLU-01 / ADR 0017 and are implemented in DLU-02 (this module owns partial pricing + usage services; Orders orchestrates create/cancel).
 
 ## Orders boundary
 
 - Orders snapshot title and unit price at creation (ORD-01). Changing current price or appending history must not mutate existing Order lines.
 - Order-time discount composition and persistence-neutral pricing snapshots are owned by PRC-05 (`OrderPricingService`); ORD-03 persists them.
 
-## Product-discount lifetime customer limit (DLU-01 / ADR 0017; implementation DLU-02)
+## Product-discount lifetime customer limit (DLU-01 / ADR 0017; DLU-02)
 
-Accepted architecture: [ADR 0017](../docs/adr/0017-discount-lifetime-quantity-limit.md).
+Accepted architecture: [ADR 0017](../docs/adr/0017-discount-lifetime-quantity-limit.md). Implemented in DLU-02.
 
 ### Scope
 
@@ -178,7 +178,7 @@ Accepted architecture: [ADR 0017](../docs/adr/0017-discount-lifetime-quantity-li
 | `nonDiscountedQuantity`     | Derived: `requestedQuantity − discountedQuantity`                                             |
 | Consumption / release       | Create-time consume; pre-`SHIPPED` cancel release — see Orders                                |
 
-Do not name persistence tables or domain types “allowance.” Prefer `DiscountCustomerUsage` / `DiscountUsageRecord` (or equivalent) in DLU-02.
+- Prefer naming: `DiscountCustomerUsage` / `DiscountUsageRecord` (implemented in DLU-02).
 
 ### Over-limit behavior (accepted: partial discount)
 
@@ -215,7 +215,7 @@ Example: unit `100_000`, qty `5`, 20% off, `discountedQuantity = 3` → gross `5
 - Returns do **not** restore entitlement in V1 (ORD-07 must not infer restore from `RETURNED`/restock).
 - Same `discountId` keeps the same lifetime usage across deactivate/reactivate. Lowering the configured cap below already-consumed quantity yields zero remaining eligibility without rewriting history.
 
-Implementation, schema, Admin DTO fields, and HTTP remain **DLU-02**.
+Implementation: schema, Admin DTO fields (`maxQuantityPerCustomer`), PRC-05 partial pricing, ORD-03 CONSUME, and pre-ship RELEASE are delivered in DLU-02. Customer Order-create HTTP remains ORD-03A.
 
 ## Permissions
 
@@ -225,14 +225,14 @@ Implementation, schema, Admin DTO fields, and HTTP remain **DLU-02**.
 
 ## Admin HTTP surface (PRC-04)
 
-| Method  | Path                                              | Permission        | Notes                                                                           |
-| ------- | ------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------- |
-| `GET`   | `admin/pricing/products/:productId/price-history` | `DISCOUNT_READ`   | Paginated; newest first (`createdAt desc`, `id desc` tie-break)                 |
-| `PATCH` | `admin/pricing/products/:productId/price`         | `DISCOUNT_MANAGE` | Body: `{ price }` integer Toman; actor from Admin session                       |
-| `GET`   | `admin/discounts`                                 | `DISCOUNT_READ`   | Pagination, `search` (name), filters `isActive`/`type`/`target`, sort allowlist |
-| `POST`  | `admin/discounts`                                 | `DISCOUNT_MANAGE` | Create with strict DTO validation                                               |
-| `PATCH` | `admin/discounts/:id`                             | `DISCOUNT_MANAGE` | Update allowlist; no `isActive`                                                 |
-| `POST`  | `admin/discounts/:id/activate`                    | `DISCOUNT_MANAGE` | Sets `isActive = true`                                                          |
-| `POST`  | `admin/discounts/:id/deactivate`                  | `DISCOUNT_MANAGE` | Sets `isActive = false`                                                         |
+| Method  | Path                                              | Permission        | Notes                                                                             |
+| ------- | ------------------------------------------------- | ----------------- | --------------------------------------------------------------------------------- |
+| `GET`   | `admin/pricing/products/:productId/price-history` | `DISCOUNT_READ`   | Paginated; newest first (`createdAt desc`, `id desc` tie-break)                   |
+| `PATCH` | `admin/pricing/products/:productId/price`         | `DISCOUNT_MANAGE` | Body: `{ price }` integer Toman; actor from Admin session                         |
+| `GET`   | `admin/discounts`                                 | `DISCOUNT_READ`   | Pagination, `search` (name), filters `isActive`/`type`/`target`, sort allowlist   |
+| `POST`  | `admin/discounts`                                 | `DISCOUNT_MANAGE` | Create with strict DTO validation; optional PRODUCT-only `maxQuantityPerCustomer` |
+| `PATCH` | `admin/discounts/:id`                             | `DISCOUNT_MANAGE` | Update allowlist; no `isActive`; may set/clear `maxQuantityPerCustomer`           |
+| `POST`  | `admin/discounts/:id/activate`                    | `DISCOUNT_MANAGE` | Sets `isActive = true`                                                            |
+| `POST`  | `admin/discounts/:id/deactivate`                  | `DISCOUNT_MANAGE` | Sets `isActive = false`                                                           |
 
 Promo-banner persistence/API is **not** implemented in PRC-04 — no evidenced legacy requirements in-repo (see roadmap unresolved decisions).

@@ -410,6 +410,7 @@ class InMemoryDiscountRepository {
       startsAt: input.startsAt,
       endsAt: input.endsAt,
       precedence: input.precedence ?? 0,
+      maxQuantityPerCustomer: input.maxQuantityPerCustomer,
     });
     const now = new Date();
     const record: DiscountRecord = {
@@ -487,6 +488,7 @@ interface DiscountBody {
     isActive: boolean;
     percentValue: number | null;
     fixedAmount: number | null;
+    maxQuantityPerCustomer: number | null;
   };
 }
 
@@ -731,6 +733,7 @@ describe('Admin pricing and discount APIs (e2e)', () => {
       target: DiscountTarget.PRODUCT,
       isActive: true,
       percentValue: 10,
+      maxQuantityPerCustomer: null,
     });
     expect(createdBody.data).not.toHaveProperty('actorId');
 
@@ -758,6 +761,68 @@ describe('Admin pricing and discount APIs (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     expect(asDiscountBody(activated.body).data.isActive).toBe(true);
+  });
+
+  it('round-trips PRODUCT maxQuantityPerCustomer and rejects non-PRODUCT caps', async () => {
+    const token = signAdmin();
+    const productId = seedProduct();
+
+    const created = await request(server())
+      .post('/api/v1/admin/discounts')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: 'Capped product',
+        type: DiscountType.PERCENT,
+        target: DiscountTarget.PRODUCT,
+        percentValue: 10,
+        productId,
+        maxQuantityPerCustomer: 3,
+      })
+      .expect(201);
+
+    const createdBody = asDiscountBody(created.body);
+    expect(createdBody.data).toMatchObject({
+      target: DiscountTarget.PRODUCT,
+      maxQuantityPerCustomer: 3,
+    });
+
+    const cleared = await request(server())
+      .patch(`/api/v1/admin/discounts/${createdBody.data.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ maxQuantityPerCustomer: null })
+      .expect(200);
+    expect(asDiscountBody(cleared.body).data.maxQuantityPerCustomer).toBe(null);
+
+    const badCategory = await request(server())
+      .post('/api/v1/admin/discounts')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: 'Capped category',
+        type: DiscountType.PERCENT,
+        target: DiscountTarget.CATEGORY,
+        percentValue: 10,
+        categoryId: activeCategoryId,
+        maxQuantityPerCustomer: 3,
+      })
+      .expect(400);
+    expect(asApiErrorBody(badCategory.body).error.code).toBe(
+      'DISCOUNT_INVALID_TARGET',
+    );
+
+    const badOrder = await request(server())
+      .post('/api/v1/admin/discounts')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: 'Capped order',
+        type: DiscountType.PERCENT,
+        target: DiscountTarget.ORDER,
+        percentValue: 10,
+        maxQuantityPerCustomer: 3,
+      })
+      .expect(400);
+    expect(asApiErrorBody(badOrder.body).error.code).toBe(
+      'DISCOUNT_INVALID_TARGET',
+    );
   });
 
   it('rejects invalid discount combinations with displayable errors', async () => {

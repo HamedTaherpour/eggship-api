@@ -25,6 +25,7 @@ type PrismaDiscount = {
   startsAt: Date | null;
   endsAt: Date | null;
   precedence: number;
+  maxQuantityPerCustomer: number | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -175,6 +176,7 @@ function mapPayloadToCreate(
     startsAt: payload.startsAt,
     endsAt: payload.endsAt,
     precedence: payload.precedence,
+    maxQuantityPerCustomer: payload.maxQuantityPerCustomer,
   };
 }
 
@@ -199,6 +201,7 @@ function mapPayloadToUpdate(
     startsAt: payload.startsAt,
     endsAt: payload.endsAt,
     precedence: payload.precedence,
+    maxQuantityPerCustomer: payload.maxQuantityPerCustomer,
   };
 }
 
@@ -216,6 +219,7 @@ function mapDiscount(row: PrismaDiscount): DiscountRecord {
     startsAt: row.startsAt,
     endsAt: row.endsAt,
     precedence: row.precedence,
+    maxQuantityPerCustomer: row.maxQuantityPerCustomer,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

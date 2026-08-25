@@ -12,6 +12,7 @@ export const DiscountErrorCode = {
   INVALID_PRECEDENCE: 'DISCOUNT_INVALID_PRECEDENCE',
   INVALID_PRODUCT: 'DISCOUNT_INVALID_PRODUCT',
   INVALID_CATEGORY: 'DISCOUNT_INVALID_CATEGORY',
+  USAGE_CONFLICT: 'DISCOUNT_USAGE_CONFLICT',
 } as const;
 
 export type DiscountErrorCode =
@@ -96,5 +97,12 @@ export class DiscountInvalidCategoryError extends ApplicationError {
   constructor(message = 'Discount category target is invalid.') {
     super(DiscountErrorCode.INVALID_CATEGORY, message, HttpStatus.BAD_REQUEST);
     this.name = 'DiscountInvalidCategoryError';
+  }
+}
+
+export class DiscountUsageConflictError extends ApplicationError {
+  constructor(message = 'Discount usage could not be updated safely.') {
+    super(DiscountErrorCode.USAGE_CONFLICT, message, HttpStatus.CONFLICT);
+    this.name = 'DiscountUsageConflictError';
   }
 }

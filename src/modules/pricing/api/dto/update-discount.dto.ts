@@ -11,7 +11,9 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
+import { INVENTORY_INT4_MAX } from '../../../inventory/domain/inventory-quantity';
 import {
   PRODUCT_PRICE_MAX_TOMAN,
   PRODUCT_PRICE_MIN_TOMAN,
@@ -125,6 +127,20 @@ export class UpdateDiscountBodyDto {
   @Min(DISCOUNT_PRECEDENCE_MIN)
   @Max(DISCOUNT_PRECEDENCE_MAX)
   precedence?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Optional per-customer lifetime discounted-quantity cap (PRODUCT only). Null clears the cap.',
+    minimum: 1,
+    maximum: INVENTORY_INT4_MAX,
+    nullable: true,
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsInt()
+  @Min(1)
+  @Max(INVENTORY_INT4_MAX)
+  maxQuantityPerCustomer?: number | null;
 }
 
 export function toUpdateDiscountInput(
@@ -141,5 +157,6 @@ export function toUpdateDiscountInput(
     startsAt: body.startsAt === undefined ? undefined : new Date(body.startsAt),
     endsAt: body.endsAt === undefined ? undefined : new Date(body.endsAt),
     precedence: body.precedence,
+    maxQuantityPerCustomer: body.maxQuantityPerCustomer,
   };
 }

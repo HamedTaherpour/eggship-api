@@ -70,6 +70,7 @@ type PrismaOrderWithLines = {
     productName: string;
     unitPrice: number;
     quantity: number;
+    discountedQuantity: number;
     grossLineTotal: bigint;
     lineDiscountAmount: bigint;
     finalLineTotal: bigint;
@@ -342,6 +343,7 @@ export class OrderRepository {
               productName: line.productName,
               unitPrice: line.unitPrice,
               quantity: line.quantity,
+              discountedQuantity: line.discountedQuantity,
               grossLineTotal: line.grossLineTotal,
               lineDiscountAmount: line.lineDiscountAmount,
               finalLineTotal: line.finalLineTotal,
@@ -518,6 +520,7 @@ function mapOrderLine(
     productName: row.productName,
     unitPrice: row.unitPrice,
     quantity: row.quantity,
+    discountedQuantity: row.discountedQuantity,
     grossLineTotal: row.grossLineTotal,
     lineDiscountAmount: row.lineDiscountAmount,
     finalLineTotal: row.finalLineTotal,

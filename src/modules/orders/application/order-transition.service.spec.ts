@@ -11,6 +11,7 @@ import {
   InventoryReservationNotFoundError,
 } from '../../inventory/domain/inventory-errors';
 import { InventoryLedgerActorType } from '../../inventory/domain/inventory-ledger';
+import type { DiscountUsageService } from '../../pricing/application/discount-usage.service';
 import { OrderActorType } from '../domain/order-actor';
 import type { OrderRecord } from '../domain/order';
 import {
@@ -92,6 +93,7 @@ function order(overrides: Partial<OrderRecord> = {}): OrderRecord {
         productName: 'Eggs',
         unitPrice: 1000,
         quantity: 2,
+        discountedQuantity: 0,
         grossLineTotal: 2000n,
         lineDiscountAmount: 0n,
         finalLineTotal: 2000n,
@@ -117,6 +119,12 @@ describe('OrderTransitionService', () => {
       | 'transitionShippedToDelivered'
     >
   >;
+  let discountUsage: jest.Mocked<
+    Pick<
+      DiscountUsageService,
+      'lockRemainingForPricing' | 'consumeForOrder' | 'releaseForOrder'
+    >
+  >;
   let inventory: jest.Mocked<
     Pick<InventoryService, 'releaseForOrder' | 'shipForOrder'>
   >;
@@ -137,6 +145,11 @@ describe('OrderTransitionService', () => {
       transitionConfirmedToShipped: jest.fn(),
       transitionShippedToDelivered: jest.fn(),
     };
+    discountUsage = {
+      lockRemainingForPricing: jest.fn().mockResolvedValue(new Map()),
+      consumeForOrder: jest.fn().mockResolvedValue(undefined),
+      releaseForOrder: jest.fn().mockResolvedValue(undefined),
+    };
     inventory = {
       releaseForOrder: jest.fn(),
       shipForOrder: jest.fn(),
@@ -145,6 +158,7 @@ describe('OrderTransitionService', () => {
     service = new OrderTransitionService(
       new ImmediateTransactionRunner(),
       repository as unknown as OrderRepository,
+      discountUsage as unknown as DiscountUsageService,
       inventory as unknown as InventoryService,
       logger as unknown as ApplicationLogger,
     );
@@ -261,6 +275,10 @@ describe('OrderTransitionService', () => {
         repository.transitionPendingToCancelledForOwner,
       ).toHaveBeenCalledWith(ORDER_ID, USER_ID, expect.anything());
       expect(repository.transitionConfirmedToCancelled).not.toHaveBeenCalled();
+      expect(discountUsage.releaseForOrder).toHaveBeenCalledWith(
+        { orderId: ORDER_ID, userId: USER_ID },
+        expect.anything(),
+      );
       expect(inventory.releaseForOrder).toHaveBeenCalledWith(
         {
           orderId: ORDER_ID,
@@ -268,6 +286,9 @@ describe('OrderTransitionService', () => {
         },
         expect.anything(),
       );
+      expect(
+        discountUsage.releaseForOrder.mock.invocationCallOrder[0],
+      ).toBeLessThan(inventory.releaseForOrder.mock.invocationCallOrder[0]!);
     });
 
     it('rejects customer cancel of CONFIRMED without calling Inventory', async () => {
@@ -289,6 +310,7 @@ describe('OrderTransitionService', () => {
         message: OrderMessage.CUSTOMER_CANCEL_DENIED,
       });
       expect(inventory.releaseForOrder).not.toHaveBeenCalled();
+      expect(discountUsage.releaseForOrder).not.toHaveBeenCalled();
     });
 
     it('replays customer cancel of an already CANCELLED owned order', async () => {
@@ -307,6 +329,7 @@ describe('OrderTransitionService', () => {
 
       expect(result).toEqual({ order: existing, replay: true });
       expect(inventory.releaseForOrder).not.toHaveBeenCalled();
+      expect(discountUsage.releaseForOrder).not.toHaveBeenCalled();
     });
 
     it('maps inventory consistency failures to ORDER_INVALID_TRANSITION', async () => {
@@ -378,6 +401,10 @@ describe('OrderTransitionService', () => {
         { cancelReason: 'out of stock' },
         expect.anything(),
       );
+      expect(discountUsage.releaseForOrder).toHaveBeenCalledWith(
+        { orderId: ORDER_ID, userId: USER_ID },
+        expect.anything(),
+      );
       expect(inventory.releaseForOrder).toHaveBeenCalledWith(
         {
           orderId: ORDER_ID,
@@ -385,6 +412,9 @@ describe('OrderTransitionService', () => {
         },
         expect.anything(),
       );
+      expect(
+        discountUsage.releaseForOrder.mock.invocationCallOrder[0],
+      ).toBeLessThan(inventory.releaseForOrder.mock.invocationCallOrder[0]!);
     });
 
     it('cancels CONFIRMED', async () => {
@@ -412,6 +442,14 @@ describe('OrderTransitionService', () => {
 
       expect(repository.transitionPendingToCancelled).not.toHaveBeenCalled();
       expect(repository.transitionConfirmedToCancelled).toHaveBeenCalled();
+      expect(discountUsage.releaseForOrder).toHaveBeenCalledWith(
+        { orderId: ORDER_ID, userId: USER_ID },
+        expect.anything(),
+      );
+      expect(inventory.releaseForOrder).toHaveBeenCalled();
+      expect(
+        discountUsage.releaseForOrder.mock.invocationCallOrder[0],
+      ).toBeLessThan(inventory.releaseForOrder.mock.invocationCallOrder[0]!);
     });
 
     it('requires a cancellation reason', async () => {
@@ -441,6 +479,7 @@ describe('OrderTransitionService', () => {
       expect(result).toEqual({ order: existing, replay: true });
       expect(result.order.cancelReason).toBe('original');
       expect(inventory.releaseForOrder).not.toHaveBeenCalled();
+      expect(discountUsage.releaseForOrder).not.toHaveBeenCalled();
     });
 
     it('does not chase CONFIRMED after losing a pending race', async () => {

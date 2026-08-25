@@ -23,7 +23,7 @@ import { assertDestructiveOperationsAllowed } from '../support/integration-envir
 async function truncatePricingTables(prisma: PrismaService): Promise<void> {
   assertDestructiveOperationsAllowed();
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "Discount", "PriceHistory", "InventoryLedger", "InventoryReservation", "Inventory", "Product", "Category" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "DiscountUsageRecord", "DiscountCustomerUsage", "Discount", "PriceHistory", "InventoryLedger", "InventoryReservation", "Inventory", "Product", "Category" RESTART IDENTITY CASCADE',
   );
 }
 

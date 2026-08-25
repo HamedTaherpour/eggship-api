@@ -23,7 +23,7 @@ At order creation the backend persists immutable snapshots:
 | `Order.commercePolicyRevision`                                                                               | COM-03 observed `CommerceSettings.revision` | No             |
 | `Order` applied ORDER discount columns                                                                       | PRC-05 `appliedOrderDiscount`               | No             |
 
-`OrderLine.productId` and `Order.regionId` retain traceability (`ON DELETE RESTRICT`). Applied discount columns store historical evidence **without FK** to `Discount` — deactivated or changed Discount rows must not be required to reconstruct totals. `discountedQuantity` is required future snapshot evidence for partial lifetime eligibility ([ADR 0017](../docs/adr/0017-discount-lifetime-quantity-limit.md)); DLU-02 adds the column. Do not infer discounted units later from mutable usage aggregates alone.
+`OrderLine.productId` and `Order.regionId` retain traceability (`ON DELETE RESTRICT`). Applied discount columns store historical evidence **without FK** to `Discount` — deactivated or changed Discount rows must not be required to reconstruct totals. `discountedQuantity` is required snapshot evidence for partial lifetime eligibility ([ADR 0017](../docs/adr/0017-discount-lifetime-quantity-limit.md); DLU-02). Do not infer discounted units later from mutable usage aggregates alone.
 
 Repositories must not expose generic updates for snapshot fields. ORD-02 owns explicit status/lifecycle mutations.
 
@@ -63,10 +63,10 @@ No negatives. Application service owns cross-line aggregate equality; DB CHECKs 
 
 ### PRC-05 → ORD-03 snapshot contract
 
-| Area  | Fields                                                                                                                                                    |
-| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Line  | `productId`, `productName`, `unitPrice`, `quantity`, `grossLineTotal`, `lineDiscountAmount`, `finalLineTotal`, applied LINE discount evidence             |
-| Order | `grossSubtotal`, `lineDiscountTotal`, `subtotalAfterLineDiscounts`, `orderDiscountAmount`, `total`, applied ORDER discount evidence, `pricingEvaluatedAt` |
+| Area  | Fields                                                                                                                                                              |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Line  | `productId`, `productName`, `unitPrice`, `quantity`, `discountedQuantity`, `grossLineTotal`, `lineDiscountAmount`, `finalLineTotal`, applied LINE discount evidence |
+| Order | `grossSubtotal`, `lineDiscountTotal`, `subtotalAfterLineDiscounts`, `orderDiscountAmount`, `total`, applied ORDER discount evidence, `pricingEvaluatedAt`           |
 
 - Transaction isolation: when ORD-03 calls `priceOrderLines({ tx })` inside the create transaction, that transaction **must** use PostgreSQL **REPEATABLE READ** (or equivalent) so Product and Discount reads share one snapshot. ORD-03 uses `TransactionRunner.runRepeatableRead` for the full create (price → persist → reserve). Concurrent Inventory updates under RR can raise serialization failures; `OrderCreationService` applies a bounded retry before surfacing a stable create-conflict message.
 
@@ -89,12 +89,12 @@ Flow in one RR transaction:
 2. Replay or conflict on existing Order for that key + payload hash
 3. Evaluate one coherent Commerce policy revision from the same REPEATABLE READ snapshot (COM-03)
 4. Resolve User phone / Region name
-5. Lock `DiscountCustomerUsage` rows for relevant PRODUCT discounts (`FOR UPDATE`, sorted `discountId`) and price with `remainingEligibleQuantity` (DLU-01 / [ADR 0017](../docs/adr/0017-discount-lifetime-quantity-limit.md); persistence in DLU-02)
-6. Persist trusted snapshots (including `discountedQuantity` once DLU-02 lands), `commercePolicyRevision`, append CONSUME usage records, and update usage aggregates
+5. Lock `DiscountCustomerUsage` rows for relevant PRODUCT discounts (`FOR UPDATE`, sorted `discountId`) and price with `remainingEligibleQuantity` (DLU-02 / [ADR 0017](../docs/adr/0017-discount-lifetime-quantity-limit.md))
+6. Persist trusted snapshots (including `discountedQuantity`), `commercePolicyRevision`, append CONSUME usage records, and update usage aggregates
 7. Reserve Inventory through `reserveForOrder(orderId, normalized lines, USER actor, tx)`
 8. Commit — status is always `PENDING_REVIEW`
 
-Failure at any step rolls back policy evaluation side effects, discount usage, Order, lines, and reservation. No Order without reservation; no reservation or discount-usage consumption without Order. Until DLU-02 lands, lifetime discounted-quantity persistence remains unimplemented; ADR 0017 is the locked contract.
+Failure at any step rolls back policy evaluation side effects, discount usage, Order, lines, and reservation. No Order without reservation; no reservation or discount-usage consumption without Order.
 
 COM-03 persists the accepted `commercePolicyRevision` and reuses the shared database evaluation instant as `pricingEvaluatedAt`; it does not copy regular hours, minimum quantity, override fields, or Admin metadata onto Order. Commerce policy reads do not require pessimistic row locks: settings and relevant date overrides join the outer REPEATABLE READ transaction so one committed snapshot governs the attempt. See [ADR 0016](../docs/adr/0016-commerce-order-acceptance-policy.md) and [commerce-policy.md](commerce-policy.md).
 
@@ -312,7 +312,7 @@ Do not add per-command status-error explosion. Pricing unavailability maps to `O
 
 ## Mutable vs immutable Order fields
 
-**Immutable after creation:** `id`, `userId`, customer/region/line/money/discount snapshots (including `discountedQuantity` once DLU-02 lands), `pricingEvaluatedAt`, `idempotencyKey` / `idempotencyPayloadHash`, `createdAt`.
+**Immutable after creation:** `id`, `userId`, customer/region/line/money/discount snapshots (including `discountedQuantity`), `pricingEvaluatedAt`, `idempotencyKey` / `idempotencyPayloadHash`, `createdAt`.
 
 **Mutable through explicit domain transitions (ORD-02+):** `status`, lifecycle timestamps (`confirmedAt`, `shippedAt`, `deliveredAt`, `deliveryAt`), cancellation metadata (`cancelledAt`, `cancelReason`).
 

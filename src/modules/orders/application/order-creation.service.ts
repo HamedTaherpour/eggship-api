@@ -6,6 +6,7 @@ import { TransactionRunner } from '../../../infrastructure/database/transaction'
 import { CommercePolicyService } from '../../commerce-policy/application/commerce-policy.service';
 import { InventoryService } from '../../inventory/application/inventory.service';
 import { InventoryLedgerActorType } from '../../inventory/domain/inventory-ledger';
+import { DiscountUsageService } from '../../pricing/application/discount-usage.service';
 import { OrderPricingService } from '../../pricing/application/order-pricing.service';
 import {
   OrderPricingInvalidInputError,
@@ -40,8 +41,9 @@ import type {
 const CREATE_SERIALIZATION_MAX_ATTEMPTS = 5;
 
 /**
- * ORD-03 / COM-03 transactional order creation.
- * One REPEATABLE READ transaction: policy → price → persist snapshots → reserve.
+ * ORD-03 / COM-03 / DLU-02 transactional order creation.
+ * One REPEATABLE READ transaction: policy → price (+ usage locks) → persist
+ * snapshots → CONSUME usage → reserve Inventory.
  * No HTTP. Callers supply trusted USER actor + region + lines + idempotency key.
  *
  * ORD-03A owns joining User/Region reads to this outer transaction before HTTP.
@@ -53,6 +55,7 @@ export class OrderCreationService {
     private readonly orders: OrderRepository,
     private readonly commercePolicy: CommercePolicyService,
     private readonly pricing: OrderPricingService,
+    private readonly discountUsage: DiscountUsageService,
     private readonly inventory: InventoryService,
     private readonly users: UserRepository,
     private readonly regions: RegionRepository,
@@ -196,9 +199,12 @@ export class OrderCreationService {
         throw new OrderInvalidRegionError(OrderMessage.INVALID_REGION);
       }
 
+      // DLU-02: priceOrderLines locks DiscountCustomerUsage (sorted discountId)
+      // before composition when userId is supplied.
       const priced = await this.pricing.priceOrderLines(input.normalizedLines, {
         tx,
         evaluatedAt: acceptance.evaluatedAt,
+        userId: input.userId,
       });
 
       const createInput = this.toTrustedCreateInput({
@@ -218,6 +224,15 @@ export class OrderCreationService {
       // Outer createOrder recovers via a fresh read / retry after rollback.
       const created = await this.orders.createWithTrustedSnapshots(
         createInput,
+        tx,
+      );
+
+      await this.discountUsage.consumeForOrder(
+        {
+          orderId: created.id,
+          userId: input.userId,
+          consumptions: priced.lifetimeConsumptions,
+        },
         tx,
       );
 
@@ -286,6 +301,7 @@ export class OrderCreationService {
         productName: line.productName,
         unitPrice: line.unitPrice,
         quantity: line.quantity,
+        discountedQuantity: line.discountedQuantity,
         grossLineTotal: line.grossLineTotal,
         lineDiscountAmount: line.lineDiscountAmount,
         finalLineTotal: line.finalLineTotal,

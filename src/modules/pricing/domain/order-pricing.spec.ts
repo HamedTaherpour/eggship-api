@@ -47,6 +47,7 @@ function buildDiscount(
     startsAt: overrides.startsAt ?? null,
     endsAt: overrides.endsAt ?? null,
     precedence: overrides.precedence ?? 0,
+    maxQuantityPerCustomer: overrides.maxQuantityPerCustomer ?? null,
     createdAt: overrides.createdAt ?? new Date('2026-08-01T00:00:00.000Z'),
     updatedAt: overrides.updatedAt ?? new Date('2026-08-01T00:00:00.000Z'),
   };
@@ -109,6 +110,7 @@ describe('composeOrderPricing', () => {
     expect(result.evaluatedAt).toBe(evaluatedAt);
     expect(result.lines).toHaveLength(1);
     expect(result.lines[0]).toMatchObject({
+      discountedQuantity: 0,
       grossLineTotal: 30_000n,
       lineDiscountAmount: 0n,
       finalLineTotal: 30_000n,
@@ -121,6 +123,7 @@ describe('composeOrderPricing', () => {
       orderDiscountAmount: 0n,
       total: 30_000n,
       appliedOrderDiscount: null,
+      lifetimeConsumptions: [],
     });
   });
 
@@ -561,5 +564,92 @@ describe('composeOrderPricing', () => {
     const first = composeOrderPricing(input);
     const second = composeOrderPricing(input);
     expect(second).toEqual(first);
+  });
+
+  describe('DLU-02 partial lifetime quantity', () => {
+    it('matches ADR example: qty 5, remaining 3, 20% → discount 60_000', () => {
+      const result = composeOrderPricing({
+        evaluatedAt,
+        lines: [line({ quantity: 5, unitPrice: 100_000 })],
+        discounts: [
+          buildDiscount({
+            id: DISCOUNT_PRODUCT,
+            target: DiscountTarget.PRODUCT,
+            type: DiscountType.PERCENT,
+            percentValue: 20,
+            productId: PRODUCT_A,
+            precedence: 10,
+            maxQuantityPerCustomer: 3,
+          }),
+        ],
+        lifetimeRemainingByDiscountId: new Map([[DISCOUNT_PRODUCT, 3]]),
+      });
+
+      expect(result.lines[0]).toMatchObject({
+        quantity: 5,
+        discountedQuantity: 3,
+        grossLineTotal: 500_000n,
+        lineDiscountAmount: 60_000n,
+        finalLineTotal: 440_000n,
+      });
+      expect(result.lifetimeConsumptions).toEqual([
+        { discountId: DISCOUNT_PRODUCT, quantity: 3 },
+      ]);
+    });
+
+    it('excludes exhausted capped PRODUCT so CATEGORY can win', () => {
+      const result = composeOrderPricing({
+        evaluatedAt,
+        lines: [line({ quantity: 2, unitPrice: 10_000 })],
+        discounts: [
+          buildDiscount({
+            id: DISCOUNT_PRODUCT,
+            target: DiscountTarget.PRODUCT,
+            type: DiscountType.PERCENT,
+            percentValue: 50,
+            productId: PRODUCT_A,
+            precedence: 100,
+            maxQuantityPerCustomer: 3,
+          }),
+          buildDiscount({
+            id: DISCOUNT_CATEGORY,
+            target: DiscountTarget.CATEGORY,
+            type: DiscountType.PERCENT,
+            percentValue: 10,
+            categoryId: CATEGORY_EGGS,
+            precedence: 1,
+          }),
+        ],
+        lifetimeRemainingByDiscountId: new Map([[DISCOUNT_PRODUCT, 0]]),
+      });
+
+      expect(result.lines[0]!.appliedLineDiscount?.discountId).toBe(
+        DISCOUNT_CATEGORY,
+      );
+      expect(result.lines[0]!.discountedQuantity).toBe(2);
+      expect(result.lines[0]!.lineDiscountAmount).toBe(2_000n);
+      expect(result.lifetimeConsumptions).toEqual([]);
+    });
+
+    it('does not emit consumptions for unlimited PRODUCT winners', () => {
+      const result = composeOrderPricing({
+        evaluatedAt,
+        lines: [line({ quantity: 2, unitPrice: 10_000 })],
+        discounts: [
+          buildDiscount({
+            id: DISCOUNT_PRODUCT,
+            target: DiscountTarget.PRODUCT,
+            type: DiscountType.PERCENT,
+            percentValue: 10,
+            productId: PRODUCT_A,
+            maxQuantityPerCustomer: null,
+          }),
+        ],
+        lifetimeRemainingByDiscountId: new Map(),
+      });
+
+      expect(result.lines[0]!.discountedQuantity).toBe(2);
+      expect(result.lifetimeConsumptions).toEqual([]);
+    });
   });
 });

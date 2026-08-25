@@ -10,6 +10,8 @@ export interface OrderLineRecord {
   productName: string;
   unitPrice: number;
   quantity: number;
+  /** Units that received the LINE discount (0…quantity). DLU-02. */
+  discountedQuantity: number;
   /** unitPrice × quantity (ORD-01 gross; renamed from lineTotal in ORD-03). */
   grossLineTotal: bigint;
   lineDiscountAmount: bigint;
@@ -56,6 +58,7 @@ export interface TrustedOrderLineSnapshot {
   productName: string;
   unitPrice: number;
   quantity: number;
+  discountedQuantity: number;
   grossLineTotal: bigint;
   lineDiscountAmount: bigint;
   finalLineTotal: bigint;

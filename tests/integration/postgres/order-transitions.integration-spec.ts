@@ -43,7 +43,7 @@ async function truncateOrderTransitionTables(
 ): Promise<void> {
   assertDestructiveOperationsAllowed();
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "InventoryLedger", "InventoryReservation", "Inventory", "OrderLine", "Order", "Product", "Category", "Region", "User" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "DiscountUsageRecord", "DiscountCustomerUsage", "InventoryLedger", "InventoryReservation", "Inventory", "OrderLine", "Order", "Product", "Category", "Region", "User" RESTART IDENTITY CASCADE',
   );
 }
 
@@ -157,6 +157,7 @@ describe('Order transitions (integration)', () => {
           productName: product.name,
           unitPrice: product.price,
           quantity,
+          discountedQuantity: 0,
           grossLineTotal: gross,
           lineDiscountAmount: 0n,
           finalLineTotal: gross,

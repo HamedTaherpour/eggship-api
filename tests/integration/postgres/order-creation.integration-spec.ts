@@ -53,7 +53,7 @@ function uniquePhone(suffix: number): string {
 async function truncateTables(prisma: PrismaService): Promise<void> {
   assertDestructiveOperationsAllowed();
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "InventoryLedger", "InventoryReservation", "Inventory", "Discount", "PriceHistory", "OrderLine", "Order", "Product", "Category", "Region", "User", "CommerceScheduleOverride", "CommerceSettings" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "DiscountUsageRecord", "DiscountCustomerUsage", "InventoryLedger", "InventoryReservation", "Inventory", "Discount", "PriceHistory", "OrderLine", "Order", "Product", "Category", "Region", "User", "CommerceScheduleOverride", "CommerceSettings" RESTART IDENTITY CASCADE',
   );
 }
 

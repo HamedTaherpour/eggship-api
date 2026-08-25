@@ -132,11 +132,11 @@ Missing or non-saleable products raise `PRODUCT_NOT_FOUND` (`OrderPricingProduct
 
 Returned for ORD-03 persistence later. Explicit fields — not a generic JSON blob:
 
-**Per line:** `productId`, `productName`, `categoryId`, `unitPrice`, `quantity`, `grossLineTotal`, `lineDiscountAmount`, `finalLineTotal`, `appliedLineDiscount` (or null).
+**Per line:** `productId`, `productName`, `categoryId`, `unitPrice`, `quantity`, `grossLineTotal`, `lineDiscountAmount`, `finalLineTotal`, `appliedLineDiscount` (or null). DLU-02 extends the persistence-neutral result with `discountedQuantity` when lifetime caps apply ([ADR 0017](../docs/adr/0017-discount-lifetime-quantity-limit.md)).
 
 **Order:** `grossSubtotal`, `lineDiscountTotal`, `subtotalAfterLineDiscounts`, `orderDiscountAmount`, `total`, `appliedOrderDiscount` (or null), `evaluatedAt`.
 
-PRC-05 does **not** migrate Order/OrderLine schema. ORD-03 persists discounted amounts and applied-discount evidence into explicit columns (`grossLineTotal` / `finalLineTotal`, order aggregates, applied-discount snapshot fields, `pricingEvaluatedAt`) without re-reading mutable Product/Discount state after pricing.
+PRC-05 does **not** migrate Order/OrderLine schema. ORD-03 persists discounted amounts and applied-discount evidence into explicit columns (`grossLineTotal` / `finalLineTotal`, order aggregates, applied-discount snapshot fields, `pricingEvaluatedAt`) without re-reading mutable Product/Discount state after pricing. Lifetime-cap columns and usage mutation belong to DLU-02.
 
 ### Reads, transactions, and concurrency
 
@@ -147,12 +147,75 @@ PRC-05 does **not** migrate Order/OrderLine schema. ORD-03 persists discounted a
 
 ### Out of scope in PRC-05
 
-Order HTTP/create, payments, promo codes, usage limits, Order schema migration, and Redis-backed pricing.
+Order HTTP/create, payments, promo codes, Order schema migration, and Redis-backed pricing. Lifetime quantity caps are designed in DLU-01 / ADR 0017 and implemented in DLU-02 — PRC-05 must not invent them independently.
 
 ## Orders boundary
 
 - Orders snapshot title and unit price at creation (ORD-01). Changing current price or appending history must not mutate existing Order lines.
 - Order-time discount composition and persistence-neutral pricing snapshots are owned by PRC-05 (`OrderPricingService`); ORD-03 persists them.
+
+## Product-discount lifetime customer limit (DLU-01 / ADR 0017; implementation DLU-02)
+
+Accepted architecture: [ADR 0017](../docs/adr/0017-discount-lifetime-quantity-limit.md).
+
+### Scope
+
+- Optional `maxQuantityPerCustomer` applies **only** to `DiscountTarget.PRODUCT` in V1. `null` means unlimited and preserves existing Discount behavior.
+- `CATEGORY` and `ORDER` discounts must not accept a non-null lifetime quantity limit. CATEGORY caps need a separate multi-product quantity policy; ORDER discounts are money-based on post-LINE subtotal, so unit quantity is not a meaningful V1 cap dimension.
+- The limit is cumulative for one `(discountId, userId)` across the lifetime of that Discount row. It is not per Order, per day, per cart, or an Inventory/SKU availability limit.
+- PRC-03/PRC-05 single LINE winner and LINE-then-ORDER composition ([ADR 0015](../docs/adr/0015-line-then-order-discount-composition.md)) are unchanged. Usage is consumed only when a capped PRODUCT discount is the **applied** LINE winner. A CATEGORY winner on the same line does not consume PRODUCT-cap usage.
+- A capped PRODUCT discount with `remainingEligibleQuantity = 0` is **not LINE-eligible** for winner selection (so it cannot block a CATEGORY winner). Partial entitlement (`remainingEligibleQuantity > 0` but less than requested quantity) keeps the PRODUCT discount eligible; the single winner still applies only to `discountedQuantity`.
+
+### Terminology
+
+| Term                        | Meaning                                                                                       |
+| --------------------------- | --------------------------------------------------------------------------------------------- |
+| `maxQuantityPerCustomer`    | Configured lifetime cap on a PRODUCT Discount (`null` = unlimited)                            |
+| `consumedQuantity`          | Durable units already consumed for `(discountId, userId)`                                     |
+| `remainingEligibleQuantity` | Derived: unlimited when cap is null; else `max(0, maxQuantityPerCustomer − consumedQuantity)` |
+| `requestedQuantity`         | Normalized Order-line quantity                                                                |
+| `discountedQuantity`        | Units that receive the LINE discount (`0 … requestedQuantity`)                                |
+| `nonDiscountedQuantity`     | Derived: `requestedQuantity − discountedQuantity`                                             |
+| Consumption / release       | Create-time consume; pre-`SHIPPED` cancel release — see Orders                                |
+
+Do not name persistence tables or domain types “allowance.” Prefer `DiscountCustomerUsage` / `DiscountUsageRecord` (or equivalent) in DLU-02.
+
+### Over-limit behavior (accepted: partial discount)
+
+Exceeding remaining entitlement must **not** reject the purchase.
+
+Compared options (DLU-01):
+
+1. Reject line/Order — **rejected** for V1.
+2. Discount only remaining eligible quantity; remainder at normal unit price — **accepted**.
+3. Apply no discount to the whole line when entitlement is insufficient — **rejected** for V1 (strictly worse than partial).
+
+For a capped PRODUCT LINE winner:
+
+- `discountedQuantity = min(requestedQuantity, remainingEligibleQuantity)`.
+- LINE discount base = `unitPrice × discountedQuantity` (PERCENT/FIXED PRC-03 math on that reduced base).
+- `grossLineTotal = unitPrice × requestedQuantity`; `finalLineTotal = grossLineTotal − lineDiscountAmount`.
+- ORDER discounts still apply to `Σ finalLineTotal` after LINE (ADR 0015).
+
+Example: unit `100_000`, qty `5`, 20% off, `discountedQuantity = 3` → gross `500_000`, discount `60_000`, final `440_000`.
+
+### Persistence, concurrency, and authority
+
+- PostgreSQL is authoritative. Forbidden: Redis/cache/BullMQ/distributed-lock correctness; `SUM(OrderLine)` read-check-write without locked usage state.
+- Preferred model: **`DiscountCustomerUsage` aggregate** `(discountId, userId, consumedQuantity)` **plus append-only `DiscountUsageRecord`** consume/release rows with uniqueness preventing double consume/release per Order.
+- Lock aggregates `FOR UPDATE` in sorted `discountId` order inside the ORD-03 REPEATABLE READ transaction after idempotency and before Inventory locks ([orders.md](orders.md)).
+- Pricing receives the trusted customer id from Orders; clients never supply Discount identity, consumed quantity, or discounted quantity.
+- OrderLine snapshots must store explicit `discountedQuantity` (with existing money/applied-discount columns). Do not reconstruct partial eligibility later from mutable usage tables alone.
+
+### Lifecycle hooks (Orders-owned orchestration)
+
+- Consume atomically on successful Order create with pricing snapshot + Inventory reservation.
+- Release on cancellation before `SHIPPED`, atomically with Inventory release.
+- `SHIPPED` and later: consumed quantity stays consumed.
+- Returns do **not** restore entitlement in V1 (ORD-07 must not infer restore from `RETURNED`/restock).
+- Same `discountId` keeps the same lifetime usage across deactivate/reactivate. Lowering the configured cap below already-consumed quantity yields zero remaining eligibility without rewriting history.
+
+Implementation, schema, Admin DTO fields, and HTTP remain **DLU-02**.
 
 ## Permissions
 

@@ -1,10 +1,10 @@
 # Orders
 
-EggShip V1 has **no online payment gateway**. Warehouse/operations ships goods; receipt/proof originates outside EggShip. Approved deferred-settlement tracking is planned as a separate bounded module; it is not online payment processing and does not add payment-dependent Order states or transitions ([ADR 0014](../docs/adr/0014-order-state-machine-and-transition-authorization.md)). Do not introduce gateway, card, checkout-payment, provider transaction-id, refund, or accounting models.
+EggShip V1 has **no online payment gateway**. Warehouse/operations ships goods; receipt/proof originates outside EggShip. Approved deferred-settlement tracking is planned as a separate bounded module ([settlement.md](settlement.md)); it is not online payment processing and does not add payment-dependent Order states or transitions ([ADR 0014](../docs/adr/0014-order-state-machine-and-transition-authorization.md)). Do not introduce gateway, card, checkout-payment, provider transaction-id, refund, or accounting models.
 
 ## Historical snapshot principle
 
-Orders are durable business records. **Historical display must not depend on mutable Product, User/profile, Region, or Discount state.**
+Orders are durable business records. **Historical display must not depend on mutable Product, User/profile, Region, Discount, or discount-usage state.**
 
 At order creation the backend persists immutable snapshots:
 
@@ -12,8 +12,9 @@ At order creation the backend persists immutable snapshots:
 | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------- | -------------- |
 | `OrderLine.productName`                                                                                      | `Product.name`                              | No             |
 | `OrderLine.unitPrice`                                                                                        | `Product.price` (integer Toman)             | No             |
+| `OrderLine.quantity` / `discountedQuantity`                                                                  | requested qty; DLU partial-discount qty     | No             |
 | `OrderLine.grossLineTotal`                                                                                   | server `unitPrice × quantity`               | No             |
-| `OrderLine.lineDiscountAmount` / `finalLineTotal`                                                            | PRC-05 LINE composition                     | No             |
+| `OrderLine.lineDiscountAmount` / `finalLineTotal`                                                            | PRC-05 LINE composition (possibly partial)  | No             |
 | `OrderLine` applied LINE discount columns                                                                    | PRC-05 `appliedLineDiscount`                | No             |
 | `Order.customerPhone`                                                                                        | canonical `User.phone`                      | No             |
 | `Order.regionName`                                                                                           | `Region.name`                               | No             |
@@ -22,7 +23,7 @@ At order creation the backend persists immutable snapshots:
 | `Order.commercePolicyRevision`                                                                               | COM-03 observed `CommerceSettings.revision` | No             |
 | `Order` applied ORDER discount columns                                                                       | PRC-05 `appliedOrderDiscount`               | No             |
 
-`OrderLine.productId` and `Order.regionId` retain traceability (`ON DELETE RESTRICT`). Applied discount columns store historical evidence **without FK** to `Discount` — deactivated or changed Discount rows must not be required to reconstruct totals.
+`OrderLine.productId` and `Order.regionId` retain traceability (`ON DELETE RESTRICT`). Applied discount columns store historical evidence **without FK** to `Discount` — deactivated or changed Discount rows must not be required to reconstruct totals. `discountedQuantity` is required future snapshot evidence for partial lifetime eligibility ([ADR 0017](../docs/adr/0017-discount-lifetime-quantity-limit.md)); DLU-02 adds the column. Do not infer discounted units later from mutable usage aggregates alone.
 
 Repositories must not expose generic updates for snapshot fields. ORD-02 owns explicit status/lifecycle mutations.
 
@@ -88,12 +89,12 @@ Flow in one RR transaction:
 2. Replay or conflict on existing Order for that key + payload hash
 3. Evaluate one coherent Commerce policy revision from the same REPEATABLE READ snapshot (COM-03)
 4. Resolve User phone / Region name
-5. Price, including any approved lifetime-discount allowance contract (DLU-01/DLU-02; not implemented yet)
-6. Persist trusted snapshots, `commercePolicyRevision`, and any approved discount-usage evidence
+5. Lock `DiscountCustomerUsage` rows for relevant PRODUCT discounts (`FOR UPDATE`, sorted `discountId`) and price with `remainingEligibleQuantity` (DLU-01 / [ADR 0017](../docs/adr/0017-discount-lifetime-quantity-limit.md); persistence in DLU-02)
+6. Persist trusted snapshots (including `discountedQuantity` once DLU-02 lands), `commercePolicyRevision`, append CONSUME usage records, and update usage aggregates
 7. Reserve Inventory through `reserveForOrder(orderId, normalized lines, USER actor, tx)`
 8. Commit — status is always `PENDING_REVIEW`
 
-Failure at any step rolls back policy/discount usage, Order, lines, and reservation. No Order without reservation; no reservation or discount allowance consumption without Order. Until DLU-02 lands, lifetime-discount allowance remains unimplemented.
+Failure at any step rolls back policy evaluation side effects, discount usage, Order, lines, and reservation. No Order without reservation; no reservation or discount-usage consumption without Order. Until DLU-02 lands, lifetime discounted-quantity persistence remains unimplemented; ADR 0017 is the locked contract.
 
 COM-03 persists the accepted `commercePolicyRevision` and reuses the shared database evaluation instant as `pricingEvaluatedAt`; it does not copy regular hours, minimum quantity, override fields, or Admin metadata onto Order. Commerce policy reads do not require pessimistic row locks: settings and relevant date overrides join the outer REPEATABLE READ transaction so one committed snapshot governs the attempt. See [ADR 0016](../docs/adr/0016-commerce-order-acceptance-policy.md) and [commerce-policy.md](commerce-policy.md).
 
@@ -258,11 +259,12 @@ Inventory quantity semantics follow [ADR 0012](../docs/adr/0012-inventory-quanti
 
 ### Canonical cross-domain lock order
 
-All Orders+Inventory flows that mutate both domains run in **one PostgreSQL transaction**. Lock order:
+All Orders flows that mutate Inventory and/or discount usage run in **one PostgreSQL transaction**. Lock order:
 
 ```text
 PostgreSQL transaction
   → Order create idempotency advisory lock (ORD-03) / conditional Order row UPDATE (transitions)
+  → DiscountCustomerUsage FOR UPDATE sorted by discountId (DLU-02 create consume / pre-ship cancel release)
   → Inventory orderId advisory lock
   → Inventory rows FOR UPDATE sorted by productId
   → Reservation rows in the same order
@@ -270,7 +272,15 @@ PostgreSQL transaction
   → commit
 ```
 
-Every Orders+Inventory flow must use this order.
+Every Orders+Inventory(+discount usage) flow must use this order. Discount usage locks sit after Order identity / transition success and before Inventory locks so concurrent same-user discount races serialize without crossing Inventory lock order.
+
+### Lifetime discounted-quantity lifecycle (DLU-01)
+
+- **Create:** consume `discountedQuantity` for each applied capped PRODUCT LINE winner in the same RR transaction as pricing snapshot + reservation ([ADR 0017](../docs/adr/0017-discount-lifetime-quantity-limit.md)).
+- **Cancel before `SHIPPED`:** release that Order’s consumed discounted quantity in the same transaction as Inventory `releaseForOrder` (ORD-05 + DLU-02).
+- **`SHIPPED` and later:** no release.
+- **`RETURNED` / restock (ORD-07):** must not restore lifetime entitlement in V1.
+- Idempotent create/cancel replay must not double-consume or double-release (usage-record uniqueness + Order idempotency).
 
 Admin Inventory errors during ship/cancel may surface as Inventory errors after rollback. Customer cancel maps `INVENTORY_RESERVATION_NOT_FOUND` and `INVENTORY_RESERVATION_CONFLICT` to `ORDER_INVALID_TRANSITION` with the customer-cancel message. Other Inventory `ApplicationError`s on that path are treated as internal failures (not remapped to `ORDER_INVALID_TRANSITION` and not returned as Inventory codes or details). Unexpected persistence failures are not remapped.
 
@@ -284,7 +294,7 @@ On create, insufficient stock surfaces as stable Inventory `INVENTORY_INSUFFICIE
 
 ## `RETURNED` (deferred)
 
-Coarse order-level outcome meaning a return process has completed. **ORD-07** owns return request/receipt/inspection/restock semantics. `RETURNED` never implies automatic inventory restock. ORD-02 does not implement `DELIVERED → RETURNED`.
+Coarse order-level outcome meaning a return process has completed. **ORD-07** owns return request/receipt/inspection/restock semantics. `RETURNED` never implies automatic inventory restock. ORD-02 does not implement `DELIVERED → RETURNED`. ORD-07 must **not** restore lifetime discount entitlement from return/restock; that remains an explicit future business decision ([ADR 0017](../docs/adr/0017-discount-lifetime-quantity-limit.md)).
 
 ## Order error codes
 
@@ -302,7 +312,7 @@ Do not add per-command status-error explosion. Pricing unavailability maps to `O
 
 ## Mutable vs immutable Order fields
 
-**Immutable after creation:** `id`, `userId`, customer/region/line/money/discount snapshots, `pricingEvaluatedAt`, `idempotencyKey` / `idempotencyPayloadHash`, `createdAt`.
+**Immutable after creation:** `id`, `userId`, customer/region/line/money/discount snapshots (including `discountedQuantity` once DLU-02 lands), `pricingEvaluatedAt`, `idempotencyKey` / `idempotencyPayloadHash`, `createdAt`.
 
 **Mutable through explicit domain transitions (ORD-02+):** `status`, lifecycle timestamps (`confirmedAt`, `shippedAt`, `deliveredAt`, `deliveryAt`), cancellation metadata (`cancelledAt`, `cancelReason`).
 
@@ -337,3 +347,4 @@ When profile/address support lands, Orders must snapshot address at creation —
 - [0014 — Order state machine and transition authorization](../docs/adr/0014-order-state-machine-and-transition-authorization.md)
 - [0015 — V1 LINE then ORDER discount composition](../docs/adr/0015-line-then-order-discount-composition.md)
 - [0016 — Commerce order-acceptance policy](../docs/adr/0016-commerce-order-acceptance-policy.md)
+- [0017 — Per-customer lifetime discounted-quantity limit](../docs/adr/0017-discount-lifetime-quantity-limit.md)

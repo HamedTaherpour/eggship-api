@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   103 |
-| DONE        |    44 |
+| DONE        |    45 |
 | IN_PROGRESS |     0 |
-| READY       |     1 |
-| BLOCKED     |     2 |
-| PLANNED     |    56 |
+| READY       |     2 |
+| BLOCKED     |     1 |
+| PLANNED     |    55 |
 
-- Current task: none in progress. Exact next READY after COM-03: `CAT-05 — Admin catalog APIs` (unrelated catalog work). Commerce Phase 4A is complete; customer create HTTP remains `ORD-03A` (PLANNED; depends on COM-03, DLU-02, AUTH-08). `DLU-01` and `SET-01` remain separate BLOCKED decision tasks and must not be folded into Commerce implementation.
+- Current task: none in progress. Exact next READY: `CAT-05 — Admin catalog APIs` or `DLU-02 — Atomic discount usage and pricing integration`. Commerce Phase 4A is complete; DLU-01 decisions are accepted ([ADR 0017](adr/0017-discount-lifetime-quantity-limit.md)). Customer create HTTP remains `ORD-03A` (PLANNED; depends on COM-03, DLU-02, AUTH-08). `SET-01` remains the separate BLOCKED settlement decision task.
 - Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
@@ -491,9 +491,9 @@ Explicitly out of scope: Mutation and admin fields.
 
 Status: PLANNED | Depends on: ORD-02, ORD-03, DLU-02 | Primary: Codex | Review: Claude/Cursor concurrency review
 
-Scope: Implement authorized idempotent cancellation for approved states and release Inventory reservations through its application contract.
+Scope: Implement authorized idempotent cancellation for approved states, release Inventory reservations through its application contract, and release lifetime discounted-quantity consumption per ADR 0017 in the same transaction.
 
-Acceptance criteria: Order transition and release are atomic; repeated/concurrent cancellation is safe; prohibited states return stable errors and audit evidence.
+Acceptance criteria: Order transition, discount-usage release, and Inventory release are atomic; repeated/concurrent cancellation is safe; prohibited states return stable errors and audit evidence; shipped Orders do not restore discount entitlement.
 
 Explicitly out of scope: Returns and refunds.
 
@@ -513,9 +513,9 @@ Status: PLANNED | Depends on: ORD-05, ORD-06, DLU-02 | Primary: Codex after Huma
 
 Scope: Implement separately approved return semantics, bounded bulk transition behavior, and dispatch-board queries without bypassing the order state machine.
 
-Acceptance criteria: Partial/batch failure semantics and authorization are explicit; every item is transition-validated; inventory/reversal behavior follows approved contracts.
+Acceptance criteria: Partial/batch failure semantics and authorization are explicit; every item is transition-validated; inventory/reversal behavior follows approved contracts; returns do **not** restore lifetime discount entitlement in V1 (ADR 0017).
 
-Explicitly out of scope: Inventing refund, carrier, or physical-return rules.
+Explicitly out of scope: Inventing refund, carrier, or physical-return rules; inventing discount-entitlement restoration.
 
 ### ORD-08 — Order audit, concurrency, and load verification
 
@@ -627,25 +627,25 @@ Explicitly out of scope: Payment settlement, Order HTTP/create, promo codes, usa
 
 ### DLU-01 — Product-discount lifetime-limit decisions
 
-Status: BLOCKED | Depends on: PRC-05, ORD-03 | Primary: Human + ChatGPT architecture process | Review: Claude/Cursor concurrency/financial-rule review, Human approval
+Status: DONE | Depends on: PRC-05, ORD-03 | Primary: Human + ChatGPT architecture process | Review: Claude/Cursor concurrency/financial-rule review, Human approval
 
-Blocker / decision owner: Product and architecture owner must decide over-limit behavior (reject, partial discount, or no discount), allowance consumption event, cancellation release, return effect, reactivation semantics, and snapshot evidence for partial eligibility.
-
-Scope: Approve the complete lifecycle and concurrency contract for optional per-customer lifetime quantity caps on PRODUCT discounts only, including idempotency and PostgreSQL usage persistence. Compare all three required over-limit options and record the accepted V1 rule.
+Scope: Approve the complete lifecycle and concurrency contract for optional per-customer lifetime quantity caps on PRODUCT discounts only, including over-limit behavior, consumption/release, returns, snapshot evidence, idempotency, and PostgreSQL usage persistence shape. No implementation.
 
 Acceptance criteria: No `SUM(OrderLine)` read-check-write or Redis authority; consumption/release events reconcile with Order lifecycle; existing null caps remain unlimited; lock order and invariant are explicit; no implementation is performed in this task.
 
-Explicitly out of scope: ORDER/CATEGORY discount caps, per-day/per-order limits, promo codes, rewards, and implementation.
+Explicitly out of scope: CATEGORY/ORDER discount caps, per-day/per-order limits, promo codes, rewards, and implementation.
 
-### DLU-02 — Atomic discount allowance and pricing integration
+Delivered: Accepted [ADR 0017](adr/0017-discount-lifetime-quantity-limit.md); durable policy in `instructions/pricing.md` and `instructions/orders.md`. V1 accepts **partial discount** (not reject, not whole-line no-discount). Caps are PRODUCT LINE only; CATEGORY/ORDER remain uncapped. Consume on Order create with pricing+reserve; release on pre-`SHIPPED` cancel with Inventory release; no restore after `SHIPPED` or on return. Persistence direction: `DiscountCustomerUsage` aggregate + append-only `DiscountUsageRecord`; OrderLine `discountedQuantity` snapshot evidence; sorted `discountId` locks before Inventory. Idempotent create/cancel must not double-consume/release.
 
-Status: PLANNED | Depends on: DLU-01, PRC-04, ORD-03 | Primary: Codex | Review: Claude/Cursor concurrency/financial-rule review, Human migration review
+### DLU-02 — Atomic discount usage and pricing integration
 
-Scope: Add the approved optional PRODUCT-discount cap, PostgreSQL usage aggregate/append-only event persistence, Admin DTO/API support, deterministic allowance locking, PRC-05 calculation integration, ORD-03 atomic consume/release behavior, idempotency, and immutable Order snapshot evidence.
+Status: READY | Depends on: DLU-01, PRC-04, ORD-03 | Primary: Codex | Review: Claude/Cursor concurrency/financial-rule review, Human migration review
 
-Acceptance criteria: Concurrent Orders for one User/Discount cannot exceed the cap; replay consumes once; cancellation/return behavior matches DLU-01; unlimited existing discounts remain unchanged; usage and Order/reservation commit or roll back together; real PostgreSQL races and OpenAPI/error contracts are verified.
+Scope: Add the approved optional PRODUCT-discount `maxQuantityPerCustomer`, PostgreSQL `DiscountCustomerUsage` aggregate + append-only `DiscountUsageRecord` persistence, Admin DTO/API support, deterministic usage locking, PRC-05 partial-quantity calculation integration, ORD-03 atomic consume behavior, ORD-05 release wiring, idempotency, and immutable OrderLine `discountedQuantity` snapshot evidence.
 
-Explicitly out of scope: Redis counters/locks, unrelated discount stacking changes, generic promotion engines, and customer-visible usage-history APIs.
+Acceptance criteria: Concurrent Orders for one User/Discount cannot exceed the cap; replay consumes once; pre-ship cancellation releases matching DLU-01; returns do not restore entitlement; unlimited existing discounts remain unchanged; usage and Order/reservation commit or roll back together; real PostgreSQL races and OpenAPI/error contracts are verified.
+
+Explicitly out of scope: Redis counters/locks, CATEGORY/ORDER quantity caps, unrelated discount stacking changes, generic promotion engines, customer-visible usage-history APIs, and ORD-07 entitlement restoration.
 
 ## Phase 5A — Deferred Settlement
 
@@ -999,7 +999,7 @@ Explicitly out of scope: Production provisioning.
 
 Status: PLANNED | Depends on: REL-01, INV-06, ORD-03, COM-03, DLU-02, SET-02 | Primary: Codex | Review: Claude/Cursor concurrency review
 
-Scope: Build repeatable real-PostgreSQL races for inventory invariants, deterministic locking, order idempotency, commerce-policy updates, discount allowance, settlement commands, duplicate cancellation, and retry behavior.
+Scope: Build repeatable real-PostgreSQL races for inventory invariants, deterministic locking, order idempotency, commerce-policy updates, discount usage, settlement commands, duplicate cancellation, and retry behavior.
 
 Acceptance criteria: Tests assert durable final state/ledger/history rather than only HTTP status and detect oversell, duplicate orders, deadlocks, or double release.
 
@@ -1243,7 +1243,7 @@ Complete when CAT-01 through CAT-06 and INV-01A through INV-06 are DONE, includi
 
 ### M4 — Ordering complete
 
-Complete when PRC-01 through PRC-05, ORD-01 through ORD-08 (including ORD-03A), COM-01 through COM-03, DLU-01/DLU-02, and SET-01/SET-02 are DONE: historical snapshots, pricing/discount rules and lifetime allowance, configurable Order acceptance, transactional idempotent multi-item creation, Inventory integration, customer/Admin flows, deferred settlement, cancellation/returns/dispatch behavior, audit, and load/concurrency checks are approved.
+Complete when PRC-01 through PRC-05, ORD-01 through ORD-08 (including ORD-03A), COM-01 through COM-03, DLU-01/DLU-02, and SET-01/SET-02 are DONE: historical snapshots, pricing/discount rules and lifetime discounted-quantity limits, configurable Order acceptance, transactional idempotent multi-item creation, Inventory integration, customer/Admin flows, deferred settlement, cancellation/returns/dispatch behavior, audit, and load/concurrency checks are approved.
 
 ### M5 — Feature parity complete
 
@@ -1272,7 +1272,7 @@ The following are not implementation assumptions:
 - Whether a future `PACKED`/`PICKED` state should move the physical `onHand` decrement earlier than `SHIPPED`.
 - Whether partial fulfillment or split shipment is ever allowed after V1.
 - Public exposure of exact inventory `available`, and any preferred-customer allocation/fairness policy under contention.
-- Product-discount lifetime caps are approved in principle, but DLU-01 is BLOCKED on over-limit behavior, consumption event, cancellation release, return effect, reactivation semantics, and partial-discount snapshot evidence. V1 LINE-then-ORDER composition and single-winner-per-scope rules remain locked in PRC-03 / PRC-05 / [ADR 0015](adr/0015-line-then-order-discount-composition.md). Promo codes and promo-banner behavior remain unapproved.
+- Product-discount lifetime caps are decided in [ADR 0017](adr/0017-discount-lifetime-quantity-limit.md) / DLU-01 (partial discount; PRODUCT LINE only; create consume / pre-ship release; no return restore). Implementation remains DLU-02. V1 LINE-then-ORDER composition and single-winner-per-scope rules remain locked in PRC-03 / PRC-05 / [ADR 0015](adr/0015-line-then-order-discount-composition.md). Promo codes and promo-banner behavior remain unapproved.
 - Deferred settlement SET-01 is BLOCKED on receipt count, receipt-versus-explicit-settle behavior, receipt-required rule, correction/reopen/detach semantics, exact Admin role grants, and stable conflicts. No gateway, card/bank fields, refunds, or accounting subsystem is approved.
 - Referral attribution window/source/reassignment, duplicate/self-referral treatment, visitor conversion, and whether rewards exist at all.
 - Notification type/content rules, push provider/consent, delivery guarantees, and token lifecycle.

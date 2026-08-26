@@ -3,7 +3,7 @@
 
 /**
  * Lightweight drift checks for AI host adapters.
- * Does not claim Cursor/Claude/Codex schema validation unless those tools ran.
+ * Does not claim Cursor/Qoder/Claude/Codex schema validation unless those tools ran.
  */
 
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
@@ -124,7 +124,10 @@ const workflowNames = [
 
 for (const name of workflowNames) {
   const shared = `docs/agent-workflows/${name}.md`;
-  for (const host of ['.cursor/skills', '.claude/skills']) {
+  for (const host of ['.cursor/skills', '.claude/skills', '.qoder/skills']) {
+    if (host.startsWith('.qoder') && !existsSync(join(root, host))) {
+      continue;
+    }
     const skillPath = `${host}/${name}/SKILL.md`;
     const full = mustExist(skillPath);
     if (!full) {
@@ -149,6 +152,18 @@ if (cursorRules.length === 0) {
   errors.push('Expected at least one .cursor/rules/*.mdc file');
 }
 for (const rulePath of cursorRules) {
+  const text = read(rulePath);
+  const size = Buffer.byteLength(text, 'utf8');
+  if (size > MAX_RULE_BYTES) {
+    errors.push(`${rel(rulePath)} exceeds ${MAX_RULE_BYTES} bytes (${size})`);
+  }
+  if (!text.includes('instructions/') && !text.includes('AGENTS.md')) {
+    errors.push(`${rel(rulePath)} should point to AGENTS.md or instructions/*`);
+  }
+}
+
+const qoderRules = listFiles('.qoder/rules', (path) => path.endsWith('.md'));
+for (const rulePath of qoderRules) {
   const text = read(rulePath);
   const size = Buffer.byteLength(text, 'utf8');
   if (size > MAX_RULE_BYTES) {
@@ -198,7 +213,7 @@ const secretPatterns = [
   /BEGIN (RSA |OPENSSH )?PRIVATE KEY/,
 ];
 
-for (const dir of ['.cursor', '.claude', '.codex']) {
+for (const dir of ['.cursor', '.claude', '.codex', '.qoder']) {
   for (const filePath of listFiles(dir)) {
     if (statSync(filePath).isDirectory()) {
       continue;

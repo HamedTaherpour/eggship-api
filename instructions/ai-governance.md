@@ -22,3 +22,14 @@ AI-assisted changes must be reviewable, scoped, and evidence-based. An agent mus
 Release publication is human-controlled. Agents may prepare release files, run `pnpm release:check` / `pnpm release:prepare`, and draft notes from `CHANGELOG.md`. Agents must not autonomously create Git tags, push tags, publish GitHub Releases, or deploy production unless a human explicitly instructs that exact action for the named version. See [releases](releases.md).
 
 Agents should make the smallest coherent change, cite assumptions, preserve unrelated work, and stop for unresolved business or architecture decisions that materially affect the result.
+
+## Autonomous Agent Mode safety
+
+When operating in autonomous or Agent Mode, an agent must also:
+
+- never commit `.env`, credentials, or other secrets;
+- never access or mutate production or shared infrastructure without explicit human approval;
+- never touch legacy backup databases;
+- only run destructive integration database operations against the repository-approved TEST database after safety guards pass;
+- never discard unrelated or user-owned working-tree changes;
+- never weaken tests, assertions, or security guards merely to make verification pass.

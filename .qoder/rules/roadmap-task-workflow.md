@@ -1,0 +1,18 @@
+---
+name: roadmap-task-workflow
+type: Model Decision
+description: Apply when implementing a docs/ROADMAP.md task by ID
+---
+
+# Roadmap task workflow
+
+When implementing a roadmap task ID:
+
+1. Read `AGENTS.md` and the task in `docs/ROADMAP.md` end to end.
+2. Resolve dependencies and stop on blockers or missing decisions.
+3. Load only relevant instructions and ADRs.
+4. Follow `docs/agent-workflows/implement-roadmap-task.md`.
+5. Update roadmap status only when acceptance criteria and Definition of Done are met.
+6. Leave the next task unstarted unless explicitly requested.
+
+Do not implement business features outside the named task scope.

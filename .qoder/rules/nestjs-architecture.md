@@ -1,0 +1,18 @@
+---
+name: nestjs-architecture
+type: Specific Files
+patterns:
+  - 'src/**/*.ts'
+description: NestJS modular-monolith boundaries for EggShip source changes
+---
+
+# NestJS architecture
+
+Follow `instructions/architecture.md` and `docs/adr/0001-modular-monolith.md`.
+
+- Keep controllers thin; put business logic in application/service code.
+- Keep Prisma out of domain logic and public response contracts.
+- Communicate across modules through explicit exported services or contracts.
+- Do not mutate another module's owned tables through its repository.
+- Prefer the narrowest structure that satisfies the approved requirement.
+- Do not add speculative infrastructure, generic CRUD bases, or microservices.

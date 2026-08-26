@@ -1,6 +1,6 @@
 # Agent tooling
 
-This policy governs Cursor, Claude Code, and Codex project configuration. Tool-specific directories are adapters around canonical EggShip policy; they must not become competing rule systems.
+This policy governs Cursor, Claude Code, Codex, and Qoder project configuration. Tool-specific directories are adapters around canonical EggShip policy; they must not become competing rule systems.
 
 ## Canonical ownership
 
@@ -12,7 +12,7 @@ This policy governs Cursor, Claude Code, and Codex project configuration. Tool-s
 | `docs/ROADMAP.md`        | Execution plan, task status, and dependency order           |
 | `docs/agent-workflows/*` | Shared skill/workflow behavior used by host adapters        |
 
-Policy changes belong in `instructions/*` (or ADRs/roadmap when those are the correct artifact). Do not copy large policy sections into `.cursor/`, `.claude/`, or `.codex/`.
+Policy changes belong in `instructions/*` (or ADRs/roadmap when those are the correct artifact). Do not copy large policy sections into `.cursor/`, `.claude/`, `.codex/`, or `.qoder/`.
 
 ## Adapter responsibilities
 
@@ -29,13 +29,15 @@ Host directories must not:
 - redefine architecture, API, security, database, or testing policy;
 - grant broad shell, filesystem, GitHub, database, or network permissions without need;
 - store API tokens, credentials, or other secrets;
-- silently install or modify MCP servers.
+- silently install or modify MCP servers;
+- broaden a task scope or make autonomous release/deploy decisions without explicit approval.
 
 ## Host roles
 
 | Host            | Primary use in EggShip                                                 |
 | --------------- | ---------------------------------------------------------------------- |
 | Cursor          | Primary implementation environment when available, including Auto mode |
+| Qoder           | Bounded implementation and review when available                       |
 | Codex           | Bounded implementation when available                                  |
 | Claude Code     | High-value adversarial review and analysis                             |
 | ChatGPT + human | Architecture and unresolved business decisions                         |
@@ -75,8 +77,8 @@ Candidate integrations (GitHub, PostgreSQL/Prisma development tooling, NestJS do
 
 ## Permissions and secrets
 
-Project AI config must remain least-privilege. Secrets belong in local/user configuration or deployment secrets, never under `.cursor/`, `.claude/`, or `.codex/`. Gitignore personal override files such as `.claude/settings.local.json`.
+Project AI config must remain least-privilege. Secrets belong in local/user configuration or deployment secrets, never under `.cursor/`, `.claude/`, `.codex/`, or `.qoder/`. Gitignore personal override files such as `.claude/settings.local.json` and `.qoder/settings.local.json`.
 
 ## Validation
 
-`pnpm check:agent-tooling` verifies that required canonical files exist, host wrappers stay thin and point at `AGENTS.md`, and shared workflows remain referenced by adapters. It does not claim that Cursor, Claude, or Codex themselves validated host-native schemas unless an official validator was actually run.
+`pnpm check:agent-tooling` verifies that required canonical files exist, host wrappers stay thin and point at `AGENTS.md`, and shared workflows remain referenced by adapters. It does not claim that Cursor, Qoder, Claude, or Codex themselves validated host-native schemas unless an official validator was actually run.

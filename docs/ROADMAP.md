@@ -114,6 +114,22 @@ Acceptance criteria:
 
 Explicitly out of scope: Business features, Auth/OpenAPI/domain modules, installing MCP servers, and inventing unsupported host config formats.
 
+### AI-02 — Qoder workspace integration
+
+Status: DONE | Depends on: AI-01 | Primary: Qoder | Review: Human
+
+Scope: Add Qoder project rules and skills as thin adapters around canonical `AGENTS.md` / `instructions/*` policy and shared agent workflows, extend adapter validation to cover `.qoder/`, and keep Cursor/Claude/Codex compatibility—without implementing business features.
+
+Acceptance criteria:
+
+- `.qoder/rules` contains minimal governance, architecture, database, testing, security, and roadmap-task adapters pointing to canonical sources.
+- `.qoder/skills` contains thin wrappers for `implement-roadmap-task`, `review-eggship-change`, `review-prisma-migration`, and `review-concurrency-sensitive-change` that delegate to shared workflows.
+- `instructions/agent-tooling.md` explicitly covers Qoder as a host adapter.
+- `pnpm check:agent-tooling` validates `.qoder/` drift guards without making Qoder mandatory for runtime/builds.
+- No MCP server is added and no business feature is implemented.
+
+Explicitly out of scope: Business features, installing MCP servers, duplicating large policy sections, and making Qoder mandatory for non-tooling workflows.
+
 ### INF-01 — Redis and BullMQ infrastructure foundation
 
 Status: DONE | Depends on: FND-03, FND-04 | Primary: Codex | Review: Claude/Cursor

@@ -30,3 +30,4 @@ Thumbs.db
 
 # Personal AI host overrides (never commit secrets or local permission grants)
 .claude/settings.local.json
+.qoder/settings.local.json

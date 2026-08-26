@@ -12,11 +12,13 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiBody,
   ApiCookieAuth,
   ApiCreatedResponse,
   ApiForbiddenResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiParam,
@@ -61,6 +63,7 @@ export class AdminRegionsController {
     description: 'Paginated regions.',
     type: AdminRegionListResponseDto,
   })
+  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
   @ApiForbiddenResponse({ type: ApiErrorResponseDto })
   async list(
@@ -92,6 +95,7 @@ export class AdminRegionsController {
     description: 'Created region.',
     type: AdminRegionResponseDto,
   })
+  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
   @ApiForbiddenResponse({ type: ApiErrorResponseDto })
   async create(
@@ -120,8 +124,10 @@ export class AdminRegionsController {
     description: 'Updated region.',
     type: AdminRegionResponseDto,
   })
+  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
   @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  @ApiNotFoundResponse({ type: ApiErrorResponseDto })
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: UpdateRegionBodyDto,

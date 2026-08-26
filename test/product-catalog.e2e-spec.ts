@@ -739,6 +739,41 @@ describe('Product catalog APIs (e2e)', () => {
     expect(asAdminProductBody(detail.body).data.isActive).toBe(false);
   });
 
+  it('CATALOG_READ roles can list and detail products but cannot manage them', async () => {
+    const readable = seedProduct({ name: 'Readable', price: 1000 });
+
+    for (const role of [AdminRole.WAREHOUSE, AdminRole.ORDER_OPS]) {
+      admins.activeRole(role);
+      const token = signAccessToken(AuthSubjectType.ADMIN);
+
+      await request(server())
+        .get('/api/v1/admin/products')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      await request(server())
+        .get(`/api/v1/admin/products/${readable.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      await request(server())
+        .post('/api/v1/admin/products')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          name: 'Eggs',
+          price: 1000,
+          categoryId: activeCategoryId,
+        })
+        .expect(403);
+
+      await request(server())
+        .patch(`/api/v1/admin/products/${readable.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ price: 2000 })
+        .expect(403);
+    }
+  });
+
   it('admin create validates price and category; list supports filters', async () => {
     admins.activeRole(AdminRole.SUPER_ADMIN);
     const token = signAccessToken(AuthSubjectType.ADMIN);

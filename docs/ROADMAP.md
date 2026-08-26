@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   103 |
-| DONE        |    47 |
+| DONE        |    48 |
 | IN_PROGRESS |     0 |
-| READY       |     1 |
+| READY       |     0 |
 | BLOCKED     |     1 |
 | PLANNED     |    54 |
 
-- Current task: none in progress. One READY task: `CAT-05 — Admin catalog APIs`. `ORD-03A` is DONE (customer Order-create HTTP + User/Region transaction-context join). `SET-01` remains the separate BLOCKED settlement decision task.
+- Current task: none in progress. No READY tasks. `ORD-03A` is DONE (customer Order-create HTTP + User/Region transaction-context join). `SET-01` remains the separate BLOCKED settlement decision task.
 - Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
@@ -325,7 +325,7 @@ Delivered: Reusable `Media` metadata model and additive migration (`id`, unique 
 
 ### CAT-05 — Admin catalog APIs
 
-Status: READY | Depends on: AUTH-08, CAT-02, CAT-03, CAT-04 | Primary: Codex | Review: Claude/Cursor
+Status: DONE | Depends on: AUTH-08, CAT-02, CAT-03, CAT-04 | Primary: Codex | Review: Claude/Cursor
 
 Scope: Close remaining authorized catalog Admin API gaps after CAT-02/CAT-03/CAT-04. Category, region, product, and media metadata management APIs already exist; this task must not re-implement CAT-04 uploads.
 

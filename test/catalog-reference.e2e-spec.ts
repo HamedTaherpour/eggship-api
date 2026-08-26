@@ -517,6 +517,77 @@ describe('Category and Region reference APIs (e2e)', () => {
     expect(asApiErrorBody(rejected.body).error.code).toBe('BAD_REQUEST');
   });
 
+  it('CATALOG_READ roles can list categories and regions but cannot manage them', async () => {
+    const now = new Date();
+    const category = {
+      id: randomUUID(),
+      name: 'Eggs',
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const region = {
+      id: randomUUID(),
+      name: 'Tehran',
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    };
+    categories.seed(category);
+    regions.seed(region);
+
+    for (const role of [AdminRole.WAREHOUSE, AdminRole.ORDER_OPS]) {
+      admins.activeRole(role);
+      const token = signAccessToken(AuthSubjectType.ADMIN);
+
+      await request(server())
+        .get('/api/v1/admin/categories')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      await request(server())
+        .get('/api/v1/admin/regions')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      await request(server())
+        .post('/api/v1/admin/categories')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Dairy' })
+        .expect(403);
+
+      await request(server())
+        .post('/api/v1/admin/regions')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Karaj' })
+        .expect(403);
+
+      await request(server())
+        .patch(`/api/v1/admin/categories/${category.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Modified' })
+        .expect(403);
+
+      await request(server())
+        .patch(`/api/v1/admin/regions/${region.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Modified' })
+        .expect(403);
+    }
+  });
+
+  it('admin region list rejects unknown query parameters', async () => {
+    admins.activeRole(AdminRole.SUPER_ADMIN);
+    const token = signAccessToken(AuthSubjectType.ADMIN);
+
+    const rejected = await request(server())
+      .get('/api/v1/admin/regions')
+      .query({ unknown: 'x' })
+      .set('Authorization', `Bearer ${token}`)
+      .expect(400);
+    expect(asApiErrorBody(rejected.body).error.code).toBe('BAD_REQUEST');
+  });
+
   it('admin region create/update and OpenAPI document the new operations', async () => {
     admins.activeRole(AdminRole.ORDER_OPS);
     const orderOps = signAccessToken(AuthSubjectType.ADMIN);

@@ -13,6 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiBody,
   ApiCookieAuth,
@@ -65,6 +66,7 @@ export class AdminProductsController {
     description: 'Paginated products.',
     type: AdminProductListResponseDto,
   })
+  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
   @ApiForbiddenResponse({ type: ApiErrorResponseDto })
   async list(
@@ -92,6 +94,7 @@ export class AdminProductsController {
     description: 'Admin product.',
     type: AdminProductResponseDto,
   })
+  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
   @ApiForbiddenResponse({ type: ApiErrorResponseDto })
   @ApiNotFoundResponse({ type: ApiErrorResponseDto })
@@ -122,6 +125,7 @@ export class AdminProductsController {
     description: 'Created product.',
     type: AdminProductResponseDto,
   })
+  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
   @ApiForbiddenResponse({ type: ApiErrorResponseDto })
   async create(
@@ -153,6 +157,7 @@ export class AdminProductsController {
     description: 'Updated product.',
     type: AdminProductResponseDto,
   })
+  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
   @ApiForbiddenResponse({ type: ApiErrorResponseDto })
   @ApiNotFoundResponse({ type: ApiErrorResponseDto })

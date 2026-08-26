@@ -110,7 +110,7 @@ The EggShip frontend uses **cookie-based authentication with CSRF protection**. 
 
 - Do **not** switch browser clients to LocalStorage (or SessionStorage) refresh-token storage.
 - Cookie-authenticated browser state-changing requests require CSRF protection ([security.md](security.md)).
-- CSRF middleware is **not** implemented. Customer and Admin `refresh`, `logout`, and `logout-all` are designed so CSRF middleware can wrap them, but **cookie-authenticated browser mutation security is not production-complete until CSRF lands**. Admin cookie auth is production-blocked by the same issue; do not invent a separate Admin CSRF mechanism.
+- CSRF middleware is **not** implemented. Customer and Admin `refresh`, `logout`, and `logout-all`, plus customer Order create (`POST /orders`), are designed so CSRF middleware can wrap them, but **cookie-authenticated browser mutation security is not production-complete until CSRF lands**. Admin cookie auth is production-blocked by the same issue; do not invent a separate Admin CSRF mechanism.
 
 ### Token transport (AUTH-03 / AUTH-04)
 

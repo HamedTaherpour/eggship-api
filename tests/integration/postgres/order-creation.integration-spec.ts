@@ -4,7 +4,10 @@ import { Test } from '@nestjs/testing';
 import { AdminRole } from '../../../src/common/authz/admin-role';
 import { postgresIntegrationImports } from '../support/postgres-testing-module';
 import { PrismaService } from '../../../src/infrastructure/database/prisma/prisma.service';
-import { TransactionRunner } from '../../../src/infrastructure/database/transaction';
+import {
+  TRANSACTION_CONTEXT_BRAND,
+  TransactionRunner,
+} from '../../../src/infrastructure/database/transaction';
 import { CategoryRepository } from '../../../src/modules/categories/infrastructure/category.repository';
 import { CommercePolicyService } from '../../../src/modules/commerce-policy/application/commerce-policy.service';
 import { CommercePolicyModule } from '../../../src/modules/commerce-policy/commerce-policy.module';
@@ -625,5 +628,126 @@ describe('Order creation (integration)', () => {
     expect(result.created).toBe(true);
     expect(result.order.commercePolicyRevision).toBe(3);
     expect(await prisma.order.count()).toBe(1);
+  });
+
+  it('reads User and Region through the outer RR TransactionContext (ORD-03A)', async () => {
+    const { user, regionId, productId } = await seedBase({ onHand: 5 });
+    const userSpy = jest.spyOn(users, 'findById');
+    const regionSpy = jest.spyOn(regions, 'findById');
+
+    try {
+      await creation.createOrder({
+        actor: { type: OrderActorType.USER, id: user.id },
+        regionId,
+        idempotencyKey: randomUUID(),
+        lines: [{ productId, quantity: 1 }],
+      });
+
+      expect(userSpy).toHaveBeenCalledWith(
+        user.id,
+        expect.objectContaining({ [TRANSACTION_CONTEXT_BRAND]: true }),
+      );
+      expect(regionSpy).toHaveBeenCalledWith(
+        regionId,
+        expect.objectContaining({ [TRANSACTION_CONTEXT_BRAND]: true }),
+      );
+    } finally {
+      userSpy.mockRestore();
+      regionSpy.mockRestore();
+    }
+  });
+
+  it('createOrder persists Region name from joined RR read despite concurrent rename', async () => {
+    const { user, regionId, productId } = await seedBase({ onHand: 5 });
+    const original = await regions.findById(regionId);
+    expect(original).not.toBeNull();
+
+    const realFindById = regions.findById.bind(regions);
+    const spy = jest
+      .spyOn(regions, 'findById')
+      .mockImplementation(async (id, tx?) => {
+        const row = await realFindById(id, tx);
+        if (tx !== undefined && id === regionId && row !== null) {
+          await prisma.region.update({
+            where: { id: regionId },
+            data: { name: `Renamed ${randomUUID()}` },
+          });
+        }
+        return row;
+      });
+
+    try {
+      const result = await creation.createOrder({
+        actor: { type: OrderActorType.USER, id: user.id },
+        regionId,
+        idempotencyKey: randomUUID(),
+        lines: [{ productId, quantity: 1 }],
+      });
+      expect(result.order.regionName).toBe(original!.name);
+      const outside = await realFindById(regionId);
+      expect(outside?.name).not.toBe(original!.name);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('createOrder accepts User that was active in the RR snapshot after concurrent disable', async () => {
+    const { user, regionId, productId } = await seedBase({ onHand: 5 });
+    const realFindById = users.findById.bind(users);
+    const spy = jest
+      .spyOn(users, 'findById')
+      .mockImplementation(async (id, tx?) => {
+        const row = await realFindById(id, tx);
+        if (tx !== undefined && id === user.id && row !== null) {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { isActive: false },
+          });
+        }
+        return row;
+      });
+
+    try {
+      const result = await creation.createOrder({
+        actor: { type: OrderActorType.USER, id: user.id },
+        regionId,
+        idempotencyKey: randomUUID(),
+        lines: [{ productId, quantity: 1 }],
+      });
+      expect(result.created).toBe(true);
+      expect(result.order.customerPhone).toBe(user.phone);
+      const outside = await realFindById(user.id);
+      expect(outside?.isActive).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('User and Region TransactionContext reads stay on the RR snapshot', async () => {
+    const user = await users.create({ phone: nextPhone() });
+    const region = await regions.create({ name: 'Snapshot Region' });
+
+    await transactions.runRepeatableRead(async (tx) => {
+      const userSnap = await users.findById(user.id, tx);
+      const regionSnap = await regions.findById(region.id, tx);
+      expect(userSnap?.isActive).toBe(true);
+      expect(regionSnap?.name).toBe('Snapshot Region');
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { isActive: false },
+      });
+      await regions.update(region.id, { name: 'Renamed Outside Snapshot' });
+
+      const userViaTx = await users.findById(user.id, tx);
+      const regionViaTx = await regions.findById(region.id, tx);
+      const userOutside = await users.findById(user.id);
+      const regionOutside = await regions.findById(region.id);
+
+      expect(userViaTx?.isActive).toBe(true);
+      expect(regionViaTx?.name).toBe('Snapshot Region');
+      expect(userOutside?.isActive).toBe(false);
+      expect(regionOutside?.name).toBe('Renamed Outside Snapshot');
+    });
   });
 });

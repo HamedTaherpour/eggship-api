@@ -14,7 +14,7 @@
 - Never commit secrets. `.env.example` may document required names and explicitly safe non-secret development examples, but it must never contain real credentials or secrets.
 - Cookie-based authentication requires CSRF protection. Browser clients must not store refresh tokens in LocalStorage; see [authentication.md](authentication.md) and [ADR 0004](../docs/adr/0004-auth-session-strategy.md).
 - AUTH-04 implements HttpOnly `eggship_at` / `eggship_rt` cookies, refresh rotation, reuse detection, and logout. ADM-AUTH-01 implements namespaced Admin cookies `eggship_admin_at` / `eggship_admin_rt` (`Path=/api/v1/admin`). **CSRF middleware is still required** before treating browser cookie-authenticated mutations as production-ready (customer and Admin); SameSite alone is not sufficient if cross-origin topology needs more.
-- Auth refresh/logout, Admin auth, and OTP request/verify responses use `Cache-Control: no-store`. Do not globally disable caching for unrelated public APIs.
+- Auth refresh/logout, Admin auth, OTP request/verify, and customer Order-create responses use `Cache-Control: no-store`. Do not globally disable caching for unrelated public APIs.
 - Future file uploads must validate content, type, and size and must not trust client filenames or persist important files on ephemeral local disk. CAT-04 implements this for Admin Media; see [media.md](media.md).
 - Development must never use production PostgreSQL or Redis credentials. Do not invent environment credentials or copy production secrets into local `.env`.
 - Never print complete `DATABASE_URL`, `REDIS_URL`, passwords, tokens, or other credentials in logs or setup scripts; use masked host metadata when a connection target must be identified.

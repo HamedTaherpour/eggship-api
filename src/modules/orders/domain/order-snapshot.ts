@@ -39,8 +39,12 @@ export function normalizeRegionNameSnapshot(raw: unknown): string {
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
+export function isOrderUuid(value: string): boolean {
+  return UUID_PATTERN.test(value);
+}
+
 export function assertOrderUuid(value: string, field: string): string {
-  if (!UUID_PATTERN.test(value)) {
+  if (!isOrderUuid(value)) {
     throw new OrderInvalidInputError(`${field} must be a UUID.`);
   }
   return value.toLowerCase();

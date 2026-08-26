@@ -32,7 +32,7 @@ Repositories must not expose generic updates for snapshot fields. ORD-02 owns ex
 Order creation (ORD-03 `OrderCreationService.createOrder`) receives only trusted `USER` actor identity, `regionId`, idempotency key, and `productId` + `quantity` lines. The backend:
 
 1. Normalizes/collapses lines (same V1 policy as Inventory / PRC-05).
-2. Loads `customerPhone` and `regionName` server-side (never from the client).
+2. Loads `customerPhone` and `regionName` server-side inside the create transaction (never from the client).
 3. Prices via `OrderPricingService.priceOrderLines` inside the create transaction.
 4. Persists trusted snapshots through `OrderRepository.createWithTrustedSnapshots`.
 5. Reserves via `InventoryService.reserveForOrder` in the same transaction.
@@ -72,9 +72,18 @@ No negatives. Application service owns cross-line aggregate equality; DB CHECKs 
 
 JSON: totals within `Number.MAX_SAFE_INTEGER` may serialize as numbers; larger exact values serialize as decimal strings — never floats.
 
-## Order creation (ORD-03)
+## Order creation (ORD-03 / ORD-03A)
 
-Application entry: `OrderCreationService.createOrder` (no HTTP in ORD-03).
+Application entry: `OrderCreationService.createOrder`.
+
+Customer HTTP (ORD-03A): `POST /api/v1/orders` (`Orders_create`).
+
+- Authenticated `USER` only (`AccessTokenGuard` + `requireCustomerOwnerId`). Admin subjects receive `AUTH_FORBIDDEN`.
+- Body: `{ regionId, lines: [{ productId, quantity }] }` only. No `userId`, actor, phone, prices, names, discount ids, totals, status, or commerce-policy fields.
+- Header: required UUID `Idempotency-Key` (stable `IDEMPOTENCY_KEY_REQUIRED` / `IDEMPOTENCY_KEY_INVALID`).
+- Actor/userId bound from the authenticated principal only.
+- Success: `201` on create, `200` on identical idempotent replay; `Cache-Control: no-store`.
+- CSRF middleware remains the shared cookie-auth production blocker — not implemented in ORD-03A.
 
 Conceptual input:
 
@@ -88,7 +97,7 @@ Flow in one RR transaction:
 1. Advisory-lock create idempotency scope `(userId, idempotencyKey)`
 2. Replay or conflict on existing Order for that key + payload hash
 3. Evaluate one coherent Commerce policy revision from the same REPEATABLE READ snapshot (COM-03)
-4. Resolve User phone / Region name
+4. Resolve User phone / Region name **via the same opaque `TransactionContext`** (ORD-03A)
 5. Lock `DiscountCustomerUsage` rows for relevant PRODUCT discounts (`FOR UPDATE`, sorted `discountId`) and price with `remainingEligibleQuantity` (DLU-02 / [ADR 0017](../docs/adr/0017-discount-lifetime-quantity-limit.md))
 6. Persist trusted snapshots (including `discountedQuantity`), `commercePolicyRevision`, append CONSUME usage records, and update usage aggregates
 7. Reserve Inventory through `reserveForOrder(orderId, normalized lines, USER actor, tx)`
@@ -98,7 +107,7 @@ Failure at any step rolls back policy evaluation side effects, discount usage, O
 
 COM-03 persists the accepted `commercePolicyRevision` and reuses the shared database evaluation instant as `pricingEvaluatedAt`; it does not copy regular hours, minimum quantity, override fields, or Admin metadata onto Order. Commerce policy reads do not require pessimistic row locks: settings and relevant date overrides join the outer REPEATABLE READ transaction so one committed snapshot governs the attempt. See [ADR 0016](../docs/adr/0016-commerce-order-acceptance-policy.md) and [commerce-policy.md](commerce-policy.md).
 
-The pre-existing ORD-03 User/Region default-client gap remains owned by **ORD-03A** and is not absorbed into COM-03.
+User and Region authoritative reads join the outer create transaction through `UserRepository.findById` / `RegionRepository.findById` optional `TransactionContext` parameters (ORD-03A). Inactive User or inactive/missing Region → `ORDER_INVALID_USER` / `ORDER_INVALID_REGION`.
 
 ### Idempotency
 
@@ -337,7 +346,7 @@ When profile/address support lands, Orders must snapshot address at creation —
 
 ## Module layout
 
-`src/modules/orders/` — domain types, money helpers, `OrderCreationService` (`createOrder`), `OrderTransitionService` (confirm/cancel/ship/deliver), `OrderRepository` (`createWithTrustedSnapshots`, `findById`, `findOwnedById`, idempotency lookup/lock, closed conditional status updates). HTTP in ORD-04–ORD-06. Orders imports Pricing + Inventory application contracts; Inventory must not import Orders.
+`src/modules/orders/` — domain types, money helpers, `OrderCreationService` (`createOrder`), `OrdersController` (`POST /orders`, ORD-03A), `OrderTransitionService` (confirm/cancel/ship/deliver), `OrderRepository` (`createWithTrustedSnapshots`, `findById`, `findOwnedById`, idempotency lookup/lock, closed conditional status updates). List/detail and transition HTTP in ORD-04–ORD-06. Orders imports Pricing + Inventory application contracts; Inventory must not import Orders.
 
 ## Related ADRs
 

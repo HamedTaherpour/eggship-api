@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '../../../generated/prisma/client';
+import { resolvePrismaConnection } from '../../../infrastructure/database/prisma/prisma-transaction-context';
 import { PrismaService } from '../../../infrastructure/database/prisma/prisma.service';
+import type { TransactionContext } from '../../../infrastructure/database/transaction';
 import {
   isCanonicalIranianPhone,
   InvalidIranianPhoneError,
@@ -17,6 +19,11 @@ type PrismaUser = {
 
 type DbClient = PrismaService | Prisma.TransactionClient;
 
+/**
+ * User persistence. `findById` joins opaque TransactionContext for ORD-03A.
+ * Auth completion still passes Prisma.TransactionClient to create/findByPhone
+ * (AUTH-07 owns that transaction boundary).
+ */
 @Injectable()
 export class UserRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -44,9 +51,9 @@ export class UserRepository {
 
   async findById(
     id: string,
-    tx?: Prisma.TransactionClient,
+    tx?: TransactionContext,
   ): Promise<UserRecord | null> {
-    const db: DbClient = tx ?? this.prisma;
+    const db = resolvePrismaConnection(this.prisma, tx);
     const found = await db.user.findUnique({ where: { id } });
     return found === null ? null : mapUser(found);
   }

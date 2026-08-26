@@ -41,12 +41,11 @@ import type {
 const CREATE_SERIALIZATION_MAX_ATTEMPTS = 5;
 
 /**
- * ORD-03 / COM-03 / DLU-02 transactional order creation.
- * One REPEATABLE READ transaction: policy → price (+ usage locks) → persist
- * snapshots → CONSUME usage → reserve Inventory.
- * No HTTP. Callers supply trusted USER actor + region + lines + idempotency key.
- *
- * ORD-03A owns joining User/Region reads to this outer transaction before HTTP.
+ * ORD-03 / COM-03 / DLU-02 / ORD-03A transactional order creation.
+ * One REPEATABLE READ transaction: policy → User/Region → price (+ usage locks)
+ * → persist snapshots → CONSUME usage → reserve Inventory.
+ * HTTP binding is ORD-03A (`POST /orders`). Callers supply trusted USER actor +
+ * region + lines + idempotency key.
  */
 @Injectable()
 export class OrderCreationService {
@@ -188,13 +187,13 @@ export class OrderCreationService {
         tx,
       );
 
-      // ORD-03A: User/Region reads must join this outer transaction before HTTP.
-      const user = await this.users.findById(input.userId);
+      // Authoritative User/Region reads join the outer RR transaction (ORD-03A).
+      const user = await this.users.findById(input.userId, tx);
       if (user === null || !user.isActive) {
         throw new OrderInvalidUserError(OrderMessage.INVALID_USER);
       }
 
-      const region = await this.regions.findById(input.regionId);
+      const region = await this.regions.findById(input.regionId, tx);
       if (region === null || !region.isActive) {
         throw new OrderInvalidRegionError(OrderMessage.INVALID_REGION);
       }

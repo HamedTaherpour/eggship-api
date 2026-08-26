@@ -215,7 +215,7 @@ Example: unit `100_000`, qty `5`, 20% off, `discountedQuantity = 3` → gross `5
 - Returns do **not** restore entitlement in V1 (ORD-07 must not infer restore from `RETURNED`/restock).
 - Same `discountId` keeps the same lifetime usage across deactivate/reactivate. Lowering the configured cap below already-consumed quantity yields zero remaining eligibility without rewriting history.
 
-Implementation: schema, Admin DTO fields (`maxQuantityPerCustomer`), PRC-05 partial pricing, ORD-03 CONSUME, and pre-ship RELEASE are delivered in DLU-02. Customer Order-create HTTP remains ORD-03A.
+Implementation: schema, Admin DTO fields (`maxQuantityPerCustomer`), PRC-05 partial pricing, ORD-03 CONSUME, and pre-ship RELEASE are delivered in DLU-02. Customer Order-create HTTP is ORD-03A.
 
 ## Permissions
 

@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { toSkipTake, type PageResult } from '../../../common/list';
 import { Prisma } from '../../../generated/prisma/client';
+import { resolvePrismaConnection } from '../../../infrastructure/database/prisma/prisma-transaction-context';
 import { PrismaService } from '../../../infrastructure/database/prisma/prisma.service';
+import type { TransactionContext } from '../../../infrastructure/database/transaction';
 import type {
   CreateRegionInput,
   RegionListQuery,
@@ -35,8 +37,12 @@ const SORT_FIELD_MAP: Record<
 export class RegionRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findById(id: string): Promise<RegionRecord | null> {
-    const found = await this.prisma.region.findUnique({ where: { id } });
+  async findById(
+    id: string,
+    tx?: TransactionContext,
+  ): Promise<RegionRecord | null> {
+    const db = resolvePrismaConnection(this.prisma, tx);
+    const found = await db.region.findUnique({ where: { id } });
     return found === null ? null : mapRegion(found);
   }
 

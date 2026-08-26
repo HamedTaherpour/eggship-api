@@ -309,6 +309,14 @@ describe('OrderCreationService', () => {
         evaluatedAt: EVALUATED_AT,
       }),
     );
+    expect(users.findById).toHaveBeenCalledWith(
+      USER_ID,
+      expect.objectContaining({ [TRANSACTION_CONTEXT_BRAND]: true }),
+    );
+    expect(regions.findById).toHaveBeenCalledWith(
+      REGION_ID,
+      expect.objectContaining({ [TRANSACTION_CONTEXT_BRAND]: true }),
+    );
     expect(orders.createWithTrustedSnapshots).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: USER_ID,

@@ -54,7 +54,7 @@ export function buildOpenApiConfig(
         'Browser customer auth uses HttpOnly cookies `eggship_at` / `eggship_rt`.',
         'Browser Admin auth uses HttpOnly cookies `eggship_admin_at` / `eggship_admin_rt` (Path=/api/v1/admin).',
         'Authorization Bearer remains supported for tooling when it does not conflict with the path-appropriate access cookie.',
-        'Cookie-authenticated mutating Auth routes require CSRF protection before production browser exposure.',
+        'Cookie-authenticated mutating routes (Auth session mutations and customer Order create) require CSRF protection before production browser exposure. CSRF middleware is not implemented yet.',
         'Examples are synthetic and must never contain real credentials or production secrets.',
       ].join(' '),
     )

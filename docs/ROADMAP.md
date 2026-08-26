@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   103 |
-| DONE        |    46 |
+| DONE        |    47 |
 | IN_PROGRESS |     0 |
-| READY       |     2 |
+| READY       |     1 |
 | BLOCKED     |     1 |
 | PLANNED     |    54 |
 
-- Current task: none in progress. Two READY tasks: `ORD-03A — Customer order-create HTTP contract` and `CAT-05 — Admin catalog APIs`. Commerce Phase 4A and DLU-02 are complete ([ADR 0017](adr/0017-discount-lifetime-quantity-limit.md)); ORD-03A dependencies (ORD-03, COM-03, DLU-02, AUTH-08) are satisfied. `SET-01` remains the separate BLOCKED settlement decision task.
+- Current task: none in progress. One READY task: `CAT-05 — Admin catalog APIs`. `ORD-03A` is DONE (customer Order-create HTTP + User/Region transaction-context join). `SET-01` remains the separate BLOCKED settlement decision task.
 - Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
@@ -469,13 +469,15 @@ Checkpoint finding (2026-08-24): the actual service passes the outer transaction
 
 ### ORD-03A — Customer order-create HTTP contract
 
-Status: READY | Depends on: ORD-03, COM-03, DLU-02, AUTH-08 | Primary: Codex | Review: Claude/Cursor security/concurrency review
+Status: DONE | Depends on: ORD-03, COM-03, DLU-02, AUTH-08 | Primary: Codex | Review: Claude/Cursor security/concurrency review
 
 Scope: Close the current User/Region transaction-context gap, then bind the approved transactional create service to a customer Order-create endpoint with strict DTOs, principal-derived ownership, UUID idempotency key, commerce-policy/lifetime-discount enforcement, stable errors, OpenAPI, and e2e coverage. This closes the pre-existing ORD-03 HTTP-create gap without overloading the read-only ORD-04 task.
 
 Acceptance criteria: User, Region, Product, Discount, Commerce policy, Order, discount usage, and Inventory work share the approved outer transaction/snapshot where required; clients cannot submit authoritative price/snapshot/owner fields; retries map to ORD-03 replay/conflict; COM-03/DLU-02 cannot be bypassed; Inventory/policy/discount errors follow the approved structured contract; cookie-authenticated mutation security follows the shared CSRF production blocker.
 
 Explicitly out of scope: Order list/detail (ORD-04), cancellation/transitions, policy or discount-usage persistence, and frontend behavior.
+
+Delivered: `POST /api/v1/orders` (`Orders_create`) with `AccessTokenGuard` + `requireCustomerOwnerId` (USER only; Admin → `AUTH_FORBIDDEN`); body `{ regionId, lines }` only; required UUID `Idempotency-Key`; principal-bound USER actor; `201` create / `200` replay; `Cache-Control: no-store`; User/Region reads join ORD-03 RR `TransactionContext`; OpenAPI + unit/e2e/PostgreSQL coverage. CSRF remains the shared production blocker (documented, not implemented). No schema migration.
 
 ### ORD-04 — Customer order list and detail
 
@@ -1270,7 +1272,7 @@ The following are not implementation assumptions:
 - Customer/store business profile fields required at registration vs later completion (store name, manager name, address, region, coordinates): no in-repo legacy inventory yet (`MIG-01`); AUTH-07 shipped Pattern A phone-only identity with empty profile update allowlist. Region **reference** rows exist (CAT-02); profile `regionId` FK remains deferred.
 - Category/Region legacy parity gaps (MIG-01): name uniqueness, public slug, sortOrder, category hierarchy/parent, shipping-related Region fields, and whether hard delete is ever allowed after Product/profile FKs land.
 - Product legacy parity gaps (MIG-01): SKU/code uniqueness, description, unit/package semantics, media/image attachment once CAT-04 exists, whether zero-price products should be allowed, and whether product name uniqueness is ever required.
-- Order transition runtime (ORD-02) is implemented as internal application commands; customer create HTTP (`ORD-03A`) is READY; customer list/detail and transition HTTP (`ORD-04`/`ORD-05`) plus Admin Orders HTTP (`ORD-06`) remain PLANNED. V1 state machine, actors, concurrency, and Inventory orchestration rules are settled in ADR 0014 / [instructions/orders.md](../instructions/orders.md). Shipping/address snapshot fields, dispatch board, return HTTP beyond ORD-07 scope, and payment/refund semantics remain deferred. Deferred settlement is separately planned in SET-01/SET-02 and must not become Order state.
+- Order transition runtime (ORD-02) and customer create HTTP (`ORD-03A`) are DONE; customer list/detail and transition HTTP (`ORD-04`/`ORD-05`) plus Admin Orders HTTP (`ORD-06`) remain PLANNED. V1 state machine, actors, concurrency, and Inventory orchestration rules are settled in ADR 0014 / [instructions/orders.md](../instructions/orders.md). Shipping/address snapshot fields, dispatch board, return HTTP beyond ORD-07 scope, and payment/refund semantics remain deferred. Deferred settlement is separately planned in SET-01/SET-02 and must not become Order state.
 - Whether a future `PACKED`/`PICKED` state should move the physical `onHand` decrement earlier than `SHIPPED`.
 - Whether partial fulfillment or split shipment is ever allowed after V1.
 - Public exposure of exact inventory `available`, and any preferred-customer allocation/fairness policy under contention.

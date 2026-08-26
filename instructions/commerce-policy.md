@@ -130,7 +130,7 @@ The global revision plus evaluation instant is the minimal debugging/audit corre
 
 Replays of an existing idempotent Order skip policy re-evaluation. Policy rejection rolls back with no Order, lines, reservation, ledger, or idempotency row, so the same client key may succeed later when policy/input permits. Missing/invalid policy fails closed as `ORDERING_POLICY_UNAVAILABLE`. Controllers and clients never supply evaluation time, revision, or policy fields.
 
-COM-03 does not expose a public policy/availability endpoint and does not absorb the ORD-03A User/Region transaction-context correction.
+COM-03 does not expose a public policy/availability endpoint. Customer Order-create HTTP binding is ORD-03A.
 
 ## Implemented Admin contract (COM-02)
 
@@ -183,4 +183,4 @@ Record actor id, affected local date where applicable, previous/new revision, an
 - No generic holiday/calendar/rule engine, recurring exceptions, multiple business timezones, Redis authority, BullMQ participation, or frontend implementation.
 - Public endpoint shape and optional next-opening derivation are implemented only in a later explicitly scoped task.
 - Audit persistence/retention remains AUD-01/DATA-01. COM-01 defines candidates only.
-- The pre-existing ORD-03 User/Region default-client gap belongs to `ORD-03A`, after COM-03/DLU-02 dependencies, and is not silently folded into COM-01 or COM-03.
+- The ORD-03 User/Region transaction-context join is delivered in `ORD-03A` together with customer Order-create HTTP.

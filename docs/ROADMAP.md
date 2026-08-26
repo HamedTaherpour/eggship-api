@@ -6,8 +6,8 @@ This is the authoritative execution plan for completing the standalone EggShip A
 
 | Measure     | Count |
 | ----------- | ----: |
-| Total       |   103 |
-| DONE        |    48 |
+| Total       |   104 |
+| DONE        |    49 |
 | IN_PROGRESS |     0 |
 | READY       |     0 |
 | BLOCKED     |     1 |
@@ -332,6 +332,8 @@ Scope: Close remaining authorized catalog Admin API gaps after CAT-02/CAT-03/CAT
 Acceptance criteria: Remaining catalog Admin contract gaps (if any after CAT-02–CAT-04) have validation, permission matrix, list semantics, conflict/deletion behavior, OpenAPI, audit hooks, and integration/e2e coverage.
 
 Explicitly out of scope: Inventory mutations, re-implementing Media upload/storage, and discounts.
+
+Delivered: Complete `400`/`404` OpenAPI error-response annotations on admin catalog endpoints — `GET/POST/PATCH /api/v1/admin/categories`, `/api/v1/admin/regions`, `/api/v1/admin/products` (and `GET :id`); e2e permission-matrix coverage proving `WAREHOUSE` and `ORDER_OPS` read with `CATALOG_READ` and are denied on `POST`/`PATCH` without `CATALOG_MANAGE` across all three resources, and admin region list unknown-query rejection (`400` `BAD_REQUEST`). No new endpoints, no schema migration, no inventory/pricing/media behavior. AuditHook and deletion restrictions remain deferred per `instructions/catalog.md`.
 
 ### CAT-06 — Public catalog APIs
 

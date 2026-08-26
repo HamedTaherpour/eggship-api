@@ -87,7 +87,7 @@ Crashes can still leave an object without a row. That is an **orphan**; cleanup 
 
 If storage delete fails, the row is kept and the API returns `MEDIA_DELETE_FAILED` so the client can retry. If storage succeeds and the row is already gone (concurrent delete or a retry after the row was removed), the API returns **200** with the previously loaded metadata. If storage succeeds and the row delete then throws, the API returns `MEDIA_DELETE_FAILED`; retry is the recovery path (missing-key object delete is success at the S3-compatible adapter).
 
-No Product/Blog/Settlement FKs exist yet. When any attachment lands, deletion must become `RESTRICT` (or equivalent) so referenced Media cannot be removed silently. Settlement proof must not be detached by deleting the Media row.
+No Product/Blog FKs exist yet; the deferred-settlement receipt reference (SET-02, [ADR 0018](../docs/adr/0018-deferred-settlement-lifecycle.md)) is the first approved attachment. Deletion must become `RESTRICT` (or equivalent) so referenced Media cannot be removed silently, and the reference check must run **before** storage object deletion — this flow deletes the object first, so a later RESTRICT violation would otherwise orphan a referenced receipt's bytes. While referenced, deletion returns the referenced-media conflict contract and removes neither object nor row. Settlement proof must not be detached by deleting the Media row.
 
 ## List and detail
 
@@ -131,4 +131,4 @@ Upload and delete are auditable Admin candidates for AUD-01. Do not write fake A
 - Orphan object reconciliation, failed-delete retry, unused-Media policy (DATA-02; no retention periods invented here)
 - Live production-bucket verification (DEP-02 / credentials)
 - Historical-reference rules when content starts pointing at Media (CNT/PRC)
-- Deferred-settlement receipt/proof references (SET-02); image allowlist remains unchanged unless separately approved
+- Deferred-settlement receipt reference (SET-02): one current receipt per settlement via `ON DELETE RESTRICT`, decided in [ADR 0018](../docs/adr/0018-deferred-settlement-lifecycle.md); image allowlist remains unchanged unless separately approved

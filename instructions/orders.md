@@ -303,7 +303,7 @@ On create, insufficient stock surfaces as stable Inventory `INVENTORY_INSUFFICIE
 
 ## `RETURNED` (deferred)
 
-Coarse order-level outcome meaning a return process has completed. **ORD-07** owns return request/receipt/inspection/restock semantics. `RETURNED` never implies automatic inventory restock. ORD-02 does not implement `DELIVERED → RETURNED`. ORD-07 must **not** restore lifetime discount entitlement from return/restock; that remains an explicit future business decision ([ADR 0017](../docs/adr/0017-discount-lifetime-quantity-limit.md)).
+Coarse order-level outcome meaning a return process has completed. **ORD-07** owns return request/receipt/inspection/restock semantics. `RETURNED` never implies automatic inventory restock. ORD-02 does not implement `DELIVERED → RETURNED`. ORD-07 must **not** restore lifetime discount entitlement from return/restock; that remains an explicit future business decision ([ADR 0017](../docs/adr/0017-discount-lifetime-quantity-limit.md)). `RETURNED` also never settles, reopens, deletes, or otherwise mutates deferred-settlement state; an existing settlement remains independently recorded and return/refund/credit adjustments are future policy ([ADR 0018](../docs/adr/0018-deferred-settlement-lifecycle.md)).
 
 ## Order error codes
 
@@ -340,7 +340,7 @@ No in-repo legacy Order contract exists yet (`MIG-01` PLANNED). The following re
 - Store name, manager name, coordinates, and profile `regionId` FK.
 - Human-readable order numbers/codes.
 - Order notes, invoice metadata.
-- Payment/settlement recording.
+- Order-level payment/settlement snapshot columns (approved deferred-settlement tracking lives in the separate Settlement module instead — [settlement.md](settlement.md), [ADR 0018](../docs/adr/0018-deferred-settlement-lifecycle.md)).
 
 When profile/address support lands, Orders must snapshot address at creation — **never reference a mutable User address directly** for historical display.
 
@@ -357,3 +357,4 @@ When profile/address support lands, Orders must snapshot address at creation —
 - [0015 — V1 LINE then ORDER discount composition](../docs/adr/0015-line-then-order-discount-composition.md)
 - [0016 — Commerce order-acceptance policy](../docs/adr/0016-commerce-order-acceptance-policy.md)
 - [0017 — Per-customer lifetime discounted-quantity limit](../docs/adr/0017-discount-lifetime-quantity-limit.md)
+- [0018 — Deferred-settlement lifecycle](../docs/adr/0018-deferred-settlement-lifecycle.md)

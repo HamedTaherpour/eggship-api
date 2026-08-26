@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   104 |
-| DONE        |    49 |
+| DONE        |    50 |
 | IN_PROGRESS |     0 |
-| READY       |     0 |
-| BLOCKED     |     1 |
-| PLANNED     |    54 |
+| READY       |     1 |
+| BLOCKED     |     0 |
+| PLANNED     |    53 |
 
-- Current task: none in progress. No READY tasks. `ORD-03A` is DONE (customer Order-create HTTP + User/Region transaction-context join). `SET-01` remains the separate BLOCKED settlement decision task.
+- Current task: none in progress. `SET-01` is DONE (deferred-settlement lifecycle decisions accepted in ADR 0018), which unblocks `SET-02` to READY (deferred-settlement persistence and Admin operations). No task remains BLOCKED.
 - Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
@@ -673,9 +673,7 @@ Delivered: Additive migration for `Discount.maxQuantityPerCustomer` (PRODUCT-onl
 
 ### SET-01 — Deferred-settlement lifecycle decisions
 
-Status: BLOCKED | Depends on: ORD-02A, CAT-04, AUTH-08 | Primary: Human + ChatGPT architecture process | Review: Claude/Cursor security/operations review, Human approval
-
-Blocker / decision owner: Product and operations owner must decide one versus multiple receipts, receipt-required/auto-settle versus explicit confirmation, correction/reopen/detach behavior, exact Admin role grants, and stable conflict/error semantics.
+Status: DONE | Depends on: ORD-02A, CAT-04, AUTH-08 | Primary: Human + ChatGPT architecture process | Review: Claude/Cursor security/operations review, Human approval
 
 Scope: Accept or revise the separate Settlement aggregate recommendation in `instructions/settlement.md`, preserving the no-payment-gateway and Order-state separation decisions while defining due-date, receipt, settlement, overdue, audit, Media, timezone, and authorization semantics.
 
@@ -683,9 +681,11 @@ Acceptance criteria: Lifecycle and correction rules are explicit; `dueAt` is all
 
 Explicitly out of scope: Online payment processing, accounting, refunds, customer credit flags, implementation, and unapproved reminders.
 
+Delivered: Accepted [ADR 0018](adr/0018-deferred-settlement-lifecycle.md); durable policy in `instructions/settlement.md` with boundary notes in `instructions/orders.md`, `instructions/media.md`, and `instructions/authorization.md`. Separate one-to-one `OrderSettlement` module rooted by `orderId`; creation only for currently `DELIVERED` Orders; `OPEN`/`SETTLED` lifecycle with derived overdue (`dueAt < now AND OPEN`); required absolute UTC `dueAt` (past allowed; editable only while OPEN); exactly one current receipt referenced from Media (`ON DELETE RESTRICT`, reference check before storage deletion), replaceable only while OPEN; receipt attachment never auto-settles and a receipt is required before the explicit settle command; no reopen/correction/detach in V1; `RETURNED` leaves settlement untouched; settlement always represents the full immutable `Order.total` with no persisted amount and no partial payments; `SETTLEMENT_READ`/`SETTLEMENT_MANAGE` granted to `SUPER_ADMIN` only in V1 (other-role grants deferred pending MIG-01 evidence); Admin list filter/sort direction, stable error taxonomy, conditional-update concurrency/idempotency, and audit candidates locked for SET-02. No schema, migration, API, source, controller, or test implementation was added.
+
 ### SET-02 — Deferred-settlement persistence and Admin operations
 
-Status: PLANNED | Depends on: SET-01, ORD-02, CAT-04, AUTH-08 | Primary: Codex | Review: Claude/Cursor security/concurrency review, Human migration review
+Status: READY | Depends on: SET-01, ORD-02, CAT-04, AUTH-08 | Primary: Codex | Review: Claude/Cursor security/concurrency review, Human migration review
 
 Scope: Implement the accepted Settlement aggregate, receipt Media reference(s), explicit application commands, permissioned Admin detail/list/filter/sort APIs, derived overdue behavior, conditional concurrency/idempotency, audit hooks, OpenAPI, and real PostgreSQL coverage.
 
@@ -1295,7 +1295,7 @@ The following are not implementation assumptions:
 - Whether partial fulfillment or split shipment is ever allowed after V1.
 - Public exposure of exact inventory `available`, and any preferred-customer allocation/fairness policy under contention.
 - Product-discount lifetime caps are decided in [ADR 0017](adr/0017-discount-lifetime-quantity-limit.md) / DLU-01 (partial discount; PRODUCT LINE only; create consume / pre-ship release; no return restore) and implemented in DLU-02. V1 LINE-then-ORDER composition and single-winner-per-scope rules remain locked in PRC-03 / PRC-05 / [ADR 0015](adr/0015-line-then-order-discount-composition.md). Promo codes and promo-banner behavior remain unapproved.
-- Deferred settlement SET-01 is BLOCKED on receipt count, receipt-versus-explicit-settle behavior, receipt-required rule, correction/reopen/detach semantics, exact Admin role grants, and stable conflicts. No gateway, card/bank fields, refunds, or accounting subsystem is approved.
+- Deferred settlement lifecycle is decided in [ADR 0018](adr/0018-deferred-settlement-lifecycle.md) / SET-01 (separate `OrderSettlement` module; `DELIVERED`-only creation; `OPEN`/`SETTLED` with derived overdue; one current receipt; receipt-required explicit settle; no V1 reopen; `RETURNED` leaves settlement untouched; full `Order.total`; `SUPER_ADMIN`-only grants). Remaining explicit decisions, not implementation assumptions: `WAREHOUSE`/`ORDER_OPS` settlement permission grants (MIG-01 evidence), settlement without receipt, correction/reopen workflow, return/refund/credit adjustments interacting with settlement, multiple receipts or PDF proof, customer-facing settlement surfaces, and due/overdue reminders. No gateway, card/bank fields, refunds, or accounting subsystem is approved.
 - Referral attribution window/source/reassignment, duplicate/self-referral treatment, visitor conversion, and whether rewards exist at all.
 - Notification type/content rules, push provider/consent, delivery guarantees, and token lifecycle.
 - Media historical-reference behavior when Product/Blog/Category attach to Media (MED-01). Upload limits/types and the S3-compatible provider abstraction are decided in CAT-04 / ADR 0011; orphan cleanup remains DATA-02 (no retention periods invented). Live production-bucket verification remains pending credentials (DEP-02).

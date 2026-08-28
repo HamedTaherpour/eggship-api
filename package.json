@@ -17,6 +17,8 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit",
     "start": "node dist/main.js",
+    "worker": "node dist/worker.js",
+    "worker:dev": "nest start --entryFile worker --watch",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "test": "jest --config jest.config.ts --runInBand",

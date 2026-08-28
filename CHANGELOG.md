@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Added the non-HTTP Nest worker composition root and bounded BullMQ worker lifecycle with correlation restoration, graceful signal shutdown, and worker runtime configuration.
+
+### Added
+
 - ASY-02 transactional outbox dispatcher: PostgreSQL-authoritative leased claims, bounded concurrent BullMQ publication, deterministic job IDs, conditional publication acknowledgement, bounded recovery backoff, and at-least-once crash/outage semantics with real-infrastructure integration coverage.
 - NOT-03 order-status notification generation: winning CONFIRMED, SHIPPED, DELIVERED, and CANCELLED transitions now atomically create a durable customer inbox record and versioned ASY-01 outbox intent with deterministic event identity and privacy-safe `{ orderId, status }` payloads. No push delivery, worker, or Redis dependency.
 - Customer notification inbox APIs (NOT-02): owner-scoped paginated list, PostgreSQL-derived unread count, idempotent mark-one-read and mark-all-read endpoints with strict pagination, minimized response DTOs, `no-store`, OpenAPI, and customer/Admin/CSRF boundary enforcement.

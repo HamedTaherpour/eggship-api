@@ -1,0 +1,1 @@
+export const WORKER_PROCESSORS = Symbol('WORKER_PROCESSORS');

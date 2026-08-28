@@ -35,6 +35,30 @@ describe('AsyncJobContextService', () => {
     expect(context.get()).toBeUndefined();
   });
 
+  it('falls back to a fresh correlation id when consumed metadata is missing or invalid', () => {
+    const context = new RequestContextService();
+    const service = new AsyncJobContextService(context);
+
+    const missing = service.runWithEnvelope(
+      { metadata: undefined, data: { orderId: 'order_1' } } as never,
+      () => context.get(),
+    );
+    expect(missing?.correlationId).toMatch(/^[0-9a-f-]{36}$/u);
+
+    const invalid = service.runWithEnvelope(
+      {
+        metadata: {
+          schemaVersion: 1,
+          correlationId: 'bad correlation',
+          enqueuedAt: now.toISOString(),
+        },
+        data: { orderId: 'order_1' },
+      },
+      () => context.get(),
+    );
+    expect(invalid?.correlationId).toMatch(/^[0-9a-f-]{36}$/u);
+  });
+
   it.each([
     { accessToken: 'token' },
     { clientSecret: 'secret' },

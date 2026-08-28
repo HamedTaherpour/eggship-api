@@ -101,7 +101,7 @@ Leave `REDIS_URL` blank to run without Redis. The API does not open a Redis conn
 
 Redis liveness is deliberately separate from API liveness. `GET /api/v1/health` remains a process-level liveness route. `RedisService.readiness()` exposes the internal configured/ready state for a future deployment readiness composition; no public readiness route is introduced by this foundation.
 
-BullMQ is available only through the queue infrastructure boundary. There are no business queues, processors, scheduled jobs, or executable worker entrypoint yet. The intended topology is independently scalable API and worker processes that share application modules. A worker composition root will be added with the first approved processor, including its idempotency, timeout, alerting, and outbox decisions.
+BullMQ is available only through the queue infrastructure boundary. The non-HTTP worker composition root is built as `dist/worker.js` (`pnpm worker`) and shares infrastructure/application modules with the API without starting HTTP. It refuses to run without an approved processor, so it is not independently deployed until a concrete queue processor is added. `SIGTERM`/`SIGINT` drain jobs within `WORKER_SHUTDOWN_TIMEOUT_MS`, then close BullMQ/Redis/Nest resources.
 
 ## Prisma workflow
 

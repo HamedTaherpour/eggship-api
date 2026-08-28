@@ -22,9 +22,11 @@ BullMQ provides asynchronous delivery over Redis. It is infrastructure for expli
 - Queue producers live behind an explicit application-facing contract. Domain and controller code must not depend directly on BullMQ or ioredis.
 - Queue names must not contain `:`. BullMQ uses colon as a Redis key separator; `QueueFactory` rejects colon-bearing names.
 - Workers are composition roots. They deserialize the envelope, establish context, enforce a processor timeout, and delegate to an application service; business logic does not belong in a processor callback.
-- The intended deployment has separately scalable API and worker processes sharing application modules. Do not create a worker entrypoint until at least one approved queue and processor exist.
+- The intended deployment has separately scalable API and worker processes sharing application modules. The worker composition root is non-HTTP and fails closed when no approved processor is registered; it must not be deployed as an empty/fake worker.
 - Concurrency, lock duration, retries, backoff, retention, payload limits, and timeouts must be deliberately reviewed per queue. Shared defaults are a baseline and may be overridden only with a documented reason.
 
 ## Failure visibility
 
 Exhausted failures must remain retained for bounded inspection and emit a structured error containing the queue name, job name, job ID when available, attempt count, correlation ID, and failure timestamp. Alerts and operational replay procedures are required before a critical business queue ships. Logs and job records remain subject to the security and observability redaction rules.
+
+The worker entrypoint is `dist/worker.js` (`pnpm worker`). It requires `REDIS_URL`, validates bounded `WORKER_CONCURRENCY` and `WORKER_SHUTDOWN_TIMEOUT_MS`, restores the envelope correlation context, and starts no HTTP listener, controllers, Swagger, or request middleware. SIGTERM/SIGINT stop new BullMQ delivery, drain in-flight jobs up to the configured timeout, close workers and Redis clients, then close the Nest context. A crash during a job is recovered by BullMQ's stalled-job/retry semantics; the worker does not implement in-memory recovery or manual re-enqueueing.

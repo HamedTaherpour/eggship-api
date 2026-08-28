@@ -64,28 +64,38 @@ export class AsyncJobContextService {
     envelope: AsyncJobEnvelope<unknown>,
     callback: () => Result,
   ): Result {
-    validateEnvelope(envelope);
+    const metadata = isValidEnvelopeMetadata(envelope)
+      ? envelope.metadata
+      : undefined;
+    if (metadata === undefined) {
+      validatePayload(envelope?.data);
+    } else {
+      validatePayload(envelope.data);
+    }
     return this.requestContext.run(
       {
         requestId: `job_${randomUUID()}`,
-        correlationId: envelope.metadata.correlationId,
+        correlationId: metadata?.correlationId ?? randomUUID(),
       },
       callback,
     );
   }
 }
 
-function validateEnvelope(envelope: AsyncJobEnvelope<unknown>): void {
-  if (
-    envelope.metadata.schemaVersion !== 1 ||
-    envelope.metadata.correlationId.trim() === '' ||
-    envelope.metadata.correlationId.length > MAX_CORRELATION_ID_LENGTH ||
-    !CORRELATION_ID_PATTERN.test(envelope.metadata.correlationId) ||
-    Number.isNaN(Date.parse(envelope.metadata.enqueuedAt))
-  ) {
-    throw new Error('Async job envelope metadata is invalid.');
-  }
-  validatePayload(envelope.data);
+function isValidEnvelopeMetadata(
+  envelope: AsyncJobEnvelope<unknown> | undefined,
+): boolean {
+  const metadata = envelope?.metadata;
+  return (
+    metadata !== undefined &&
+    metadata.schemaVersion === 1 &&
+    typeof metadata.correlationId === 'string' &&
+    metadata.correlationId.trim() !== '' &&
+    metadata.correlationId.length <= MAX_CORRELATION_ID_LENGTH &&
+    CORRELATION_ID_PATTERN.test(metadata.correlationId) &&
+    typeof metadata.enqueuedAt === 'string' &&
+    !Number.isNaN(Date.parse(metadata.enqueuedAt))
+  );
 }
 
 function validatePayload(

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Customer notification inbox APIs (NOT-02): owner-scoped paginated list, PostgreSQL-derived unread count, idempotent mark-one-read and mark-all-read endpoints with strict pagination, minimized response DTOs, `no-store`, OpenAPI, and customer/Admin/CSRF boundary enforcement.
+
 ### Fixed
 
 - AUTH-10 completion: migrated all ten legacy cookie-based E2E suites to the real browser CSRF contract with customer/Admin namespace-aware bootstrap, matching token headers, allowed origins, preserved auth cookies, and regression coverage for Bearer independence.

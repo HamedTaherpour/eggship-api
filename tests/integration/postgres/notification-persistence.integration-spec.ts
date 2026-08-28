@@ -90,6 +90,22 @@ describe('Notification persistence (integration)', () => {
     expect(second?.readAt).toEqual(first?.readAt);
   });
 
+  it('lists and bulk-marks only the principal owner inbox', async () => {
+    const owner = await user();
+    const other = await user();
+    const first = await notifications.create(createInput(owner.id));
+    await notifications.create(createInput(owner.id));
+    await notifications.create(createInput(other.id));
+
+    expect(
+      await notifications.listOwned(owner.id, { page: 1, pageSize: 1 }),
+    ).toMatchObject({ total: 2, items: [{ id: first.id }] });
+    expect(await notifications.countUnreadForOwner(owner.id)).toBe(2);
+    expect(await notifications.markAllReadForOwner(owner.id)).toBe(2);
+    expect(await notifications.countUnreadForOwner(owner.id)).toBe(0);
+    expect(await notifications.countUnreadForOwner(other.id)).toBe(1);
+  });
+
   it('rejects a notification for a missing user through the foreign key boundary', async () => {
     await expect(
       notifications.create(createInput('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')),

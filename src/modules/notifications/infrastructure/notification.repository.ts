@@ -13,6 +13,13 @@ import {
   type CreateNotificationInput,
   type NotificationRecord,
 } from '../domain/notification';
+import {
+  toSkipTake,
+  type PageResult,
+  type PageRequest,
+} from '../../../common/list';
+
+export type NotificationListQuery = PageRequest;
 
 @Injectable()
 export class NotificationRepository {
@@ -69,6 +76,42 @@ export class NotificationRepository {
       data: { readAt: new Date() },
     });
     return this.findOwnedById(id, owner, tx);
+  }
+
+  async listOwned(
+    userId: string,
+    query: NotificationListQuery,
+    tx?: TransactionContext,
+  ): Promise<PageResult<NotificationRecord>> {
+    const owner = assertNotificationUuid(userId, 'userId');
+    const { skip, take } = toSkipTake(query);
+    const connection = this.db(tx);
+    const [rows, total] = await Promise.all([
+      connection.notification.findMany({
+        where: { userId: owner },
+        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+        skip,
+        take,
+      }),
+      connection.notification.count({ where: { userId: owner } }),
+    ]);
+    return { items: rows.map(mapNotification), total };
+  }
+
+  async countUnreadForOwner(userId: string): Promise<number> {
+    const owner = assertNotificationUuid(userId, 'userId');
+    return this.prisma.notification.count({
+      where: { userId: owner, readAt: null },
+    });
+  }
+
+  async markAllReadForOwner(userId: string): Promise<number> {
+    const owner = assertNotificationUuid(userId, 'userId');
+    const result = await this.prisma.notification.updateMany({
+      where: { userId: owner, readAt: null },
+      data: { readAt: new Date() },
+    });
+    return result.count;
   }
 
   private db(tx?: TransactionContext): PrismaConnection {

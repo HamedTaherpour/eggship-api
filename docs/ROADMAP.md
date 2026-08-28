@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   107 |
-| DONE        |    59 |
+| DONE        |    60 |
 | IN_PROGRESS |     0 |
-| READY       |     5 |
+| READY       |     4 |
 | BLOCKED     |     0 |
 | PLANNED     |    43 |
 
-- Current task: no task is in progress. `AUTH-10`, `ORD-04`, `ORD-05`, and `ORD-06` remain DONE. `REF-01`, `NOT-02`, and `NOT-03` are READY; no task remains BLOCKED.
+- Current task: no task is in progress. `AUTH-10`, `ORD-04`, `ORD-05`, and `ORD-06` remain DONE. `REF-01` and `NOT-03` are READY; no task remains BLOCKED.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate.
 
 ## Status model
@@ -793,11 +793,13 @@ Explicitly out of scope: Push tokens, providers, and queue workers.
 
 ### NOT-02 — User notification inbox APIs
 
-Status: READY | Depends on: NOT-01, AUTH-08 | Primary: Codex | Review: Claude/Cursor
+Status: DONE | Depends on: NOT-01, AUTH-08 | Primary: Codex | Review: Claude/Cursor
 
 Scope: Implement owner-scoped notification list, unread count, mark-one-read, and mark-all-read endpoints.
 
 Acceptance criteria: Read mutations are idempotent and ownership-safe; pagination, concurrent mark/read behavior, structured errors, OpenAPI, and e2e coverage are complete.
+
+Delivered: Authenticated customer list, PostgreSQL unread count, owner-scoped idempotent mark-one-read and bulk mark-all-read APIs with strict pagination, minimized DTOs, no-store responses, global CSRF protection for browser mutations, OpenAPI, and focused unit coverage.
 
 Explicitly out of scope: Notification deletion and push delivery.
 

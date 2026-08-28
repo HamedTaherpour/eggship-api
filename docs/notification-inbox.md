@@ -24,3 +24,22 @@ this module to Prisma, BullMQ, or Redis.
 Notifications accumulate as durable customer-facing history. Retention,
 cleanup, archival, and deletion rules belong to the Data Lifecycle phase
 (DATA-01/DATA-02); NOT-01 does not invent a duration or cleanup job.
+
+## Customer inbox API (NOT-02)
+
+Authenticated `USER` principals can use these `/api/v1/notifications`
+endpoints. The owner is always derived from the access-token principal; no
+request field selects a customer.
+
+| Method  | Path                          | Purpose                                                                                                               |
+| ------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `GET`   | `/notifications`              | Paginated list, `page`/`pageSize` only (defaults 1/20, max page size 100), newest first with ascending `id` tie-break |
+| `GET`   | `/notifications/unread-count` | PostgreSQL-derived unread count                                                                                       |
+| `PATCH` | `/notifications/:id/read`     | Idempotently mark one owned notification read                                                                         |
+| `POST`  | `/notifications/read-all`     | Idempotently mark all owned unread notifications read                                                                 |
+
+Customer responses omit `userId`, `source`, and persistence diagnostics. All
+responses use `Cache-Control: no-store`. Missing and other-owner notification
+ids return the same `NOTIFICATION_NOT_FOUND` response. Cookie-authenticated
+read mutations remain covered by the global AUTH-10 CSRF guard; Bearer clients
+retain the accepted native-client behavior.

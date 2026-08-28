@@ -70,7 +70,7 @@ ANALYTICS_READ    AUDIT_READ
 ADMIN_READ        ADMIN_MANAGE
 ```
 
-`COMMERCE_POLICY_MANAGE` is implemented by COM-02. It gates both Commerce policy Admin reads and mutations in V1 and is granted only to `SUPER_ADMIN` through the central role policy enumeration; there is no separate commerce read permission or role branch. Settlement follows the same pattern (SET-01 / [ADR 0018](../docs/adr/0018-deferred-settlement-lifecycle.md)): SET-02 adds `SETTLEMENT_READ` and `SETTLEMENT_MANAGE` to the catalog, granted in V1 only to `SUPER_ADMIN` by explicit enumeration; `WAREHOUSE`/`ORDER_OPS` settlement grants remain an explicit unresolved decision pending MIG-01 evidence. No planned permission grants anything until code, guards, tests, and the role-policy update land together.
+`COMMERCE_POLICY_MANAGE` is implemented by COM-02. It gates both Commerce policy Admin reads and mutations in V1 and is granted only to `SUPER_ADMIN` through the central role policy enumeration; there is no separate commerce read permission or role branch. SET-02 implements `SETTLEMENT_READ` and `SETTLEMENT_MANAGE`, granted in V1 only to `SUPER_ADMIN` by explicit enumeration; `WAREHOUSE`/`ORDER_OPS` settlement grants remain an explicit unresolved decision pending MIG-01 evidence.
 
 Role → permission policy is centralized in `src/common/authz/role-permissions.ts`:
 
@@ -340,4 +340,4 @@ Covered by CAT-02 Admin category/region controllers (`admin-route-guards.spec.ts
 
 **Settled (ORD-02A):** `ORDER_TRANSITION` remains coarse for V1. Customer cancel is ownership-based, not RBAC. Finer per-transition permissions are deferred until a future task has evidence.
 
-**Settled (SET-01):** V1 settlement authorization uses `SETTLEMENT_READ` / `SETTLEMENT_MANAGE` (catalog extension lands with SET-02), granted only to `SUPER_ADMIN` by explicit enumeration; no customer settlement APIs. `WAREHOUSE`/`ORDER_OPS` settlement grants remain an explicit decision pending MIG-01 capability evidence.
+**Implemented (SET-02):** V1 settlement authorization uses `SETTLEMENT_READ` / `SETTLEMENT_MANAGE`, granted only to `SUPER_ADMIN` by explicit enumeration; every Admin settlement route has both guards and permission metadata, and there are no customer settlement APIs. `WAREHOUSE`/`ORDER_OPS` settlement grants remain an explicit decision pending MIG-01 capability evidence.

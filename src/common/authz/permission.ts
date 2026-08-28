@@ -22,6 +22,9 @@ export const Permission = {
   /** Admin order views and state transitions (ORD-06, ORD-07). */
   ORDER_READ: 'ORDER_READ',
   ORDER_TRANSITION: 'ORDER_TRANSITION',
+  /** Post-delivery deferred-settlement operations (SET-02). */
+  SETTLEMENT_READ: 'SETTLEMENT_READ',
+  SETTLEMENT_MANAGE: 'SETTLEMENT_MANAGE',
   /** Discount lifecycle and pricing administration (PRC-02–PRC-04). */
   DISCOUNT_READ: 'DISCOUNT_READ',
   DISCOUNT_MANAGE: 'DISCOUNT_MANAGE',

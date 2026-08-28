@@ -71,6 +71,10 @@ class InMemoryMediaRepository {
     return Promise.resolve(this.rows.get(id) ?? null);
   }
 
+  isReferencedBySettlement(): Promise<boolean> {
+    return Promise.resolve(false);
+  }
+
   list(
     query: MediaListQuery,
   ): Promise<{ items: MediaRecord[]; total: number }> {

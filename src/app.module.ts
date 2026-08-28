@@ -20,6 +20,7 @@ import { RegionsModule } from './modules/regions/regions.module';
 import { UsersModule } from './modules/users/users.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { CommercePolicyModule } from './modules/commerce-policy/commerce-policy.module';
+import { SettlementsModule } from './modules/settlements/settlements.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { CommercePolicyModule } from './modules/commerce-policy/commerce-policy.
     RegionsModule,
     OrdersModule,
     CommercePolicyModule,
+    SettlementsModule,
   ],
   controllers: [HealthController],
 })

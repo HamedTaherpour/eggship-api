@@ -18,6 +18,7 @@ import {
   ApiBearerAuth,
   ApiBody,
   ApiConsumes,
+  ApiConflictResponse,
   ApiCookieAuth,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
@@ -196,7 +197,7 @@ export class AdminMediaController {
     operationId: 'AdminMedia_delete',
     summary: 'Delete a media library item (Admin)',
     description: [
-      'Deletes the object from storage first, then the Media row. Missing-key object delete is success so retry can finish. Concurrent delete of the same id is idempotent (200). If object deletion fails, the row is kept and MEDIA_DELETE_FAILED is returned. No Product/Blog referential checks yet; those land with attachment tasks. Requires MEDIA_MANAGE.',
+      'Rejects MEDIA_REFERENCED before storage deletion when the item is a settlement receipt. Otherwise deletes the object first, then the Media row. Missing-key object delete is success so retry can finish. Concurrent delete of the same id is idempotent (200). If object deletion fails, the row is kept and MEDIA_DELETE_FAILED is returned. Requires MEDIA_MANAGE.',
     ].join(' '),
   })
   @ApiParam({ name: 'id', format: 'uuid' })
@@ -207,6 +208,7 @@ export class AdminMediaController {
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
   @ApiForbiddenResponse({ type: ApiErrorResponseDto })
   @ApiNotFoundResponse({ type: ApiErrorResponseDto })
+  @ApiConflictResponse({ type: ApiErrorResponseDto })
   async remove(
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<AdminMediaResponseDto> {

@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   104 |
-| DONE        |    50 |
+| DONE        |    51 |
 | IN_PROGRESS |     0 |
 | READY       |     1 |
 | BLOCKED     |     0 |
-| PLANNED     |    53 |
+| PLANNED     |    52 |
 
-- Current task: none in progress. `SET-01` is DONE (deferred-settlement lifecycle decisions accepted in ADR 0018), which unblocks `SET-02` to READY (deferred-settlement persistence and Admin operations). No task remains BLOCKED.
+- Current task: none in progress. `SET-02` is DONE (deferred-settlement persistence and Admin operations). `REF-01` is the next READY task and requires the Human + ChatGPT architecture process for referral attribution and abuse policy. No task remains BLOCKED.
 - Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
@@ -685,7 +685,7 @@ Delivered: Accepted [ADR 0018](adr/0018-deferred-settlement-lifecycle.md); durab
 
 ### SET-02 — Deferred-settlement persistence and Admin operations
 
-Status: READY | Depends on: SET-01, ORD-02, CAT-04, AUTH-08 | Primary: Codex | Review: Claude/Cursor security/concurrency review, Human migration review
+Status: DONE | Depends on: SET-01, ORD-02, CAT-04, AUTH-08 | Primary: Codex | Review: Claude/Cursor security/concurrency review, Human migration review
 
 Scope: Implement the accepted Settlement aggregate, receipt Media reference(s), explicit application commands, permissioned Admin detail/list/filter/sort APIs, derived overdue behavior, conditional concurrency/idempotency, audit hooks, OpenAPI, and real PostgreSQL coverage.
 
@@ -693,11 +693,13 @@ Acceptance criteria: Only delivered Orders receive due dates; settlement state n
 
 Explicitly out of scope: Customer settlement APIs, gateway/provider integration, automated accounting, and reminders/notifications not separately approved.
 
+Delivered: Additive `OrderSettlement` migration with unique Order ownership, `OPEN`/`SETTLED` and receipt-provenance CHECK constraints, RESTRICT FKs, and operational indexes; separate Settlement module with guarded Admin list/detail/create/change-due-date/receipt/settle APIs, CAT-01 filters/sorts and derived overdue, immutable Order total projection, conditional PostgreSQL commands and idempotent receipt/settle replay, safe lifecycle events, and the SET-01 error taxonomy; `SETTLEMENT_READ`/`SETTLEMENT_MANAGE` granted only to `SUPER_ADMIN`; Media deletion rejects `MEDIA_REFERENCED` before storage deletion. Unit/e2e and real-PostgreSQL constraint, rollback, FK, RETURNED-independence, overdue, and concurrency coverage included. No customer/payment/provider/partial/reopen/reminder/refund scope.
+
 ## Phase 6 — Referrals & Visitors
 
 ### REF-01 — Referral attribution and abuse policy
 
-Status: PLANNED | Depends on: AUTH-07 | Primary: Human + ChatGPT architecture process | Review: Claude/Cursor security review, Human approval
+Status: READY | Depends on: AUTH-07 | Primary: Human + ChatGPT architecture process | Review: Claude/Cursor security review, Human approval
 
 Scope: Distinguish attribution from rewards and approve ownership, attribution window/source, duplicate attribution, self-referral, reassignment, visitor-to-user conversion, and abuse policy.
 

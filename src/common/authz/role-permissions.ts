@@ -24,6 +24,8 @@ export const ROLE_PERMISSIONS: Readonly<
     Permission.INVENTORY_ADJUST,
     Permission.ORDER_READ,
     Permission.ORDER_TRANSITION,
+    Permission.SETTLEMENT_READ,
+    Permission.SETTLEMENT_MANAGE,
     Permission.DISCOUNT_READ,
     Permission.DISCOUNT_MANAGE,
     Permission.COMMERCE_POLICY_MANAGE,

@@ -10,6 +10,7 @@ export const MediaErrorCode = {
   UPLOAD_FAILED: 'MEDIA_UPLOAD_FAILED',
   NOT_FOUND: 'MEDIA_NOT_FOUND',
   DELETE_FAILED: 'MEDIA_DELETE_FAILED',
+  REFERENCED: 'MEDIA_REFERENCED',
 } as const;
 
 export type MediaErrorCode =
@@ -76,6 +77,13 @@ export class MediaDeleteFailedError extends ApplicationError {
       HttpStatus.INTERNAL_SERVER_ERROR,
     );
     this.name = 'MediaDeleteFailedError';
+  }
+}
+
+export class MediaReferencedError extends ApplicationError {
+  constructor(message = 'Media is referenced and cannot be deleted.') {
+    super(MediaErrorCode.REFERENCED, message, HttpStatus.CONFLICT);
+    this.name = 'MediaReferencedError';
   }
 }
 

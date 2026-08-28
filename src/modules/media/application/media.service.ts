@@ -9,6 +9,7 @@ import { ApplicationLogger } from '../../../common/observability/application-log
 import type { StorageProvider } from '../../../infrastructure/storage/storage-provider';
 import { StorageProviderError } from '../../../infrastructure/storage/storage-provider';
 import { STORAGE_PROVIDER } from '../../../infrastructure/storage/storage.tokens';
+import type { TransactionContext } from '../../../infrastructure/database/transaction';
 import type { MediaUploadLimits } from '../domain/media-upload-limits';
 import { mapWithBoundedConcurrency } from '../domain/bounded-concurrency';
 import { validateInboundMediaFile } from '../domain/file-validation';
@@ -26,6 +27,7 @@ import {
   MediaFileTooLargeError,
   MediaNoFilesError,
   MediaNotFoundError,
+  MediaReferencedError,
   MediaTooManyFilesError,
   MediaUnsupportedTypeError,
   MediaUploadFailedError,
@@ -35,6 +37,7 @@ import { generateMediaStorageKey } from '../domain/storage-key';
 import { MediaRepository } from '../infrastructure/media.repository';
 import type { AdminMediaListQueryDto } from '../api/dto/admin-media-list-query.dto';
 import { resolveAdminMediaSort } from '../api/dto/admin-media-list-query.dto';
+import { isAcceptedMediaMimeType } from '../domain/accepted-media-types';
 
 export const MEDIA_UPLOAD_LIMITS = Symbol('MEDIA_UPLOAD_LIMITS');
 
@@ -64,6 +67,20 @@ export class MediaService {
     const found = await this.media.findById(id);
     if (found === null) {
       throw new MediaNotFoundError();
+    }
+    return found;
+  }
+
+  async getReceiptReference(
+    id: string,
+    tx: TransactionContext,
+  ): Promise<MediaRecord> {
+    const found = await this.media.findByIdForReference(id, tx);
+    if (found === null) throw new MediaNotFoundError();
+    if (!isAcceptedMediaMimeType(found.mimeType)) {
+      throw new MediaUnsupportedTypeError(
+        'Settlement receipts must be JPEG, PNG, or WebP images.',
+      );
     }
     return found;
   }
@@ -108,6 +125,10 @@ export class MediaService {
     const existing = await this.media.findById(id);
     if (existing === null) {
       throw new MediaNotFoundError();
+    }
+
+    if (await this.media.isReferencedBySettlement(existing.id)) {
+      throw new MediaReferencedError();
     }
 
     try {

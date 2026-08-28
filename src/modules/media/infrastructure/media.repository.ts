@@ -2,6 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { toSkipTake, type PageResult } from '../../../common/list';
 import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../infrastructure/database/prisma/prisma.service';
+import type { TransactionContext } from '../../../infrastructure/database/transaction';
+import {
+  resolvePrismaConnection,
+  type PrismaConnection,
+} from '../../../infrastructure/database/prisma/prisma-transaction-context';
 import type { AcceptedMediaMimeType } from '../domain/accepted-media-types';
 import type {
   CreateMediaInput,
@@ -38,6 +43,28 @@ export class MediaRepository {
   async findById(id: string): Promise<MediaRecord | null> {
     const found = await this.prisma.media.findUnique({ where: { id } });
     return found === null ? null : mapMedia(found);
+  }
+
+  async findByIdForReference(
+    id: string,
+    tx: TransactionContext,
+  ): Promise<MediaRecord | null> {
+    const rows = await this.db(tx).$queryRaw<PrismaMedia[]>(Prisma.sql`
+      SELECT "id", "storageKey", "originalFileName", "mimeType", "sizeBytes",
+             "width", "height", "createdAt", "updatedAt"
+      FROM "Media"
+      WHERE "id" = ${id}::uuid
+      FOR KEY SHARE
+    `);
+    return rows[0] === undefined ? null : mapMedia(rows[0]);
+  }
+
+  async isReferencedBySettlement(id: string): Promise<boolean> {
+    const found = await this.prisma.orderSettlement.findFirst({
+      where: { receiptMediaId: id },
+      select: { id: true },
+    });
+    return found !== null;
   }
 
   async list(query: MediaListQuery): Promise<PageResult<MediaRecord>> {
@@ -85,6 +112,10 @@ export class MediaRepository {
       }
       throw error;
     }
+  }
+
+  private db(tx?: TransactionContext): PrismaConnection {
+    return resolvePrismaConnection(this.prisma, tx);
   }
 }
 

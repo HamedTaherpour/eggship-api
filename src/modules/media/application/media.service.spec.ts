@@ -15,6 +15,7 @@ import {
   MediaErrorCode,
   MediaNoFilesError,
   MediaNotFoundError,
+  MediaReferencedError,
   MediaTooManyFilesError,
 } from '../domain/media-errors';
 import type { MediaRepository } from '../infrastructure/media.repository';
@@ -45,7 +46,10 @@ function mediaRow(overrides: Partial<MediaRecord> = {}): MediaRecord {
 
 describe('MediaService', () => {
   let repository: jest.Mocked<
-    Pick<MediaRepository, 'list' | 'findById' | 'create' | 'deleteById'>
+    Pick<
+      MediaRepository,
+      'list' | 'findById' | 'create' | 'deleteById' | 'isReferencedBySettlement'
+    >
   >;
   let storage: InMemoryStorageProvider;
   let logger: jest.Mocked<Pick<ApplicationLogger, 'info' | 'warn' | 'error'>>;
@@ -57,6 +61,7 @@ describe('MediaService', () => {
       findById: jest.fn(),
       create: jest.fn(),
       deleteById: jest.fn(),
+      isReferencedBySettlement: jest.fn().mockResolvedValue(false),
     };
     storage = new InMemoryStorageProvider('https://media.test.invalid');
     logger = {
@@ -241,6 +246,23 @@ describe('MediaService', () => {
     await service.deleteAdmin(existing.id);
     expect(await storage.exists(existing.storageKey)).toBe(false);
     expect(repository.deleteById).toHaveBeenCalledWith(existing.id);
+  });
+
+  it('rejects a settlement-referenced item before deleting storage', async () => {
+    const existing = mediaRow();
+    repository.findById.mockResolvedValue(existing);
+    repository.isReferencedBySettlement.mockResolvedValue(true);
+    await storage.put({
+      storageKey: existing.storageKey,
+      body: Buffer.from('receipt'),
+      mimeType: 'image/jpeg',
+    });
+
+    await expect(service.deleteAdmin(existing.id)).rejects.toBeInstanceOf(
+      MediaReferencedError,
+    );
+    expect(await storage.exists(existing.storageKey)).toBe(true);
+    expect(repository.deleteById).not.toHaveBeenCalled();
   });
 
   it('throws MEDIA_NOT_FOUND for missing detail', async () => {

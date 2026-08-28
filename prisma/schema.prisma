@@ -32,11 +32,14 @@ model Admin {
   createdAt    DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt    DateTime  @updatedAt @db.Timestamptz(3)
 
-  sessions                 AdminAuthSession[]
-  commerceSettingsCreated  CommerceSettings[]         @relation("CommerceSettingsCreatedBy")
-  commerceSettingsUpdated  CommerceSettings[]         @relation("CommerceSettingsUpdatedBy")
-  commerceOverridesCreated CommerceScheduleOverride[] @relation("CommerceOverrideCreatedBy")
-  commerceOverridesUpdated CommerceScheduleOverride[] @relation("CommerceOverrideUpdatedBy")
+  sessions                   AdminAuthSession[]
+  commerceSettingsCreated    CommerceSettings[]         @relation("CommerceSettingsCreatedBy")
+  commerceSettingsUpdated    CommerceSettings[]         @relation("CommerceSettingsUpdatedBy")
+  commerceOverridesCreated   CommerceScheduleOverride[] @relation("CommerceOverrideCreatedBy")
+  commerceOverridesUpdated   CommerceScheduleOverride[] @relation("CommerceOverrideUpdatedBy")
+  settlementsCreated         OrderSettlement[]          @relation("SettlementCreatedBy")
+  settlementsSettled         OrderSettlement[]          @relation("SettlementSettledBy")
+  settlementReceiptsAttached OrderSettlement[]          @relation("SettlementReceiptAttachedBy")
 }
 
 enum CommerceScheduleOverrideMode {
@@ -378,6 +381,8 @@ model Media {
   createdAt        DateTime @default(now()) @db.Timestamptz(3)
   updatedAt        DateTime @updatedAt @db.Timestamptz(3)
 
+  settlementReceipts OrderSettlement[]
+
   /// Admin library recency and mime filter.
   @@index([createdAt])
   @@index([mimeType, createdAt])
@@ -529,6 +534,11 @@ enum OrderStatus {
   RETURNED
 }
 
+enum OrderSettlementStatus {
+  OPEN
+  SETTLED
+}
+
 /// Customer/store order with immutable historical snapshots (ORD-01 / ORD-03).
 /// V1 has no online payment gateway — settlement occurs outside EggShip.
 /// Prefer User deactivation over hard delete; Orders survive account lifecycle.
@@ -577,14 +587,44 @@ model Order {
   createdAt                        DateTime      @default(now()) @db.Timestamptz(3)
   updatedAt                        DateTime      @updatedAt @db.Timestamptz(3)
 
-  user   User        @relation(fields: [userId], references: [id], onDelete: Restrict)
-  region Region      @relation(fields: [regionId], references: [id], onDelete: Restrict)
-  lines  OrderLine[]
+  user       User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  region     Region           @relation(fields: [regionId], references: [id], onDelete: Restrict)
+  lines      OrderLine[]
+  settlement OrderSettlement?
 
   @@unique([userId, idempotencyKey])
   @@index([userId, createdAt])
   @@index([status, createdAt])
   @@index([createdAt])
+}
+
+/// Post-delivery deferred-settlement tracking (SET-02 / ADR 0018).
+/// Settlement lifecycle is independent from Order fulfillment state and always
+/// represents the full immutable Order.total; no amount is duplicated here.
+model OrderSettlement {
+  id                       String                @id @default(uuid()) @db.Uuid
+  orderId                  String                @unique @db.Uuid
+  status                   OrderSettlementStatus @default(OPEN)
+  dueAt                    DateTime              @db.Timestamptz(3)
+  settledAt                DateTime?             @db.Timestamptz(3)
+  settledByAdminId         String?               @db.Uuid
+  receiptMediaId           String?               @db.Uuid
+  receiptAttachedAt        DateTime?             @db.Timestamptz(3)
+  receiptAttachedByAdminId String?               @db.Uuid
+  createdByAdminId         String                @db.Uuid
+  createdAt                DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt                DateTime              @updatedAt @db.Timestamptz(3)
+
+  order                  Order  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  settledByAdmin         Admin? @relation("SettlementSettledBy", fields: [settledByAdminId], references: [id], onDelete: Restrict)
+  receiptMedia           Media? @relation(fields: [receiptMediaId], references: [id], onDelete: Restrict)
+  receiptAttachedByAdmin Admin? @relation("SettlementReceiptAttachedBy", fields: [receiptAttachedByAdminId], references: [id], onDelete: Restrict)
+  createdByAdmin         Admin  @relation("SettlementCreatedBy", fields: [createdByAdminId], references: [id], onDelete: Restrict)
+
+  @@index([status, dueAt])
+  @@index([dueAt, id])
+  @@index([createdAt, id])
+  @@index([settledAt, id])
 }
 
 /// Immutable order line with product/price/discount snapshots (ORD-01 / ORD-03).

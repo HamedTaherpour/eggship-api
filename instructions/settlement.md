@@ -1,6 +1,6 @@
 # Deferred settlement tracking
 
-EggShip V1 has no payment gateway. The approved requirement is operational tracking after delivery: an Admin assigns a due date, registers externally received proof through the existing Media library, and tracks open/overdue/settled work. Lifecycle decisions are accepted in [ADR 0018](../docs/adr/0018-deferred-settlement-lifecycle.md) (SET-01); SET-02 implements them. Deferred items at the bottom must not be invented.
+EggShip V1 has no payment gateway. The approved requirement is operational tracking after delivery: an Admin assigns a due date, registers externally received proof through the existing Media library, and tracks open/overdue/settled work. Lifecycle decisions are accepted in [ADR 0018](../docs/adr/0018-deferred-settlement-lifecycle.md) (SET-01) and implemented by SET-02. Deferred items at the bottom must not be invented.
 
 ## Approved boundaries
 
@@ -15,7 +15,7 @@ EggShip V1 has no payment gateway. The approved requirement is operational track
 
 `src/modules/settlements` owns a one-to-one settlement aggregate rooted by `orderId` (`UNIQUE`). Do not add settlement columns to `Order`: the separate model owns its lifecycle, queries, permissions, and audit events while Orders keeps delivery state and immutable totals. Settlement reads Order identity/status/total read-only and never writes Order tables.
 
-Conceptual shape (SET-02 owns the reviewed migration):
+Persisted shape (`20260827090000_deferred_settlement`):
 
 ```text
 OrderSettlement
@@ -32,7 +32,7 @@ OrderSettlement
   createdAt / updatedAt     timestamptz
 ```
 
-Invariants: `SETTLED` ⇔ `settledAt` / `settledByAdminId` / `receiptMediaId` all NOT NULL; `OPEN` ⇒ `settledAt` NULL; the receipt triple is all-set or all-null. No amount columns (settlement always represents the full immutable `Order.total`, read through Order), no JSON, no payment fields. Index direction `(status, dueAt)` for the operational list; SET-02 confirms with query analysis.
+Invariants: `SETTLED` ⇔ `settledAt` / `settledByAdminId` / `receiptMediaId` all NOT NULL; `OPEN` ⇒ `settledAt` NULL; the receipt triple is all-set or all-null. SQL CHECK constraints enforce both lifecycle/provenance shapes. No amount columns (settlement always represents the full immutable `Order.total`, read through Order), no JSON, no payment fields. The operational index starts with `(status, dueAt)`; stable sort indexes cover `dueAt`, `createdAt`, and `settledAt` with `id` tie-breaks.
 
 ## Lifecycle
 
@@ -81,6 +81,8 @@ Permissions: `SETTLEMENT_READ` (list/detail) and `SETTLEMENT_MANAGE` (create, ch
 
 Admin routes use both guards and permission metadata. Order identity comes from the request, but the service verifies the Order exists and is delivered. Errors are Admin-displayable, sanitized, and must not leak customer or payment-sensitive data.
 
+Implemented Admin routes are `GET/POST /api/v1/admin/settlements`, `GET /api/v1/admin/settlements/:id`, and explicit `POST .../:id/change-due-date`, `POST .../:id/receipt`, and `POST .../:id/settle` commands. Receipt commands accept only an existing Media id; uploads remain owned by Media.
+
 ## Concurrency and idempotency
 
 - `UNIQUE(orderId)` prevents duplicate settlement aggregates; a racing second create returns `SETTLEMENT_ALREADY_EXISTS`.
@@ -95,7 +97,7 @@ Small stable set: `SETTLEMENT_NOT_FOUND` (404), `SETTLEMENT_ALREADY_EXISTS` (409
 
 ## Audit, notifications, and analytics
 
-Audit candidates for AUD-01/AUD-02 (not implemented here): settlement created (with `dueAt`), due date changed (old/new), receipt attached, receipt replaced, marked settled, and permission denial via the authorization log. Audit payloads contain ids and safe field deltas, never file bytes, raw filenames, or bank/card data. No reopen event exists because reopen is not approved.
+SET-02 emits structured `settlement.created`, `settlement.due_date_changed`, `settlement.receipt_attached`, `settlement.receipt_replaced`, and `settlement.settled` application events after commit, with ids and safe deltas only. Durable AuditLog persistence remains AUD-01/AUD-02 and is not implemented here. Permission denials continue through the shared authorization log. No event contains file bytes, raw filenames, storage keys, or payment data.
 
 Notifications are not approved merely because a due date exists. Any reminder/escalation type, recipient, cadence, and Tehran scheduling rule requires an explicit notification task and transactional outbox integration; SET-02 introduces no BullMQ scheduling.
 

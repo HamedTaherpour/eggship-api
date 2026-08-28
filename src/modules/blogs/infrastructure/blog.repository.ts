@@ -7,10 +7,13 @@ import type {
   BlogRecord,
   BlogSortField,
   CreateBlogInput,
+  UpdateBlogInput,
 } from '../domain/blog';
 import { normalizeBlogBody } from '../domain/blog-body';
 import { BlogSlugConflictError } from '../domain/blog-errors';
 import {
+  applyPublishTransition,
+  applyUnpublishTransition,
   resolveBlogPublication,
   publishedBlogWhere,
 } from '../domain/blog-publication';
@@ -66,6 +69,12 @@ export class BlogRepository {
     return this.listWithWhere(query, {});
   }
 
+  /** Admin detail: drafts and published rows by primary key. */
+  async findById(id: string): Promise<BlogRecord | null> {
+    const found = await this.prisma.blog.findUnique({ where: { id } });
+    return found === null ? null : mapBlog(found);
+  }
+
   /**
    * Persistence helper for tests and CNT-02. No public write HTTP in CNT-01.
    */
@@ -95,6 +104,69 @@ export class BlogRepository {
       }
       throw error;
     }
+  }
+
+  async update(id: string, input: UpdateBlogInput): Promise<BlogRecord | null> {
+    const existing = await this.findById(id);
+    if (existing === null) {
+      return null;
+    }
+
+    const data: Prisma.BlogUpdateInput = {};
+    if (input.slug !== undefined) {
+      data.slug = normalizeBlogSlug(input.slug);
+    }
+    if (input.title !== undefined) {
+      data.title = normalizeBlogTitle(input.title);
+    }
+    if (input.body !== undefined) {
+      data.body = normalizeBlogBody(input.body);
+    }
+
+    if (Object.keys(data).length === 0) {
+      return existing;
+    }
+
+    try {
+      const updated = await this.prisma.blog.update({
+        where: { id },
+        data,
+      });
+      return mapBlog(updated);
+    } catch (error: unknown) {
+      if (isUniqueConstraintError(error)) {
+        throw new BlogSlugConflictError();
+      }
+      throw error;
+    }
+  }
+
+  async publish(id: string, now: Date): Promise<BlogRecord | null> {
+    const existing = await this.findById(id);
+    if (existing === null) {
+      return null;
+    }
+
+    const publication = applyPublishTransition(existing, now);
+    const updated = await this.prisma.blog.update({
+      where: { id },
+      data: publication,
+    });
+    return mapBlog(updated);
+  }
+
+  async unpublish(id: string): Promise<BlogRecord | null> {
+    const existing = await this.findById(id);
+    if (existing === null) {
+      return null;
+    }
+
+    const publication = applyUnpublishTransition(existing);
+    const updated = await this.prisma.blog.update({
+      where: { id },
+      data: publication,
+    });
+    return mapBlog(updated);
   }
 
   private async listWithWhere(
@@ -132,6 +204,10 @@ function buildWhere(
     where.title = { contains: query.search, mode: 'insensitive' };
   }
 
+  if (query.isPublished !== undefined) {
+    where.isPublished = query.isPublished;
+  }
+
   return where;
 }
 
@@ -140,6 +216,13 @@ export function buildPublishedBlogListWhereForTest(
   query: BlogListQuery,
 ): Prisma.BlogWhereInput {
   return buildWhere(query, publishedBlogWhere());
+}
+
+/** Exported for unit tests of unrestricted admin list where mapping. */
+export function buildAdminBlogListWhereForTest(
+  query: BlogListQuery,
+): Prisma.BlogWhereInput {
+  return buildWhere(query, {});
 }
 
 function mapBlog(row: PrismaBlog): BlogRecord {

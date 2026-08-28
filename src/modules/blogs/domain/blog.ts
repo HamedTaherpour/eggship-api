@@ -22,6 +22,13 @@ export interface CreateBlogInput {
   publishedAt?: Date | null;
 }
 
+/** Explicit PATCH allowlist for Admin edits (CNT-02). */
+export interface UpdateBlogInput {
+  slug?: string;
+  title?: string;
+  body?: string;
+}
+
 export type BlogSortField = 'publishedAt' | 'title' | 'createdAt';
 
 export interface BlogListQuery {
@@ -30,4 +37,6 @@ export interface BlogListQuery {
   search?: string;
   sortBy: BlogSortField;
   sortOrder: 'asc' | 'desc';
+  /** Admin-only filter. Public list must not accept this. */
+  isPublished?: boolean;
 }

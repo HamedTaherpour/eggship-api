@@ -364,7 +364,7 @@ describe('Public blog APIs (e2e)', () => {
     const paths = openapi.paths ?? {};
     expect(paths['/api/v1/blogs']).toBeDefined();
     expect(paths['/api/v1/blogs/{slug}']).toBeDefined();
-    expect(paths['/api/v1/admin/blogs']).toBeUndefined();
+    expect(paths['/api/v1/admin/blogs']).toBeDefined();
 
     const operations = Object.values(paths).flatMap((pathItem) =>
       Object.values(pathItem ?? {}).filter(
@@ -378,7 +378,7 @@ describe('Public blog APIs (e2e)', () => {
     expect(operationIds).toEqual(
       expect.arrayContaining(['Blogs_list', 'Blogs_get']),
     );
-    expect(operationIds).not.toEqual(
+    expect(operationIds).toEqual(
       expect.arrayContaining(['AdminBlogs_list', 'AdminBlogs_create']),
     );
   });

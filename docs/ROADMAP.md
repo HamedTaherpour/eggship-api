@@ -13,7 +13,7 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | BLOCKED     |     0 |
 | PLANNED     |    37 |
 
-- Current task: `CNT-01` is closed. `CNT-02` is READY. No task remains BLOCKED.
+- Current task: `CNT-02` is closed. No task remains BLOCKED.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate.
 
 ## Status model
@@ -857,11 +857,13 @@ Explicitly out of scope: Admin editing and Redis caching.
 
 ### CNT-02 — Blog administration and publishing
 
-Status: READY | Depends on: CNT-01, AUTH-08 | Primary: Codex | Review: Claude/Cursor
+Status: DONE | Depends on: CNT-01, AUTH-08 | Primary: Codex | Review: Claude/Cursor
 
 Scope: Implement authorized create/edit/publish/unpublish workflows with explicit state transitions and media references.
 
 Acceptance criteria: Validation, slug conflicts, scheduling only if evidenced, audit hooks, OpenAPI, and integration/e2e coverage are complete.
+
+Delivered: Permissioned Admin Blog APIs (`CONTENT_READ` / `CONTENT_MANAGE`): paginated `GET /api/v1/admin/blogs` (drafts + published, title search, sort allowlist, optional `isPublished` filter), `GET /api/v1/admin/blogs/:id`, draft-only `POST /api/v1/admin/blogs`, allowlisted `PATCH /api/v1/admin/blogs/:id`, and explicit `POST .../publish` / `POST .../unpublish` commands. Publish sets authoritative server `publishedAt`; replay preserves timestamp; unpublish retains last `publishedAt` as history. Stable `BLOG_SLUG_CONFLICT`; public paths remain fail-closed (`listPublished` / `findPublishedBySlug`). No Media FK (MED-01), no scheduling, no schema change. Structured logs as AUD-01 audit candidates. OpenAPI `AdminBlogs_*`; unit/e2e/PostgreSQL coverage.
 
 Explicitly out of scope: Inventing editorial workflow or scheduled publishing.
 

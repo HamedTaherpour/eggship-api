@@ -38,3 +38,36 @@ export function resolveBlogPublication(input: {
   const publishedAt = input.publishedAt ?? input.now ?? new Date();
   return { isPublished: true, publishedAt };
 }
+
+/**
+ * Publish command semantics (CNT-02):
+ * - First publish or republish after unpublish sets `publishedAt` to authoritative `now`.
+ * - Replay on an already-published row is idempotent and preserves `publishedAt`.
+ */
+export function applyPublishTransition(
+  current: BlogPublicationState,
+  now: Date,
+): Pick<BlogPublicationState, 'isPublished' | 'publishedAt'> {
+  if (current.isPublished) {
+    return {
+      isPublished: true,
+      publishedAt: current.publishedAt ?? now,
+    };
+  }
+
+  return { isPublished: true, publishedAt: now };
+}
+
+/**
+ * Unpublish command semantics (CNT-02):
+ * - Sets `isPublished=false` while retaining the last `publishedAt` instant as history.
+ * - Replay on an already-unpublished row is idempotent.
+ */
+export function applyUnpublishTransition(
+  current: BlogPublicationState,
+): Pick<BlogPublicationState, 'isPublished' | 'publishedAt'> {
+  return {
+    isPublished: false,
+    publishedAt: current.publishedAt,
+  };
+}

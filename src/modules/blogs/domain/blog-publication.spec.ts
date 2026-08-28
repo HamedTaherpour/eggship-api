@@ -1,4 +1,6 @@
 import {
+  applyPublishTransition,
+  applyUnpublishTransition,
   isBlogPubliclyVisible,
   publishedBlogWhere,
   resolveBlogPublication,
@@ -44,6 +46,61 @@ describe('blog publication eligibility', () => {
 
   it('allows drafts to omit publishedAt', () => {
     expect(resolveBlogPublication({ isPublished: false })).toEqual({
+      isPublished: false,
+      publishedAt: null,
+    });
+  });
+
+  it('publish transition sets publishedAt on first publish and republish', () => {
+    const now = new Date('2026-08-28T12:00:00.000Z');
+    expect(
+      applyPublishTransition({ isPublished: false, publishedAt: null }, now),
+    ).toEqual({
+      isPublished: true,
+      publishedAt: now,
+    });
+    expect(
+      applyPublishTransition(
+        {
+          isPublished: false,
+          publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+        },
+        now,
+      ),
+    ).toEqual({
+      isPublished: true,
+      publishedAt: now,
+    });
+  });
+
+  it('publish replay is idempotent and preserves publishedAt', () => {
+    const publishedAt = new Date('2026-08-21T12:00:00.000Z');
+    const replayNow = new Date('2026-08-28T12:00:00.000Z');
+    expect(
+      applyPublishTransition({ isPublished: true, publishedAt }, replayNow),
+    ).toEqual({
+      isPublished: true,
+      publishedAt,
+    });
+  });
+
+  it('unpublish retains publishedAt and replay is idempotent', () => {
+    const publishedAt = new Date('2026-08-21T12:00:00.000Z');
+    expect(
+      applyUnpublishTransition({ isPublished: true, publishedAt }),
+    ).toEqual({
+      isPublished: false,
+      publishedAt,
+    });
+    expect(
+      applyUnpublishTransition({ isPublished: false, publishedAt }),
+    ).toEqual({
+      isPublished: false,
+      publishedAt,
+    });
+    expect(
+      applyUnpublishTransition({ isPublished: false, publishedAt: null }),
+    ).toEqual({
       isPublished: false,
       publishedAt: null,
     });

@@ -1,6 +1,9 @@
 import type { BlogListQuery } from '../domain/blog';
 import { publishedBlogWhere } from '../domain/blog-publication';
-import { buildPublishedBlogListWhereForTest } from './blog.repository';
+import {
+  buildAdminBlogListWhereForTest,
+  buildPublishedBlogListWhereForTest,
+} from './blog.repository';
 
 describe('BlogRepository query mapping', () => {
   it('always applies the shared published predicate and title-only search', () => {
@@ -29,5 +32,22 @@ describe('BlogRepository query mapping', () => {
     const where = buildPublishedBlogListWhereForTest(query);
     expect(where).toEqual(publishedBlogWhere());
     expect(where).not.toHaveProperty('body');
+  });
+
+  it('admin listAll mapper does not apply published predicate and supports isPublished filter', () => {
+    const query: BlogListQuery = {
+      page: 1,
+      pageSize: 20,
+      sortBy: 'createdAt',
+      sortOrder: 'asc',
+      isPublished: false,
+    };
+
+    expect(buildAdminBlogListWhereForTest(query)).toEqual({
+      isPublished: false,
+    });
+    expect(buildAdminBlogListWhereForTest(query)).not.toEqual(
+      publishedBlogWhere(),
+    );
   });
 });

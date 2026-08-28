@@ -704,23 +704,32 @@ model OrderLine {
 /// intent is inserted by the caller's existing transaction; publication state
 /// is advanced later by ASY-02.
 model OutboxEvent {
-  id            String           @id @db.Uuid
-  eventType     String           @db.VarChar(100)
-  eventVersion  Int
-  correlationId String           @db.VarChar(128)
-  occurredAt    DateTime         @db.Timestamptz(3)
-  payload       Json
-  state         OutboxEventState @default(PENDING)
-  publishedAt   DateTime?
-  createdAt     DateTime         @default(now()) @db.Timestamptz(3)
+  id             String           @id @db.Uuid
+  eventType      String           @db.VarChar(100)
+  eventVersion   Int
+  correlationId  String           @db.VarChar(128)
+  occurredAt     DateTime         @db.Timestamptz(3)
+  payload        Json
+  state          OutboxEventState @default(PENDING)
+  publishedAt    DateTime?
+  /// Number of publication attempts, including the current claim.
+  attemptCount   Int              @default(0)
+  /// Earliest time at which a pending or expired claim may be retried.
+  nextAttemptAt  DateTime         @default(now()) @db.Timestamptz(3)
+  /// Durable claim identity. It is cleared when the claim is released or published.
+  claimToken     String?          @db.Uuid
+  claimedAt      DateTime?        @db.Timestamptz(3)
+  leaseExpiresAt DateTime?        @db.Timestamptz(3)
+  createdAt      DateTime         @default(now()) @db.Timestamptz(3)
 
   /// ASY-02 lookup/claim order: pending oldest event, stable UUID tie-break.
-  @@index([state, createdAt, id])
+  @@index([state, nextAttemptAt, createdAt, id])
   /// DATA-02/ASY-05 cleanup can bound retained published history.
   @@index([publishedAt, id])
 }
 
 enum OutboxEventState {
   PENDING
+  CLAIMED
   PUBLISHED
 }

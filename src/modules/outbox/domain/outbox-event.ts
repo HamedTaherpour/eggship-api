@@ -23,7 +23,7 @@ export interface OutboxEventEnvelope {
 }
 
 export interface OutboxEventRecord extends OutboxEventEnvelope {
-  state: 'PENDING' | 'PUBLISHED';
+  state: 'PENDING' | 'CLAIMED' | 'PUBLISHED';
   publishedAt: Date | null;
   createdAt: Date;
 }

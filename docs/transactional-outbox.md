@@ -16,10 +16,19 @@ data, addresses, and full user objects by application validation; JSONB and
 database checks provide defense in depth.
 
 ASY-02 owns publication state transitions, retries, crash recovery, and queue
-publication. Its future claim transaction should select `PENDING` rows in
-`createdAt, id` order with row locks and `SKIP LOCKED`, then update durable
-state according to its approved at-least-once protocol. Cleanup/retention of
-published rows belongs to a later approved DATA/ASY lifecycle task.
+publication. Dispatchers claim bounded batches with `FOR UPDATE SKIP LOCKED`
+in `createdAt, id` order, then commit a durable `CLAIMED` lease before doing
+Redis I/O. Expired leases are reclaimable. Queue publication uses a stable
+`outbox-{eventId}` BullMQ job ID and the shared versioned async envelope; only
+confirmed queue acceptance permits a conditional `CLAIMED` → `PUBLISHED`
+update. A queue acceptance followed by a process crash before acknowledgement
+can therefore be published again after lease recovery, which is intentional
+at-least-once behavior and requires idempotent downstream consumers.
+
+Publication failures are returned to `PENDING` with bounded exponential
+backoff. Redis is never authoritative and no network call occurs inside a
+PostgreSQL transaction. Cleanup/retention of published rows belongs to a later
+approved DATA/ASY lifecycle task.
 
 NOT-03 uses `order.status.changed` version `1` for the approved customer
 Order lifecycle transitions. Its event identity is a deterministic UUID

@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- AUTH-10 verification tooling: updated the deterministic OpenAPI environment fixture with the required CSRF secret and configured origins.
+
 - ORD-05 customer cancellation now returns HTTP 200 as specified, with dedicated lightweight E2E coverage for authorization, owner scoping, strict command input, safe response fields, BOLA mapping, and OpenAPI.
 - Post-validation infrastructure hardening: make PostgreSQL pool limits/timeouts validated and replica-budgeted with a test-only stampede override; scope RR order-create recovery to structured retryable codes plus a proven post-rollback idempotency row; log order creation only after commit; isolate OTP integration cleanup to exact run-owned keys and reject runtime/test Redis target reuse; strengthen migration and OTP-retention governance.
 - Native Redis/BullMQ integration (LOCAL-REDIS-01): pad OTP challenge/grant Redis `EXPIRE` by 60s beyond logical expiry so consume can return `expired` before key eviction; reject BullMQ queue names containing `:`; use hyphenated integration queue names; expand Redis/BullMQ real-infrastructure probes (clients, retry/fail retention, custom job ids, key patterns).

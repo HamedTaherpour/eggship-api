@@ -15,6 +15,9 @@ process.env['JWT_ACCESS_TTL'] = '900';
 process.env['REFRESH_TOKEN_TTL'] = '2592000';
 process.env['OTP_PROVIDER'] = 'development';
 process.env['OTP_HASH_SECRET'] = 'openapi-otp-hash-secret-at-least-32ch!';
+process.env['CSRF_SECRET'] = 'openapi-csrf-secret-at-least-32-characters!!';
+process.env['CSRF_ALLOWED_ORIGINS'] =
+  'http://localhost:3000,http://127.0.0.1:3000';
 process.env['OTP_DEV_CODE'] = '111111';
 process.env['OTP_TTL_SECONDS'] = '300';
 process.env['OTP_MAX_ATTEMPTS'] = '5';

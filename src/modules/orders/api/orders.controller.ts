@@ -1,9 +1,13 @@
 import {
   Body,
   Controller,
+  Get,
   Header,
   HttpStatus,
+  Param,
+  ParseUUIDPipe,
   Post,
+  Query,
   Req,
   Res,
   UseGuards,
@@ -20,6 +24,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiResponse,
   ApiServiceUnavailableResponse,
   ApiTags,
@@ -32,24 +37,133 @@ import { ApiErrorResponseDto } from '../../../common/openapi/dto/common-response
 import { AccessTokenGuard } from '../../auth/api/access-token.guard';
 import { getAuthenticatedPrincipal } from '../../auth/api/authenticated-principal.util';
 import { OrderCreationService } from '../application/order-creation.service';
+import { OrderReadService } from '../application/order-read.service';
 import { OrderActorType } from '../domain/order-actor';
 import { CreateOrderBodyDto } from './dto/create-order.dto';
+import { CustomerOrderListQueryDto } from './dto/customer-order-list-query.dto';
 import {
   CreateOrderResponseDto,
+  CustomerOrderDetailResponseDto,
+  CustomerOrderListResponseDto,
+  toCustomerOrderDetailDto,
   toCustomerOrderDto,
+  toCustomerOrderListItemDto,
 } from './dto/customer-order-response.dto';
 import { IdempotencyKey } from './idempotency-key.decorator';
 
-const ORDER_MUTATION_CACHE_CONTROL = 'no-store';
+const ORDER_CUSTOMER_CACHE_CONTROL = 'no-store';
 
 @ApiTags('Orders')
 @Controller('orders')
 export class OrdersController {
-  constructor(private readonly orderCreation: OrderCreationService) {}
+  constructor(
+    private readonly orderCreation: OrderCreationService,
+    private readonly orderRead: OrderReadService,
+  ) {}
+
+  @Get()
+  @UseGuards(AccessTokenGuard)
+  @Header('Cache-Control', ORDER_CUSTOMER_CACHE_CONTROL)
+  @ApiOperation({
+    operationId: 'Orders_list',
+    summary: 'List own customer orders',
+    description: [
+      'Authenticated USER subjects only. Derives owner scope exclusively from the authenticated principal.',
+      'An authenticated Admin (or other non-customer subject) is rejected with AUTH_FORBIDDEN (403).',
+      'Supports `page`, `pageSize`, optional `status`, inclusive `createdFrom`/`createdTo` (ISO 8601), and `sortBy`/`sortOrder` allowlist (`createdAt`, `total`, `status`; default `createdAt`/`desc` with stable `id` tie-break).',
+      'No free-text search. Unknown query parameters are rejected.',
+      'List items expose summary snapshot fields only (no line items).',
+      'Response uses Cache-Control: no-store.',
+    ].join(' '),
+  })
+  @ApiCookieAuth('accessCookie')
+  @ApiBearerAuth('bearer')
+  @ApiOkResponse({
+    description: 'Paginated owner-scoped order summaries.',
+    type: CustomerOrderListResponseDto,
+    headers: {
+      'Cache-Control': {
+        description: 'Always no-store for authenticated customer data.',
+        schema: { type: 'string', example: 'no-store' },
+      },
+    },
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid pagination, sort, filter, or date query.',
+    type: ApiErrorResponseDto,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Missing or invalid access token (`AUTH_UNAUTHENTICATED`).',
+    type: ApiErrorResponseDto,
+  })
+  @ApiForbiddenResponse({
+    description: 'Wrong subject type (`AUTH_FORBIDDEN`).',
+    type: ApiErrorResponseDto,
+  })
+  async list(
+    @Req() request: Request,
+    @Query() query: CustomerOrderListQueryDto,
+  ): Promise<InstanceType<typeof CustomerOrderListResponseDto>> {
+    const ownerId = requireCustomerOwnerId(getAuthenticatedPrincipal(request));
+    const page = await this.orderRead.listOwned(ownerId, query);
+    return {
+      data: page.data.map(toCustomerOrderListItemDto),
+      meta: page.meta,
+    };
+  }
+
+  @Get(':id')
+  @UseGuards(AccessTokenGuard)
+  @Header('Cache-Control', ORDER_CUSTOMER_CACHE_CONTROL)
+  @ApiOperation({
+    operationId: 'Orders_get',
+    summary: 'Get own customer order by id',
+    description: [
+      'Authenticated USER subjects only. Owner scope is enforced in the repository query (`id` + principal `userId`).',
+      "Missing orders and another customer's order both return ORDER_NOT_FOUND (404) with the same response shape.",
+      'Returns persisted historical line snapshots and lifecycle timestamps; does not join current Product/Discount state.',
+      'Omits internal/admin fields (idempotency, commercePolicyRevision, cancel metadata, userId).',
+      'Response uses Cache-Control: no-store.',
+    ].join(' '),
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiCookieAuth('accessCookie')
+  @ApiBearerAuth('bearer')
+  @ApiOkResponse({
+    description: 'Customer-safe order detail with line snapshots.',
+    type: CustomerOrderDetailResponseDto,
+    headers: {
+      'Cache-Control': {
+        description: 'Always no-store for authenticated customer data.',
+        schema: { type: 'string', example: 'no-store' },
+      },
+    },
+  })
+  @ApiNotFoundResponse({
+    description:
+      'Order not found or not owned by the caller (`ORDER_NOT_FOUND`).',
+    type: ApiErrorResponseDto,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Missing or invalid access token (`AUTH_UNAUTHENTICATED`).',
+    type: ApiErrorResponseDto,
+  })
+  @ApiForbiddenResponse({
+    description: 'Wrong subject type (`AUTH_FORBIDDEN`).',
+    type: ApiErrorResponseDto,
+  })
+  async get(
+    @Req() request: Request,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<CustomerOrderDetailResponseDto> {
+    const ownerId = requireCustomerOwnerId(getAuthenticatedPrincipal(request));
+    const order = await this.orderRead.getOwned(ownerId, id);
+    return { data: toCustomerOrderDetailDto(order) };
+  }
 
   @Post()
   @UseGuards(AccessTokenGuard)
-  @Header('Cache-Control', ORDER_MUTATION_CACHE_CONTROL)
+  @Header('Cache-Control', ORDER_CUSTOMER_CACHE_CONTROL)
   @ApiOperation({
     operationId: 'Orders_create',
     summary:
@@ -146,7 +260,7 @@ export class OrdersController {
     @Body() body: CreateOrderBodyDto,
     @IdempotencyKey() idempotencyKey: string,
   ): Promise<CreateOrderResponseDto> {
-    response.setHeader('Cache-Control', ORDER_MUTATION_CACHE_CONTROL);
+    response.setHeader('Cache-Control', ORDER_CUSTOMER_CACHE_CONTROL);
     const ownerId = requireCustomerOwnerId(getAuthenticatedPrincipal(request));
 
     const result = await this.orderCreation.createOrder({

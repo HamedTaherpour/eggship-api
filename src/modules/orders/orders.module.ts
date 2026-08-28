@@ -8,14 +8,15 @@ import { RegionsModule } from '../regions/regions.module';
 import { UsersModule } from '../users/users.module';
 import { OrdersController } from './api/orders.controller';
 import { OrderCreationService } from './application/order-creation.service';
+import { OrderReadService } from './application/order-read.service';
 import { OrderTransitionService } from './application/order-transition.service';
 import { OrderRepository } from './infrastructure/order.repository';
 
 /**
  * Order persistence, historical snapshots, creation (ORD-03 + COM-03 + DLU-02),
- * customer create HTTP (ORD-03A), and transitions (ORD-02). List/detail and
- * transition HTTP belong to ORD-04–ORD-06. Inventory tables are mutated only
- * through InventoryService contracts; pricing via OrderPricingService;
+ * customer create HTTP (ORD-03A), customer read HTTP (ORD-04), and transitions
+ * (ORD-02). Transition HTTP belongs to ORD-05/ORD-06. Inventory tables are
+ * mutated only through InventoryService contracts; pricing via OrderPricingService;
  * acceptance via CommercePolicyService.
  */
 @Module({
@@ -29,7 +30,17 @@ import { OrderRepository } from './infrastructure/order.repository';
     forwardRef(() => RegionsModule),
   ],
   controllers: [OrdersController],
-  providers: [OrderRepository, OrderCreationService, OrderTransitionService],
-  exports: [OrderRepository, OrderCreationService, OrderTransitionService],
+  providers: [
+    OrderRepository,
+    OrderCreationService,
+    OrderReadService,
+    OrderTransitionService,
+  ],
+  exports: [
+    OrderRepository,
+    OrderCreationService,
+    OrderReadService,
+    OrderTransitionService,
+  ],
 })
 export class OrdersModule {}

@@ -78,7 +78,14 @@ Application entry: `OrderCreationService.createOrder`.
 
 Customer HTTP (ORD-03A): `POST /api/v1/orders` (`Orders_create`).
 
+Customer read HTTP (ORD-04): `GET /api/v1/orders` (`Orders_list`) and `GET /api/v1/orders/:id` (`Orders_get`).
+
 - Authenticated `USER` only (`AccessTokenGuard` + `requireCustomerOwnerId`). Admin subjects receive `AUTH_FORBIDDEN`.
+- Owner scope derived exclusively from the authenticated principal — never from query/body/path beyond the order id.
+- List: CAT-01 pagination; optional `status`, inclusive `createdFrom`/`createdTo`; sort allowlist `createdAt`/`total`/`status` (default `createdAt` desc, stable `id` tie-break); no search; unknown query params rejected.
+- List items are summary snapshots (no line items). Detail returns persisted line snapshots and lifecycle timestamps; does not join current Product/Discount state.
+- Missing or other-owner detail → `ORDER_NOT_FOUND` (404), same shape. Wrong subject type → `AUTH_FORBIDDEN` (403).
+- Success responses use `Cache-Control: no-store`.
 - Body: `{ regionId, lines: [{ productId, quantity }] }` only. No `userId`, actor, phone, prices, names, discount ids, totals, status, or commerce-policy fields.
 - Header: required UUID `Idempotency-Key` (stable `IDEMPOTENCY_KEY_REQUIRED` / `IDEMPOTENCY_KEY_INVALID`).
 - Actor/userId bound from the authenticated principal only.
@@ -346,7 +353,7 @@ When profile/address support lands, Orders must snapshot address at creation —
 
 ## Module layout
 
-`src/modules/orders/` — domain types, money helpers, `OrderCreationService` (`createOrder`), `OrdersController` (`POST /orders`, ORD-03A), `OrderTransitionService` (confirm/cancel/ship/deliver), `OrderRepository` (`createWithTrustedSnapshots`, `findById`, `findOwnedById`, idempotency lookup/lock, closed conditional status updates). List/detail and transition HTTP in ORD-04–ORD-06. Orders imports Pricing + Inventory application contracts; Inventory must not import Orders.
+`src/modules/orders/` — domain types, money helpers, `OrderCreationService` (`createOrder`), `OrderReadService` (customer list/detail), `OrdersController` (`POST`/`GET /orders`, ORD-03A/ORD-04), `OrderTransitionService` (confirm/cancel/ship/deliver), `OrderRepository` (`createWithTrustedSnapshots`, `findById`, `findOwnedById`, `listOwned`, idempotency lookup/lock, closed conditional status updates). Transition HTTP in ORD-05/ORD-06. Orders imports Pricing + Inventory application contracts; Inventory must not import Orders.
 
 ## Related ADRs
 

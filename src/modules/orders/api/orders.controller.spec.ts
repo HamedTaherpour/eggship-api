@@ -1,8 +1,10 @@
 import { HttpStatus } from '@nestjs/common';
+import { OrderNotFoundError } from '../domain/order-errors';
 import { OrderActorType } from '../domain/order-actor';
 import { OrderStatus } from '../domain/order-status';
 import type { OrderRecord } from '../domain/order';
 import type { OrderCreationService } from '../application/order-creation.service';
+import type { OrderReadService } from '../application/order-read.service';
 import { OrdersController } from './orders.controller';
 import type { CreateOrderBodyDto } from './dto/create-order.dto';
 import { AuthSubjectType } from '../../auth/domain/subject-type';
@@ -74,15 +76,20 @@ function requestWithPrincipal(
 
 describe('OrdersController create (ORD-03A)', () => {
   let createOrder: jest.MockedFunction<OrderCreationService['createOrder']>;
+  let listOwned: jest.MockedFunction<OrderReadService['listOwned']>;
+  let getOwned: jest.MockedFunction<OrderReadService['getOwned']>;
   let controller: OrdersController;
   let statusCode: number | undefined;
   let response: Response;
 
   beforeEach(() => {
     createOrder = jest.fn();
-    controller = new OrdersController({
-      createOrder,
-    } as unknown as OrderCreationService);
+    listOwned = jest.fn();
+    getOwned = jest.fn();
+    controller = new OrdersController(
+      { createOrder } as unknown as OrderCreationService,
+      { listOwned, getOwned } as unknown as OrderReadService,
+    );
     statusCode = undefined;
     response = {
       setHeader: jest.fn(),
@@ -172,5 +179,117 @@ describe('OrdersController create (ORD-03A)', () => {
       ),
     ).rejects.toMatchObject({ code: 'AUTH_UNAUTHENTICATED' });
     expect(createOrder).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrdersController read (ORD-04)', () => {
+  let createOrder: jest.MockedFunction<OrderCreationService['createOrder']>;
+  let listOwned: jest.MockedFunction<OrderReadService['listOwned']>;
+  let getOwned: jest.MockedFunction<OrderReadService['getOwned']>;
+  let controller: OrdersController;
+
+  beforeEach(() => {
+    createOrder = jest.fn();
+    listOwned = jest.fn();
+    getOwned = jest.fn();
+    controller = new OrdersController(
+      { createOrder } as unknown as OrderCreationService,
+      { listOwned, getOwned } as unknown as OrderReadService,
+    );
+  });
+
+  const userPrincipal: AuthenticatedPrincipal = {
+    subjectId: USER_ID,
+    subjectType: AuthSubjectType.USER,
+    sessionId: '88888888-8888-4888-8888-888888888888',
+  };
+
+  it('lists owned orders for USER principal', async () => {
+    listOwned.mockResolvedValue({
+      data: [
+        {
+          id: ORDER_ID,
+          status: OrderStatus.PENDING_REVIEW,
+          regionId: REGION_ID,
+          regionName: 'Tehran',
+          total: 20_000n,
+          createdAt: new Date('2026-08-22T10:00:00.000Z'),
+        },
+      ],
+      meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+    });
+
+    const result = await controller.list(requestWithPrincipal(userPrincipal), {
+      page: 1,
+      pageSize: 20,
+      sortBy: 'createdAt',
+      sortOrder: 'desc',
+    });
+
+    expect(listOwned).toHaveBeenCalledWith(USER_ID, {
+      page: 1,
+      pageSize: 20,
+      sortBy: 'createdAt',
+      sortOrder: 'desc',
+    });
+    expect(result.data[0]).toMatchObject({
+      id: ORDER_ID,
+      regionName: 'Tehran',
+      total: 20_000,
+    });
+    expect(result.data[0]).not.toHaveProperty('userId');
+    expect(result.data[0]).not.toHaveProperty('lines');
+  });
+
+  it('returns owned order detail without internal fields', async () => {
+    getOwned.mockResolvedValue(orderRecord());
+
+    const result = await controller.get(
+      requestWithPrincipal(userPrincipal),
+      ORDER_ID,
+    );
+
+    expect(getOwned).toHaveBeenCalledWith(USER_ID, ORDER_ID);
+    expect(result.data.lines).toHaveLength(1);
+    expect(result.data).not.toHaveProperty('userId');
+    expect(result.data).not.toHaveProperty('idempotencyKey');
+    expect(result.data).not.toHaveProperty('cancelReason');
+    expect(result.data).toHaveProperty('confirmedAt');
+  });
+
+  it('rejects Admin principals on list before calling read service', async () => {
+    await expect(
+      controller.list(
+        requestWithPrincipal({
+          subjectId: ADMIN_ID,
+          subjectType: AuthSubjectType.ADMIN,
+          sessionId: '88888888-8888-4888-8888-888888888888',
+        }),
+        { page: 1, pageSize: 20, sortBy: 'createdAt', sortOrder: 'desc' },
+      ),
+    ).rejects.toMatchObject({ code: 'AUTH_FORBIDDEN' });
+    expect(listOwned).not.toHaveBeenCalled();
+  });
+
+  it('rejects Admin principals on detail before calling read service', async () => {
+    await expect(
+      controller.get(
+        requestWithPrincipal({
+          subjectId: ADMIN_ID,
+          subjectType: AuthSubjectType.ADMIN,
+          sessionId: '88888888-8888-4888-8888-888888888888',
+        }),
+        ORDER_ID,
+      ),
+    ).rejects.toMatchObject({ code: 'AUTH_FORBIDDEN' });
+    expect(getOwned).not.toHaveBeenCalled();
+  });
+
+  it('propagates ORDER_NOT_FOUND from read service', async () => {
+    getOwned.mockRejectedValue(new OrderNotFoundError());
+
+    await expect(
+      controller.get(requestWithPrincipal(userPrincipal), ORDER_ID),
+    ).rejects.toBeInstanceOf(OrderNotFoundError);
   });
 });

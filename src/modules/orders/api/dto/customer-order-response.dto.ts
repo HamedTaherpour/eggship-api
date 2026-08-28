@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { createPaginatedResponseDto } from '../../../../common/list';
 import type { AppliedDiscountSnapshot } from '../../../pricing/domain/discount-calculation';
 import type { OrderLineRecord, OrderRecord } from '../../domain/order';
+import type { OrderListRecord } from '../../domain/order-list';
 import { orderMoneyToJson } from '../../domain/order-money';
 
 /**
@@ -173,6 +175,90 @@ export class CreateOrderResponseDto {
   data!: CustomerOrderDto;
 }
 
+/** Summary row for owner-scoped order list (ORD-04). No line items. */
+export class CustomerOrderListItemDto {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({
+    enum: [
+      'PENDING_REVIEW',
+      'CONFIRMED',
+      'SHIPPED',
+      'DELIVERED',
+      'CANCELLED',
+      'RETURNED',
+    ],
+  })
+  status!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  regionId!: string;
+
+  @ApiProperty({ example: 'Tehran' })
+  regionName!: string;
+
+  @ApiProperty({
+    oneOf: [{ type: 'number' }, { type: 'string' }],
+    description: 'Immutable order total in integer Toman.',
+  })
+  total!: number | string;
+
+  @ApiProperty({ format: 'date-time' })
+  createdAt!: string;
+}
+
+export const CustomerOrderListResponseDto = createPaginatedResponseDto(
+  CustomerOrderListItemDto,
+  { name: 'CustomerOrderListResponseDto' },
+);
+
+/**
+ * Customer order detail (ORD-04): create snapshot fields plus lifecycle
+ * timestamps. Omits internal/admin fields and cancel metadata.
+ */
+export class CustomerOrderDetailDto extends CustomerOrderDto {
+  @ApiPropertyOptional({
+    format: 'date-time',
+    nullable: true,
+    description: 'Scheduled/expected delivery set at confirmation.',
+  })
+  deliveryAt!: string | null;
+
+  @ApiPropertyOptional({
+    format: 'date-time',
+    nullable: true,
+    description: 'First confirmation instant.',
+  })
+  confirmedAt!: string | null;
+
+  @ApiPropertyOptional({
+    format: 'date-time',
+    nullable: true,
+    description: 'First shipment instant.',
+  })
+  shippedAt!: string | null;
+
+  @ApiPropertyOptional({
+    format: 'date-time',
+    nullable: true,
+    description: 'First delivery instant.',
+  })
+  deliveredAt!: string | null;
+
+  @ApiPropertyOptional({
+    format: 'date-time',
+    nullable: true,
+    description: 'First cancellation instant.',
+  })
+  cancelledAt!: string | null;
+}
+
+export class CustomerOrderDetailResponseDto {
+  @ApiProperty({ type: CustomerOrderDetailDto })
+  data!: CustomerOrderDetailDto;
+}
+
 function toAppliedDiscountDto(
   snapshot: AppliedDiscountSnapshot | null,
 ): CustomerAppliedDiscountDto | null {
@@ -206,6 +292,10 @@ function toCustomerOrderLineDto(line: OrderLineRecord): CustomerOrderLineDto {
   };
 }
 
+function toOptionalInstant(value: Date | null): string | null {
+  return value === null ? null : value.toISOString();
+}
+
 export function toCustomerOrderDto(order: OrderRecord): CustomerOrderDto {
   return {
     id: order.id,
@@ -224,5 +314,31 @@ export function toCustomerOrderDto(order: OrderRecord): CustomerOrderDto {
     appliedOrderDiscount: toAppliedDiscountDto(order.appliedOrderDiscount),
     lines: order.lines.map(toCustomerOrderLineDto),
     createdAt: order.createdAt.toISOString(),
+  };
+}
+
+export function toCustomerOrderListItemDto(
+  order: OrderListRecord,
+): CustomerOrderListItemDto {
+  return {
+    id: order.id,
+    status: order.status,
+    regionId: order.regionId,
+    regionName: order.regionName,
+    total: orderMoneyToJson(order.total),
+    createdAt: order.createdAt.toISOString(),
+  };
+}
+
+export function toCustomerOrderDetailDto(
+  order: OrderRecord,
+): CustomerOrderDetailDto {
+  return {
+    ...toCustomerOrderDto(order),
+    deliveryAt: toOptionalInstant(order.deliveryAt),
+    confirmedAt: toOptionalInstant(order.confirmedAt),
+    shippedAt: toOptionalInstant(order.shippedAt),
+    deliveredAt: toOptionalInstant(order.deliveredAt),
+    cancelledAt: toOptionalInstant(order.cancelledAt),
   };
 }

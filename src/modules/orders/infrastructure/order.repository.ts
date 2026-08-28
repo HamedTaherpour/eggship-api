@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { toSkipTake, type PageResult } from '../../../common/list';
 import { Prisma } from '../../../generated/prisma/client';
 import {
   resolvePrismaConnection,
@@ -29,6 +30,11 @@ import type {
   OrderRecord,
   TrustedCreateOrderInput,
 } from '../domain/order';
+import type {
+  CustomerOrderSortField,
+  OrderListQuery,
+  OrderListRecord,
+} from '../domain/order-list';
 
 /** Advisory lock class for ORD-03 create idempotency (distinct from Inventory). */
 const ORDER_CREATE_IDEMPOTENCY_LOCK_CLASS = 120_400;
@@ -161,6 +167,44 @@ export class OrderRepository {
       },
     });
     return found === null ? null : mapOrder(found);
+  }
+
+  /**
+   * Owner-scoped paginated list for customer reads (ORD-04).
+   * Filters and sorts are validated before this boundary; userId is always
+   * applied in the query — never fetch-then-filter.
+   */
+  async listOwned(
+    userId: string,
+    query: OrderListQuery,
+  ): Promise<PageResult<OrderListRecord>> {
+    const ownerId = assertOrderUuid(userId, 'userId');
+    const where = buildOwnedListWhere(ownerId, query);
+    const { skip, take } = toSkipTake(query);
+    const orderBy = buildOwnedListOrderBy(query.sortBy, query.sortOrder);
+
+    const [total, rows] = await this.prisma.$transaction([
+      this.prisma.order.count({ where }),
+      this.prisma.order.findMany({
+        where,
+        orderBy,
+        skip,
+        take,
+        select: {
+          id: true,
+          status: true,
+          regionId: true,
+          regionName: true,
+          total: true,
+          createdAt: true,
+        },
+      }),
+    ]);
+
+    return {
+      items: rows.map(mapOrderListRecord),
+      total,
+    };
   }
 
   async findByUserIdAndIdempotencyKey(
@@ -689,4 +733,58 @@ function buildTransitionSql(
       throw new Error('Unsupported order transition: ' + String(exhaustive));
     }
   }
+}
+
+type OrderListRow = {
+  id: string;
+  status: string;
+  regionId: string;
+  regionName: string;
+  total: bigint;
+  createdAt: Date;
+};
+
+const SORT_FIELD_MAP: Record<
+  CustomerOrderSortField,
+  keyof Pick<OrderListRow, 'createdAt' | 'total' | 'status'>
+> = {
+  createdAt: 'createdAt',
+  total: 'total',
+  status: 'status',
+};
+
+function buildOwnedListWhere(
+  userId: string,
+  query: OrderListQuery,
+): Prisma.OrderWhereInput {
+  const where: Prisma.OrderWhereInput = { userId };
+  if (query.status !== undefined) {
+    where.status = query.status;
+  }
+  if (query.createdFrom !== undefined || query.createdTo !== undefined) {
+    where.createdAt = {
+      ...(query.createdFrom === undefined ? {} : { gte: query.createdFrom }),
+      ...(query.createdTo === undefined ? {} : { lte: query.createdTo }),
+    };
+  }
+  return where;
+}
+
+function buildOwnedListOrderBy(
+  sortBy: CustomerOrderSortField,
+  sortOrder: 'asc' | 'desc',
+): Prisma.OrderOrderByWithRelationInput[] {
+  const field = SORT_FIELD_MAP[sortBy];
+  return [{ [field]: sortOrder }, { id: 'asc' }];
+}
+
+function mapOrderListRecord(row: OrderListRow): OrderListRecord {
+  return {
+    id: row.id,
+    status: row.status as OrderListRecord['status'],
+    regionId: row.regionId,
+    regionName: row.regionName,
+    total: row.total,
+    createdAt: row.createdAt,
+  };
 }

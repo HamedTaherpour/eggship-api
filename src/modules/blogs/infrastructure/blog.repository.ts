@@ -56,25 +56,14 @@ export class BlogRepository {
     return found === null ? null : mapBlog(found);
   }
 
-  async list(query: BlogListQuery): Promise<PageResult<BlogRecord>> {
-    const where = buildWhere(query);
-    const { skip, take } = toSkipTake({
-      page: query.page,
-      pageSize: query.pageSize,
-    });
-    const orderField = SORT_FIELD_MAP[query.sortBy];
+  /** Public storefront list: published rows only. */
+  async listPublished(query: BlogListQuery): Promise<PageResult<BlogRecord>> {
+    return this.listWithWhere(query, publishedBlogWhere());
+  }
 
-    const [total, rows] = await this.prisma.$transaction([
-      this.prisma.blog.count({ where }),
-      this.prisma.blog.findMany({
-        where,
-        orderBy: [{ [orderField]: query.sortOrder }, { id: query.sortOrder }],
-        skip,
-        take,
-      }),
-    ]);
-
-    return { items: rows.map(mapBlog), total };
+  /** Unrestricted list for internal/admin callers (CNT-02). */
+  async listAll(query: BlogListQuery): Promise<PageResult<BlogRecord>> {
+    return this.listWithWhere(query, {});
   }
 
   /**
@@ -107,14 +96,37 @@ export class BlogRepository {
       throw error;
     }
   }
+
+  private async listWithWhere(
+    query: BlogListQuery,
+    visibility: Prisma.BlogWhereInput,
+  ): Promise<PageResult<BlogRecord>> {
+    const where = buildWhere(query, visibility);
+    const { skip, take } = toSkipTake({
+      page: query.page,
+      pageSize: query.pageSize,
+    });
+    const orderField = SORT_FIELD_MAP[query.sortBy];
+
+    const [total, rows] = await this.prisma.$transaction([
+      this.prisma.blog.count({ where }),
+      this.prisma.blog.findMany({
+        where,
+        orderBy: [{ [orderField]: query.sortOrder }, { id: query.sortOrder }],
+        skip,
+        take,
+      }),
+    ]);
+
+    return { items: rows.map(mapBlog), total };
+  }
 }
 
-function buildWhere(query: BlogListQuery): Prisma.BlogWhereInput {
-  const where: Prisma.BlogWhereInput = {};
-
-  if (query.publishedOnly === true) {
-    Object.assign(where, publishedBlogWhere());
-  }
+function buildWhere(
+  query: BlogListQuery,
+  visibility: Prisma.BlogWhereInput,
+): Prisma.BlogWhereInput {
+  const where: Prisma.BlogWhereInput = { ...visibility };
 
   if (query.search !== undefined) {
     where.title = { contains: query.search, mode: 'insensitive' };
@@ -123,11 +135,11 @@ function buildWhere(query: BlogListQuery): Prisma.BlogWhereInput {
   return where;
 }
 
-/** Exported for unit tests of list where mapping (Prisma-neutral intent). */
-export function buildBlogListWhereForTest(
+/** Exported for unit tests of published list where mapping (Prisma-neutral intent). */
+export function buildPublishedBlogListWhereForTest(
   query: BlogListQuery,
 ): Prisma.BlogWhereInput {
-  return buildWhere(query);
+  return buildWhere(query, publishedBlogWhere());
 }
 
 function mapBlog(row: PrismaBlog): BlogRecord {

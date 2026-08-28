@@ -133,6 +133,63 @@ describe('Blog persistence (integration)', () => {
     ).rejects.toThrow();
   });
 
+  it('rejects whitespace-only title and body on direct PostgreSQL writes', async () => {
+    await expect(
+      prisma.blog.create({
+        data: {
+          slug: 'whitespace-title',
+          title: '\t\n\r',
+          body: 'Body',
+          isPublished: false,
+        },
+      }),
+    ).rejects.toThrow();
+
+    await expect(
+      prisma.blog.create({
+        data: {
+          slug: 'whitespace-body',
+          title: 'Title',
+          body: ' \t\n\r ',
+          isPublished: false,
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('keeps listPublished fail-closed while listAll can see drafts', async () => {
+    const visible = await blogs.create({
+      slug: 'visible-post',
+      title: 'Visible packing',
+      body: 'Visible body',
+      isPublished: true,
+      publishedAt: new Date('2026-08-20T00:00:00.000Z'),
+    });
+    await blogs.create({
+      slug: 'hidden-draft',
+      title: 'Draft packing',
+      body: 'Draft body',
+      isPublished: false,
+    });
+
+    const publishedPage = await blogs.listPublished({
+      page: 1,
+      pageSize: 20,
+      sortBy: 'publishedAt',
+      sortOrder: 'desc',
+    });
+    expect(publishedPage.total).toBe(1);
+    expect(publishedPage.items.map((row) => row.id)).toEqual([visible.id]);
+
+    const allPage = await blogs.listAll({
+      page: 1,
+      pageSize: 20,
+      sortBy: 'publishedAt',
+      sortOrder: 'desc',
+    });
+    expect(allPage.total).toBe(2);
+  });
+
   it('hides drafts from public list, detail, search, and pagination totals', async () => {
     const visible = await blogs.create({
       slug: 'visible-post',

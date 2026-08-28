@@ -1,4 +1,5 @@
 import { BlogInvalidSlugError } from './blog-errors';
+import { blogTextCharLength } from './blog-text';
 
 /** Maximum stored length for Blog.slug (matches Prisma VarChar(120)). */
 export const BLOG_SLUG_MAX_LENGTH = 120;
@@ -20,7 +21,8 @@ export function normalizeBlogSlug(raw: string): string {
   }
 
   const slug = raw.trim().toLowerCase();
-  if (slug.length < 1 || slug.length > BLOG_SLUG_MAX_LENGTH) {
+  const length = blogTextCharLength(slug);
+  if (length < 1 || length > BLOG_SLUG_MAX_LENGTH) {
     throw new BlogInvalidSlugError(
       `Blog slug must be between 1 and ${BLOG_SLUG_MAX_LENGTH} characters after trimming.`,
     );

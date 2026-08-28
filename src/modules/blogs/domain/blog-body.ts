@@ -1,4 +1,5 @@
 import { BlogInvalidBodyError } from './blog-errors';
+import { blogTextCharLength } from './blog-text';
 
 /**
  * Maximum stored length for Blog.body (matches the SQL CHECK).
@@ -17,7 +18,8 @@ export function normalizeBlogBody(raw: string): string {
   }
 
   const body = raw.trim();
-  if (body.length < 1 || body.length > BLOG_BODY_MAX_LENGTH) {
+  const length = blogTextCharLength(body);
+  if (length < 1 || length > BLOG_BODY_MAX_LENGTH) {
     throw new BlogInvalidBodyError(
       `Blog body must be between 1 and ${BLOG_BODY_MAX_LENGTH} characters after trimming.`,
     );

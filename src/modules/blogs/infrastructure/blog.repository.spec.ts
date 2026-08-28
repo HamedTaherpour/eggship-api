@@ -1,25 +1,24 @@
 import type { BlogListQuery } from '../domain/blog';
 import { publishedBlogWhere } from '../domain/blog-publication';
-import { buildBlogListWhereForTest } from './blog.repository';
+import { buildPublishedBlogListWhereForTest } from './blog.repository';
 
 describe('BlogRepository query mapping', () => {
-  it('applies the shared published predicate and title-only search', () => {
+  it('always applies the shared published predicate and title-only search', () => {
     const query: BlogListQuery = {
       page: 1,
       pageSize: 20,
       search: 'egg',
       sortBy: 'publishedAt',
       sortOrder: 'desc',
-      publishedOnly: true,
     };
 
-    expect(buildBlogListWhereForTest(query)).toEqual({
+    expect(buildPublishedBlogListWhereForTest(query)).toEqual({
       ...publishedBlogWhere(),
       title: { contains: 'egg', mode: 'insensitive' },
     });
   });
 
-  it('does not search body and does not expose unpublished rows by default', () => {
+  it('does not search body through the published list mapper', () => {
     const query: BlogListQuery = {
       page: 1,
       pageSize: 20,
@@ -27,9 +26,8 @@ describe('BlogRepository query mapping', () => {
       sortOrder: 'asc',
     };
 
-    const where = buildBlogListWhereForTest(query);
-    expect(where).toEqual({});
+    const where = buildPublishedBlogListWhereForTest(query);
+    expect(where).toEqual(publishedBlogWhere());
     expect(where).not.toHaveProperty('body');
-    expect(where).not.toHaveProperty('isPublished');
   });
 });

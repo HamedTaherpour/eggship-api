@@ -30,9 +30,4 @@ export interface BlogListQuery {
   search?: string;
   sortBy: BlogSortField;
   sortOrder: 'asc' | 'desc';
-  /**
-   * When true, only published rows participate in list/count.
-   * Public storefront queries always set this.
-   */
-  publishedOnly?: boolean;
 }

@@ -28,6 +28,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- CNT-01 review follow-up: align Blog title/body length checks with PostgreSQL `char_length`, tighten DB whitespace-only guards (ASCII space/tab/LF/CR), and make public blog listing fail-closed via dedicated `listPublished` repository path.
+
 - ASY-02 verification: preserve outbox `correlationId` in BullMQ job envelopes by building the async envelope inside request context; harden dispatcher integration isolation and expand real PostgreSQL + Redis coverage for ordering, batch bounds, outage/recovery, lease reclaim, and published-event idempotency.
 
 - AUTH-10 completion: migrated all ten legacy cookie-based E2E suites to the real browser CSRF contract with customer/Admin namespace-aware bootstrap, matching token headers, allowed origins, preserved auth cookies, and regression coverage for Bearer independence.

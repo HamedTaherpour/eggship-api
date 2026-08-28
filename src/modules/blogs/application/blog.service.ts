@@ -26,13 +26,12 @@ export class BlogService {
   ): Promise<PaginatedResponse<BlogRecord>> {
     const pageRequest = resolvePageRequest(query);
     const sort = resolvePublicBlogSort(query);
-    const page = await this.blogs.list({
+    const page = await this.blogs.listPublished({
       page: pageRequest.page,
       pageSize: pageRequest.pageSize,
       search: query.search,
       sortBy: sort.sortBy,
       sortOrder: sort.sortOrder,
-      publishedOnly: true,
     });
     return toPaginatedResponse(page.items, pageRequest, page.total);
   }

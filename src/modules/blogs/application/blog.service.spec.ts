@@ -30,31 +30,33 @@ function blog(overrides: Partial<BlogRecord> = {}): BlogRecord {
 
 describe('BlogService', () => {
   let repository: jest.Mocked<
-    Pick<BlogRepository, 'list' | 'findPublishedBySlug'>
+    Pick<BlogRepository, 'listPublished' | 'findPublishedBySlug'>
   >;
   let service: BlogService;
 
   beforeEach(() => {
     repository = {
-      list: jest.fn(),
+      listPublished: jest.fn(),
       findPublishedBySlug: jest.fn(),
     };
     service = new BlogService(repository as unknown as BlogRepository);
   });
 
-  it('lists published posts and never asks for drafts', async () => {
+  it('lists published posts through the published-only repository path', async () => {
     const published = blog();
-    repository.list.mockResolvedValue({ items: [published], total: 1 });
+    repository.listPublished.mockResolvedValue({
+      items: [published],
+      total: 1,
+    });
 
     const page = await service.listPublic({ page: 1, pageSize: 20 });
 
-    expect(repository.list).toHaveBeenCalledWith({
+    expect(repository.listPublished).toHaveBeenCalledWith({
       page: 1,
       pageSize: 20,
       search: undefined,
       sortBy: 'publishedAt',
       sortOrder: 'desc',
-      publishedOnly: true,
     });
     expect(page.meta.total).toBe(1);
     expect(page.data.map((row) => row.id)).toEqual([PUBLISHED_ID]);

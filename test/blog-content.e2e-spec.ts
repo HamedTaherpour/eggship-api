@@ -1,4 +1,4 @@
-import type { Server } from 'node:http';
+﻿import type { Server } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -34,12 +34,29 @@ class InMemoryBlogRepository {
     return Promise.resolve(found ?? null);
   }
 
-  list(query: BlogListQuery): Promise<{
+  listPublished(query: BlogListQuery): Promise<{
+    items: BlogRecord[];
+    total: number;
+  }> {
+    return this.listWithVisibility(query, true);
+  }
+
+  listAll(query: BlogListQuery): Promise<{
+    items: BlogRecord[];
+    total: number;
+  }> {
+    return this.listWithVisibility(query, false);
+  }
+
+  private listWithVisibility(
+    query: BlogListQuery,
+    publishedOnly: boolean,
+  ): Promise<{
     items: BlogRecord[];
     total: number;
   }> {
     let items = [...this.rows.values()];
-    if (query.publishedOnly === true) {
+    if (publishedOnly) {
       items = items.filter((row) => isBlogPubliclyVisible(row));
     }
     if (query.search !== undefined) {

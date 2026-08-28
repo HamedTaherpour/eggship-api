@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   107 |
-| DONE        |    67 |
+| DONE        |    68 |
 | IN_PROGRESS |     0 |
-| READY       |     2 |
+| READY       |     1 |
 | BLOCKED     |     0 |
 | PLANNED     |    38 |
 
-- Current task: `REL-01` is closed. `REL-02` and `CNT-01` are READY. No task remains BLOCKED.
+- Current task: `REL-02` is closed. `CNT-01` is READY. No task remains BLOCKED.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate.
 
 ## Status model
@@ -1079,15 +1079,17 @@ Explicitly out of scope: Production provisioning.
 
 Verified: FND-07 delivered the integration harness, fail-closed guards, capability-aware suites (`postgres` / `redis` / `all`), CI disposable service containers, and destructive-test gates. REL-01 closed with PostgreSQL runtime/test target-equivalence hardening, approved environment-model documentation, future remote TEST contract, and live local verification against `eggship_test` / Redis `6380`.
 
-### REL-02 — Inventory and idempotency concurrency suites
+### REL-02 — Inventory and idempotency concurrency hardening
 
-Status: READY | Depends on: REL-01, INV-06, ORD-03, COM-03, DLU-02, SET-02 | Primary: Codex | Review: Claude/Cursor concurrency review
+Status: DONE | Depends on: REL-01, INV-06, ORD-03, COM-03, DLU-02, SET-02 | Primary: Codex | Review: Claude/Cursor concurrency review
 
-Scope: Build repeatable real-PostgreSQL races for inventory invariants, deterministic locking, order idempotency, commerce-policy updates, discount usage, settlement commands, duplicate cancellation, and retry behavior.
+Scope: Close the remaining deterministic cross-domain concurrency and idempotency proof gaps using the existing domain suites: intentional overlap, durable final-state equations, high-contention convergence, equivalent-key stock contention, policy snapshots, discount-plus-inventory consistency, cancellation release, serialization retry evidence, and lock-order/deadlock evidence.
 
 Acceptance criteria: Tests assert durable final state/ledger/history rather than only HTTP status and detect oversell, duplicate orders, deadlocks, or double release.
 
 Explicitly out of scope: Mocked concurrency claims.
+
+Delivered: Rebaselined around existing INV/ORD/COM/DLU/SET evidence rather than recreating it; added the bounded PostgreSQL-only `ConcurrencyGate` for deterministic actor release with timeout; strengthened limited-stock, reverse-SKU, same-key idempotency, divergent-payload, and equivalent-key order races with authoritative Order/OrderLine/InventoryReservation/InventoryLedger assertions; captured live `order.create.serialization_retry` evidence under 20-way distinct-key contention. Reused existing commerce-policy snapshot, discount-cap, concurrent cancellation, and settlement suites after review. Focused REL-02 PostgreSQL execution passed 60 tests against `localhost:5432/eggship_test`; the broader regression run reproduced the known unrelated notification ordering flake.
 
 ### REL-03 — k6 baseline and scenario harness
 

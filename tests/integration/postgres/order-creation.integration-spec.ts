@@ -47,6 +47,8 @@ import type { UserRecord } from '../../../src/modules/users/domain/user';
 import { UserRepository } from '../../../src/modules/users/infrastructure/user.repository';
 import { UsersModule } from '../../../src/modules/users/users.module';
 import { assertDestructiveOperationsAllowed } from '../support/integration-environment';
+import { ConcurrencyGate } from '../support/concurrency-gate';
+import { ApplicationLogger } from '../../../src/common/observability/application-logger.service';
 
 function uniquePhone(suffix: number): string {
   const national = `912${String(suffix).padStart(7, '0')}`.slice(0, 10);
@@ -73,6 +75,7 @@ describe('Order creation (integration)', () => {
   let creation: OrderCreationService;
   let commercePolicy: CommercePolicyService;
   let transactions: TransactionRunner;
+  let logger: ApplicationLogger;
   let phoneCounter = 0;
   let adminActorId: string;
 
@@ -103,6 +106,7 @@ describe('Order creation (integration)', () => {
     creation = moduleRef.get(OrderCreationService);
     commercePolicy = moduleRef.get(CommercePolicyService);
     transactions = moduleRef.get(TransactionRunner);
+    logger = moduleRef.get(ApplicationLogger);
     await app.init();
   });
 
@@ -229,15 +233,21 @@ describe('Order creation (integration)', () => {
   it('replays 20 concurrent identical creates as one Order / one reservation', async () => {
     const { user, regionId, productId } = await seedBase({ onHand: 50 });
     const idempotencyKey = randomUUID();
+    const gate = new ConcurrencyGate(20);
 
     const settled = await Promise.allSettled(
       Array.from({ length: 20 }, () =>
-        creation.createOrder({
-          actor: { type: OrderActorType.USER, id: user.id },
-          regionId,
-          idempotencyKey,
-          lines: [{ productId, quantity: 2 }],
-        }),
+        (async (): Promise<
+          Awaited<ReturnType<OrderCreationService['createOrder']>>
+        > => {
+          await gate.arriveAndWait();
+          return creation.createOrder({
+            actor: { type: OrderActorType.USER, id: user.id },
+            regionId,
+            idempotencyKey,
+            lines: [{ productId, quantity: 2 }],
+          });
+        })(),
       ),
     );
 
@@ -252,7 +262,18 @@ describe('Order creation (integration)', () => {
     );
     expect(orderIds.size).toBe(1);
     expect(await prisma.order.count()).toBe(1);
-    expect(await prisma.inventoryReservation.count()).toBe(1);
+    const orderId = [...orderIds][0]!;
+    expect(await prisma.orderLine.count({ where: { orderId } })).toBe(1);
+    expect(
+      await prisma.inventoryReservation.count({
+        where: { orderId, status: 'ACTIVE' },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.inventoryLedger.count({
+        where: { referenceId: orderId, type: 'RESERVE' },
+      }),
+    ).toBe(1);
     expect(await inventory.getBalance(productId)).toMatchObject({
       reserved: 2,
     });
@@ -275,20 +296,31 @@ describe('Order creation (integration)', () => {
       actor: SYSTEM_ACTOR,
     });
     const idempotencyKey = randomUUID();
+    const gate = new ConcurrencyGate(2);
 
     const settled = await Promise.allSettled([
-      creation.createOrder({
-        actor: { type: OrderActorType.USER, id: user.id },
-        regionId,
-        idempotencyKey,
-        lines: [{ productId, quantity: 1 }],
-      }),
-      creation.createOrder({
-        actor: { type: OrderActorType.USER, id: user.id },
-        regionId,
-        idempotencyKey,
-        lines: [{ productId: second.id, quantity: 1 }],
-      }),
+      (async (): Promise<
+        Awaited<ReturnType<OrderCreationService['createOrder']>>
+      > => {
+        await gate.arriveAndWait();
+        return creation.createOrder({
+          actor: { type: OrderActorType.USER, id: user.id },
+          regionId,
+          idempotencyKey,
+          lines: [{ productId, quantity: 1 }],
+        });
+      })(),
+      (async (): Promise<
+        Awaited<ReturnType<OrderCreationService['createOrder']>>
+      > => {
+        await gate.arriveAndWait();
+        return creation.createOrder({
+          actor: { type: OrderActorType.USER, id: user.id },
+          regionId,
+          idempotencyKey,
+          lines: [{ productId: second.id, quantity: 1 }],
+        });
+      })(),
     ]);
 
     const fulfilled = settled.filter((row) => row.status === 'fulfilled');
@@ -298,26 +330,50 @@ describe('Order creation (integration)', () => {
     expect(
       rejected[0]?.status === 'rejected' ? rejected[0].reason : null,
     ).toBeInstanceOf(OrderIdempotencyConflictError);
+    const winnerId =
+      fulfilled[0]?.status === 'fulfilled' ? fulfilled[0].value.order.id : '';
     expect(await prisma.order.count()).toBe(1);
+    expect(await prisma.orderLine.count({ where: { orderId: winnerId } })).toBe(
+      1,
+    );
+    expect(
+      await prisma.inventoryLedger.count({
+        where: { referenceId: winnerId, type: 'RESERVE' },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.inventoryReservation.count({ where: { orderId: winnerId } }),
+    ).toBe(1);
   });
 
   it('competing orders for a hot SKU respect available stock', async () => {
     const { user, regionId, productId } = await seedBase({ onHand: 5 });
     const other = await users.create({ phone: nextPhone() });
+    const gate = new ConcurrencyGate(2);
 
     const settled = await Promise.allSettled([
-      creation.createOrder({
-        actor: { type: OrderActorType.USER, id: user.id },
-        regionId,
-        idempotencyKey: randomUUID(),
-        lines: [{ productId, quantity: 4 }],
-      }),
-      creation.createOrder({
-        actor: { type: OrderActorType.USER, id: other.id },
-        regionId,
-        idempotencyKey: randomUUID(),
-        lines: [{ productId, quantity: 4 }],
-      }),
+      (async (): Promise<
+        Awaited<ReturnType<OrderCreationService['createOrder']>>
+      > => {
+        await gate.arriveAndWait();
+        return creation.createOrder({
+          actor: { type: OrderActorType.USER, id: user.id },
+          regionId,
+          idempotencyKey: randomUUID(),
+          lines: [{ productId, quantity: 4 }],
+        });
+      })(),
+      (async (): Promise<
+        Awaited<ReturnType<OrderCreationService['createOrder']>>
+      > => {
+        await gate.arriveAndWait();
+        return creation.createOrder({
+          actor: { type: OrderActorType.USER, id: other.id },
+          regionId,
+          idempotencyKey: randomUUID(),
+          lines: [{ productId, quantity: 4 }],
+        });
+      })(),
     ]);
 
     const ok = settled.filter((row) => row.status === 'fulfilled');
@@ -334,6 +390,38 @@ describe('Order creation (integration)', () => {
       reserved: 4,
     });
   });
+
+  it('records real PostgreSQL serialization retry evidence under equivalent-key contention', async () => {
+    const { regionId, productId } = await seedBase({ onHand: 20 });
+    const actors = await Promise.all(
+      Array.from({ length: 20 }, () => users.create({ phone: nextPhone() })),
+    );
+    const gate = new ConcurrencyGate(20);
+    const info = jest.spyOn(logger, 'info');
+
+    const outcomes = await Promise.allSettled(
+      actors.map(async (user) => {
+        await gate.arriveAndWait();
+        return creation.createOrder({
+          actor: { type: OrderActorType.USER, id: user.id },
+          regionId,
+          idempotencyKey: randomUUID(),
+          lines: [{ productId, quantity: 1 }],
+        });
+      }),
+    );
+
+    expect(outcomes.some((row) => row.status === 'fulfilled')).toBe(true);
+    expect(
+      info.mock.calls.some(
+        ([fields]) => fields.operation === 'order.create.serialization_retry',
+      ),
+    ).toBe(true);
+    expect((await inventory.getBalance(productId))!.reserved).toBe(
+      outcomes.filter((row) => row.status === 'fulfilled').length,
+    );
+    info.mockRestore();
+  }, 60_000);
 
   it('opens create work through TransactionRunner.runRepeatableRead', async () => {
     const { user, regionId, productId } = await seedBase();

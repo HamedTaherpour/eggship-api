@@ -137,6 +137,8 @@ Remote TEST may be used for local opt-in integration runs (`TEST_DATABASE_URL` /
 
 When domain modules exist, concurrency suites should use this foundation for cases such as inventory oversell prevention, refresh-token reuse under concurrent rotation, order idempotency-key races, discount usage limits, and BullMQ duplicate delivery with idempotent worker effects. Do not invent those business tests before their roadmap tasks.
 
+For PostgreSQL concurrency tests, use the test-only `tests/integration/support/concurrency-gate.ts` when intentional overlap must be established. Await `arriveAndWait()` immediately before the contended operation, keep actor counts bounded, and rely on the gate timeout rather than sleeps. The gate is coordination only; assertions must still inspect committed authoritative state.
+
 ### Future load testing
 
 Load testing is different from integration testing. Future load tests run against a deployed test/staging API. Do not add k6 until measurable flows exist and a roadmap task requires it.

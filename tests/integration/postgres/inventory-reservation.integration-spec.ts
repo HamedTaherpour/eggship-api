@@ -25,6 +25,7 @@ import { InventoryModule } from '../../../src/modules/inventory/inventory.module
 import { ProductService } from '../../../src/modules/products/application/product.service';
 import { ProductRepository } from '../../../src/modules/products/infrastructure/product.repository';
 import { assertDestructiveOperationsAllowed } from '../support/integration-environment';
+import { ConcurrencyGate } from '../support/concurrency-gate';
 
 async function truncateInventoryTables(prisma: PrismaService): Promise<void> {
   assertDestructiveOperationsAllowed();
@@ -214,13 +215,19 @@ describe('Inventory reservation and release (integration)', () => {
 
   it('lets exactly 10 of 20 distinct buyers reserve qty 1 from 10 onHand', async () => {
     const productId = await stockProduct(10);
+    const gate = new ConcurrencyGate(20);
     const outcomes = await Promise.allSettled(
       Array.from({ length: 20 }, () =>
-        inventory.reserveForOrder({
-          orderId: randomUUID(),
-          lines: [{ productId, quantity: 1 }],
-          actor: SYSTEM_ACTOR,
-        }),
+        (async (): Promise<
+          Awaited<ReturnType<InventoryService['reserveForOrder']>>
+        > => {
+          await gate.arriveAndWait();
+          return inventory.reserveForOrder({
+            orderId: randomUUID(),
+            lines: [{ productId, quantity: 1 }],
+            actor: SYSTEM_ACTOR,
+          });
+        })(),
       ),
     );
 
@@ -352,24 +359,35 @@ describe('Inventory reservation and release (integration)', () => {
   it('does not deadlock when two orders reserve the same SKUs in reverse input order', async () => {
     const first = await stockProduct(5);
     const second = await stockProduct(5);
+    const gate = new ConcurrencyGate(2);
 
     const [orderA, orderB] = await Promise.all([
-      inventory.reserveForOrder({
-        orderId: randomUUID(),
-        lines: [
-          { productId: first, quantity: 1 },
-          { productId: second, quantity: 1 },
-        ],
-        actor: SYSTEM_ACTOR,
-      }),
-      inventory.reserveForOrder({
-        orderId: randomUUID(),
-        lines: [
-          { productId: second, quantity: 1 },
-          { productId: first, quantity: 1 },
-        ],
-        actor: SYSTEM_ACTOR,
-      }),
+      (async (): Promise<
+        Awaited<ReturnType<InventoryService['reserveForOrder']>>
+      > => {
+        await gate.arriveAndWait();
+        return inventory.reserveForOrder({
+          orderId: randomUUID(),
+          lines: [
+            { productId: first, quantity: 1 },
+            { productId: second, quantity: 1 },
+          ],
+          actor: SYSTEM_ACTOR,
+        });
+      })(),
+      (async (): Promise<
+        Awaited<ReturnType<InventoryService['reserveForOrder']>>
+      > => {
+        await gate.arriveAndWait();
+        return inventory.reserveForOrder({
+          orderId: randomUUID(),
+          lines: [
+            { productId: second, quantity: 1 },
+            { productId: first, quantity: 1 },
+          ],
+          actor: SYSTEM_ACTOR,
+        });
+      })(),
     ]);
 
     expect(orderA.lines).toHaveLength(2);

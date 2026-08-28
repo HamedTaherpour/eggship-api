@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Closed REL-02 with deterministic real-PostgreSQL concurrency coordination and durable inventory/order idempotency assertions.
+
 ### Added
 
 - REL-01 real PostgreSQL and Redis test environments: closed FND-07 overlap with PostgreSQL runtime/test target-equivalence guards, documented the approved local/CI/remote TEST environment model, capability-aware integration suites, and future remote TEST contract. No Liara provisioning.

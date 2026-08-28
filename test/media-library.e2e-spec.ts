@@ -17,6 +17,11 @@ import { PrismaService } from '../src/infrastructure/database/prisma/prisma.serv
 import { InMemoryStorageProvider } from '../src/infrastructure/storage/in-memory-storage.provider';
 import { STORAGE_PROVIDER } from '../src/infrastructure/storage/storage.tokens';
 import { AuthSubjectType } from '../src/modules/auth/domain/subject-type';
+import {
+  bootstrapBrowserCsrf,
+  browserRequest,
+  type BrowserCsrfSession,
+} from './helpers/csrf-browser';
 import type {
   CreateMediaInput,
   MediaListQuery,
@@ -164,6 +169,7 @@ function asApiErrorBody(body: unknown): ApiErrorBody {
 
 describe('Admin Media Library APIs (e2e)', () => {
   let app: INestApplication;
+  let csrf: BrowserCsrfSession;
   let media: InMemoryMediaRepository;
   let storage: InMemoryStorageProvider;
   let admins: ConfigurableAdminRoleResolver;
@@ -198,6 +204,10 @@ describe('Admin Media Library APIs (e2e)', () => {
     await app.close();
   });
 
+  beforeEach(async () => {
+    csrf = await bootstrapBrowserCsrf(server(), 'admin');
+  });
+
   beforeEach(() => {
     media.clear();
     storage.clearForTest();
@@ -214,7 +224,10 @@ describe('Admin Media Library APIs (e2e)', () => {
   }
 
   it('rejects unauthenticated, USER, and insufficient Admin permission', async () => {
-    await request(server()).post('/api/v1/admin/media/upload').expect(401);
+    await browserRequest(
+      request(server()).post('/api/v1/admin/media/upload'),
+      csrf,
+    ).expect(401);
 
     const userToken = signAccessToken(AuthSubjectType.USER);
     const userDenied = await request(server())

@@ -15,6 +15,11 @@ import { OrderTransitionService } from '../src/modules/orders/application/order-
 import type { OrderRecord } from '../src/modules/orders/domain/order';
 import { OrderNotFoundError } from '../src/modules/orders/domain/order-errors';
 import { OrderStatus } from '../src/modules/orders/domain/order-status';
+import {
+  bootstrapBrowserCsrf,
+  browserRequest,
+  type BrowserCsrfSession,
+} from './helpers/csrf-browser';
 
 const ORDER_ID = '55555555-5555-4555-8555-555555555555';
 const USER_ID = '11111111-1111-4111-8111-111111111111';
@@ -111,6 +116,7 @@ describe('Orders cancellation HTTP (ORD-05, e2e)', () => {
   let app: INestApplication;
   let server: Server;
   let fakeTransitions: FakeOrderTransitionService;
+  let csrf: BrowserCsrfSession;
 
   beforeAll(async () => {
     fakeTransitions = new FakeOrderTransitionService();
@@ -137,9 +143,15 @@ describe('Orders cancellation HTTP (ORD-05, e2e)', () => {
     await app.close();
   });
 
+  beforeEach(async () => {
+    csrf = await bootstrapBrowserCsrf(server);
+  });
+
   it('rejects unauthenticated cancellation', async () => {
-    const response = await request(server)
-      .post(`/api/v1/orders/${ORDER_ID}/cancel`)
+    const response = await browserRequest(
+      request(server).post(`/api/v1/orders/${ORDER_ID}/cancel`),
+      csrf,
+    )
       .send({})
       .expect(401);
 

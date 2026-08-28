@@ -8,6 +8,11 @@ import { AppModule } from '../src/app.module';
 import { configureApplication } from '../src/app.setup';
 import { PrismaService } from '../src/infrastructure/database/prisma/prisma.service';
 import { AuthSubjectType } from '../src/modules/auth/domain/subject-type';
+import {
+  bootstrapBrowserCsrf,
+  browserRequest,
+  type BrowserCsrfSession,
+} from './helpers/csrf-browser';
 
 /**
  * USER / ADMIN subject separation at the HTTP boundary.
@@ -34,6 +39,7 @@ function signAccessToken(subjectType: AuthSubjectType): string {
 
 describe('USER / ADMIN subject separation (e2e)', () => {
   let app: INestApplication;
+  let csrf: BrowserCsrfSession;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -53,6 +59,10 @@ describe('USER / ADMIN subject separation (e2e)', () => {
 
   afterAll(async () => {
     await app.close();
+  });
+
+  beforeEach(async () => {
+    csrf = await bootstrapBrowserCsrf(server());
   });
 
   function server(): Server {
@@ -82,7 +92,10 @@ describe('USER / ADMIN subject separation (e2e)', () => {
     });
 
     it('rejects an anonymous logout-all', async () => {
-      await request(server()).post('/api/v1/auth/logout-all').expect(401);
+      await browserRequest(
+        request(server()).post('/api/v1/auth/logout-all'),
+        csrf,
+      ).expect(401);
     });
   });
 

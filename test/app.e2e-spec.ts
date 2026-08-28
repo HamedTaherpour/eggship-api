@@ -20,6 +20,7 @@ import { LOG_DESTINATION } from '../src/common/observability/application-logger.
 import { RequestContextService } from '../src/common/observability/request-context.service';
 import { PrismaService } from '../src/infrastructure/database/prisma/prisma.service';
 import { RedisService } from '../src/infrastructure/redis/redis.service';
+import { bootstrapBrowserCsrf, browserRequest } from './helpers/csrf-browser';
 
 class FoundationInputDto {
   @IsString()
@@ -159,16 +160,22 @@ describe('application foundation (e2e)', () => {
   });
 
   it('transforms explicitly decorated DTO fields', async () => {
-    await request(app.getHttpServer() as Server)
-      .post('/api/v1/foundation-audit')
+    const csrf = await bootstrapBrowserCsrf(app.getHttpServer() as Server);
+    await browserRequest(
+      request(app.getHttpServer() as Server).post('/api/v1/foundation-audit'),
+      csrf,
+    )
       .send({ name: 'shipment', count: '2' })
       .expect(201)
       .expect({ data: { name: 'shipment', count: 2 } });
   });
 
   it('rejects non-whitelisted request properties with structured details', async () => {
-    const response = await request(app.getHttpServer() as Server)
-      .post('/api/v1/foundation-audit')
+    const csrf = await bootstrapBrowserCsrf(app.getHttpServer() as Server);
+    const response = await browserRequest(
+      request(app.getHttpServer() as Server).post('/api/v1/foundation-audit'),
+      csrf,
+    )
       .set('x-request-id', 'req_validation')
       .send({ name: 'shipment', count: 2, unexpected: true })
       .expect(400);

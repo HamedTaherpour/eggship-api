@@ -39,6 +39,11 @@ import type {
   UserRecord,
 } from '../src/modules/users/domain/user';
 import { UserRepository } from '../src/modules/users/infrastructure/user.repository';
+import {
+  bootstrapBrowserCsrf,
+  browserRequest,
+  type BrowserCsrfSession,
+} from './helpers/csrf-browser';
 
 class InMemoryUserRepository {
   readonly users = new Map<string, UserRecord>();
@@ -328,6 +333,7 @@ describe('auth complete + current user (e2e)', () => {
   let sessions: InMemoryAuthSessionRepository;
   let otpStore: MemoryOtpStore;
   let grantStore: MemoryGrantStore;
+  let csrf: BrowserCsrfSession;
 
   beforeAll(async () => {
     users = new InMemoryUserRepository();
@@ -364,6 +370,10 @@ describe('auth complete + current user (e2e)', () => {
     await app.close();
   });
 
+  beforeEach(async () => {
+    csrf = await bootstrapBrowserCsrf(app.getHttpServer() as Server);
+  });
+
   afterEach(() => {
     users.clear();
     sessions.clear();
@@ -377,16 +387,20 @@ describe('auth complete + current user (e2e)', () => {
   });
 
   async function requestAndVerify(phone: string): Promise<string> {
-    const requestResponse = await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/otp/request')
+    const requestResponse = await browserRequest(
+      request(app.getHttpServer() as Server).post('/api/v1/auth/otp/request'),
+      csrf,
+    )
       .send({ phone })
       .expect(200);
     const challengeId = (
       requestResponse.body as { data: { challengeId: string } }
     ).data.challengeId;
 
-    const verifyResponse = await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/otp/verify')
+    const verifyResponse = await browserRequest(
+      request(app.getHttpServer() as Server).post('/api/v1/auth/otp/verify'),
+      csrf,
+    )
       .send({ challengeId, code: '111111' })
       .expect(200);
 
@@ -398,8 +412,10 @@ describe('auth complete + current user (e2e)', () => {
     const phone = '09121112233';
     const grantId = await requestAndVerify(phone);
 
-    const complete = await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/complete')
+    const complete = await browserRequest(
+      request(app.getHttpServer() as Server).post('/api/v1/auth/complete'),
+      csrf,
+    )
       .send({ verificationGrantId: grantId })
       .expect(200);
 
@@ -478,8 +494,10 @@ describe('auth complete + current user (e2e)', () => {
     });
 
     const grantId = await requestAndVerify('09133344455');
-    const complete = await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/complete')
+    const complete = await browserRequest(
+      request(app.getHttpServer() as Server).post('/api/v1/auth/complete'),
+      csrf,
+    )
       .send({ verificationGrantId: grantId })
       .expect(200);
 
@@ -491,8 +509,10 @@ describe('auth complete + current user (e2e)', () => {
   });
 
   it('rejects invalid, used, and inactive-user completions', async () => {
-    await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/complete')
+    await browserRequest(
+      request(app.getHttpServer() as Server).post('/api/v1/auth/complete'),
+      csrf,
+    )
       .send({ verificationGrantId: randomUUID() })
       .expect(401)
       .expect((res) => {
@@ -502,12 +522,16 @@ describe('auth complete + current user (e2e)', () => {
       });
 
     const grantId = await requestAndVerify('09125556677');
-    await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/complete')
+    await browserRequest(
+      request(app.getHttpServer() as Server).post('/api/v1/auth/complete'),
+      csrf,
+    )
       .send({ verificationGrantId: grantId })
       .expect(200);
-    await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/complete')
+    await browserRequest(
+      request(app.getHttpServer() as Server).post('/api/v1/auth/complete'),
+      csrf,
+    )
       .send({ verificationGrantId: grantId })
       .expect(401)
       .expect((res) => {
@@ -525,8 +549,10 @@ describe('auth complete + current user (e2e)', () => {
       updatedAt: new Date(),
     });
     const inactiveGrant = await requestAndVerify('09166677788');
-    await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/complete')
+    await browserRequest(
+      request(app.getHttpServer() as Server).post('/api/v1/auth/complete'),
+      csrf,
+    )
       .send({ verificationGrantId: inactiveGrant })
       .expect(403)
       .expect((res) => {
@@ -538,8 +564,10 @@ describe('auth complete + current user (e2e)', () => {
 
   it('rejects unknown profile fields and accepts empty PATCH allowlist', async () => {
     const grantId = await requestAndVerify('09127778899');
-    const complete = await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/complete')
+    const complete = await browserRequest(
+      request(app.getHttpServer() as Server).post('/api/v1/auth/complete'),
+      csrf,
+    )
       .send({ verificationGrantId: grantId })
       .expect(200);
     const access = cookieValue(
@@ -547,21 +575,19 @@ describe('auth complete + current user (e2e)', () => {
       ACCESS_TOKEN_COOKIE_NAME,
     );
 
-    await request(app.getHttpServer() as Server)
-      .patch('/api/v1/users/me')
-      .set(
-        'Cookie',
-        `${ACCESS_TOKEN_COOKIE_NAME}=${encodeURIComponent(access!)}`,
-      )
+    await browserRequest(
+      request(app.getHttpServer() as Server).patch('/api/v1/users/me'),
+      csrf,
+      [`${ACCESS_TOKEN_COOKIE_NAME}=${encodeURIComponent(access!)}`],
+    )
       .send({ storeName: 'forbidden' })
       .expect(400);
 
-    await request(app.getHttpServer() as Server)
-      .patch('/api/v1/users/me')
-      .set(
-        'Cookie',
-        `${ACCESS_TOKEN_COOKIE_NAME}=${encodeURIComponent(access!)}`,
-      )
+    await browserRequest(
+      request(app.getHttpServer() as Server).patch('/api/v1/users/me'),
+      csrf,
+      [`${ACCESS_TOKEN_COOKIE_NAME}=${encodeURIComponent(access!)}`],
+    )
       .send({})
       .expect(200)
       .expect((res) => {
@@ -573,8 +599,10 @@ describe('auth complete + current user (e2e)', () => {
 
   it('rejects complete bodies that include phone', async () => {
     const grantId = await requestAndVerify('09128889900');
-    await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/complete')
+    await browserRequest(
+      request(app.getHttpServer() as Server).post('/api/v1/auth/complete'),
+      csrf,
+    )
       .send({ verificationGrantId: grantId, phone: '+989128889900' })
       .expect(400);
   });

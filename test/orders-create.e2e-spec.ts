@@ -30,6 +30,11 @@ import {
   OrderMinimumQuantityNotMetError,
 } from '../src/modules/commerce-policy/domain/commerce-policy-errors';
 import { InventoryInsufficientStockError } from '../src/modules/inventory/domain/inventory-errors';
+import {
+  bootstrapBrowserCsrf,
+  browserRequest,
+  type BrowserCsrfSession,
+} from './helpers/csrf-browser';
 
 const REGION_ID = '33333333-3333-4333-8333-333333333333';
 const PRODUCT_ID = '44444444-4444-4444-8444-444444444444';
@@ -130,6 +135,7 @@ describe('Orders create HTTP (ORD-03A, e2e)', () => {
   let server: Server;
   let fakeCreation: FakeOrderCreationService;
   let userId: string;
+  let csrf: BrowserCsrfSession;
 
   beforeAll(async () => {
     fakeCreation = new FakeOrderCreationService();
@@ -150,9 +156,10 @@ describe('Orders create HTTP (ORD-03A, e2e)', () => {
     server = app.getHttpServer() as Server;
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     fakeCreation.reset();
     userId = randomUUID();
+    csrf = await bootstrapBrowserCsrf(server);
   });
 
   afterAll(async () => {
@@ -170,8 +177,10 @@ describe('Orders create HTTP (ORD-03A, e2e)', () => {
   }
 
   it('rejects unauthenticated create', async () => {
-    const response = await request(server)
-      .post('/api/v1/orders')
+    const response = await browserRequest(
+      request(server).post('/api/v1/orders'),
+      csrf,
+    )
       .set('Idempotency-Key', randomUUID())
       .send(createBody())
       .expect(401);

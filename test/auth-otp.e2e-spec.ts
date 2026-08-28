@@ -2,6 +2,7 @@ import type { Server } from 'node:http';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
+import type { Test as SupertestTest } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApplication } from '../src/app.setup';
 import { PrismaService } from '../src/infrastructure/database/prisma/prisma.service';
@@ -26,6 +27,11 @@ import type {
 } from '../src/modules/auth/domain/otp-verification-grant';
 import { AuthSessionRepository } from '../src/modules/auth/infrastructure/auth-session.repository';
 import { UserRepository } from '../src/modules/users/infrastructure/user.repository';
+import {
+  bootstrapBrowserCsrf,
+  browserRequest,
+  type BrowserCsrfSession,
+} from './helpers/csrf-browser';
 
 class MemoryOtpStore implements OtpStore {
   challenges = new Map<
@@ -263,6 +269,7 @@ function asApiErrorBody(body: unknown): ApiErrorBody {
 describe('auth OTP HTTP (e2e)', () => {
   let app: INestApplication;
   let otpStore: MemoryOtpStore;
+  let csrf: BrowserCsrfSession;
   let grantStore: MemoryGrantStore;
   const uniquePhone = (): string => `0912${String(Date.now()).slice(-7)}`;
 
@@ -303,6 +310,17 @@ describe('auth OTP HTTP (e2e)', () => {
     await app.close();
   });
 
+  beforeEach(async () => {
+    csrf = await bootstrapBrowserCsrf(app.getHttpServer() as Server);
+  });
+
+  function browserPost(path: string): SupertestTest {
+    return browserRequest(
+      request(app.getHttpServer() as Server).post(path),
+      csrf,
+    );
+  }
+
   afterEach(() => {
     otpStore.challenges.clear();
     otpStore.consumed.clear();
@@ -315,8 +333,7 @@ describe('auth OTP HTTP (e2e)', () => {
 
   it('requests OTP for a valid phone without echoing the code', async () => {
     const phone = uniquePhone();
-    const response = await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/otp/request')
+    const response = await browserPost('/api/v1/auth/otp/request')
       .send({ phone })
       .expect(200);
 
@@ -332,8 +349,7 @@ describe('auth OTP HTTP (e2e)', () => {
   });
 
   it('normalizes alternative Iranian phone formats', async () => {
-    const response = await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/otp/request')
+    const response = await browserPost('/api/v1/auth/otp/request')
       .send({ phone: '+98 912 123 4567' })
       .expect(200);
 
@@ -343,26 +359,22 @@ describe('auth OTP HTTP (e2e)', () => {
   });
 
   it('rejects invalid phones and excess fields', async () => {
-    await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/otp/request')
+    await browserPost('/api/v1/auth/otp/request')
       .send({ phone: '02112345678' })
       .expect(400);
 
-    await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/otp/request')
+    await browserPost('/api/v1/auth/otp/request')
       .send({ phone: '09121234567', extra: true })
       .expect(400);
   });
 
   it('verifies the development code and returns a grant without phone', async () => {
-    const requestResponse = await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/otp/request')
+    const requestResponse = await browserPost('/api/v1/auth/otp/request')
       .send({ phone: uniquePhone() })
       .expect(200);
     const challengeId = asOtpRequestBody(requestResponse.body).data.challengeId;
 
-    const verify = await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/otp/verify')
+    const verify = await browserPost('/api/v1/auth/otp/verify')
       .send({
         challengeId,
         code: '111111',
@@ -382,14 +394,12 @@ describe('auth OTP HTTP (e2e)', () => {
   });
 
   it('rejects wrong codes and unknown challenges', async () => {
-    const requestResponse = await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/otp/request')
+    const requestResponse = await browserPost('/api/v1/auth/otp/request')
       .send({ phone: uniquePhone() })
       .expect(200);
     const challengeId = asOtpRequestBody(requestResponse.body).data.challengeId;
 
-    const wrong = await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/otp/verify')
+    const wrong = await browserPost('/api/v1/auth/otp/verify')
       .send({
         challengeId,
         code: '000000',
@@ -397,8 +407,7 @@ describe('auth OTP HTTP (e2e)', () => {
       .expect(401);
     expect(asApiErrorBody(wrong.body).error.code).toBe('AUTH_OTP_INVALID');
 
-    const missing = await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/otp/verify')
+    const missing = await browserPost('/api/v1/auth/otp/verify')
       .send({
         challengeId: '11111111-1111-4111-8111-111111111111',
         code: '111111',
@@ -408,15 +417,13 @@ describe('auth OTP HTTP (e2e)', () => {
   });
 
   it('rejects expired challenges', async () => {
-    const requestResponse = await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/otp/request')
+    const requestResponse = await browserPost('/api/v1/auth/otp/request')
       .send({ phone: uniquePhone() })
       .expect(200);
     const challengeId = asOtpRequestBody(requestResponse.body).data.challengeId;
     otpStore.expireChallenge(challengeId);
 
-    const response = await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/otp/verify')
+    const response = await browserPost('/api/v1/auth/otp/verify')
       .send({ challengeId, code: '111111' })
       .expect(401);
     expect(asApiErrorBody(response.body).error.code).toBe('AUTH_OTP_EXPIRED');
@@ -424,13 +431,9 @@ describe('auth OTP HTTP (e2e)', () => {
 
   it('returns cooldown with Retry-After and does not leak account existence', async () => {
     const phone = uniquePhone();
-    await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/otp/request')
-      .send({ phone })
-      .expect(200);
+    await browserPost('/api/v1/auth/otp/request').send({ phone }).expect(200);
 
-    const cooldown = await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/otp/request')
+    const cooldown = await browserPost('/api/v1/auth/otp/request')
       .send({ phone })
       .expect(429);
 
@@ -448,14 +451,12 @@ describe('auth OTP HTTP (e2e)', () => {
   });
 
   it('rejects whitespace-padded OTP codes at the HTTP boundary', async () => {
-    const requestResponse = await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/otp/request')
+    const requestResponse = await browserPost('/api/v1/auth/otp/request')
       .send({ phone: uniquePhone() })
       .expect(200);
     const challengeId = asOtpRequestBody(requestResponse.body).data.challengeId;
 
-    await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/otp/verify')
+    await browserPost('/api/v1/auth/otp/verify')
       .send({
         challengeId,
         code: '111111 ',

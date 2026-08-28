@@ -23,6 +23,11 @@ import type {
   UserRecord,
 } from '../src/modules/users/domain/user';
 import { UserRepository } from '../src/modules/users/infrastructure/user.repository';
+import {
+  bootstrapBrowserCsrf,
+  browserRequest,
+  type BrowserCsrfSession,
+} from './helpers/csrf-browser';
 
 class InMemoryUserRepository {
   private readonly users = new Map<string, UserRecord>();
@@ -226,6 +231,7 @@ describe('auth session lifecycle (e2e)', () => {
   let users: InMemoryUserRepository;
   let sessions: InMemoryAuthSessionRepository;
   let refreshTokens: RefreshTokenService;
+  let csrf: BrowserCsrfSession;
 
   beforeAll(async () => {
     users = new InMemoryUserRepository();
@@ -282,9 +288,11 @@ describe('auth session lifecycle (e2e)', () => {
   }
 
   it('rejects refresh without a refresh cookie', async () => {
-    const response = await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/refresh')
-      .expect(401);
+    csrf = await bootstrapBrowserCsrf(app.getHttpServer() as Server);
+    const response = await browserRequest(
+      request(app.getHttpServer() as Server).post('/api/v1/auth/refresh'),
+      csrf,
+    ).expect(401);
 
     expect(response.body).toMatchObject({
       error: { code: 'AUTH_REFRESH_TOKEN_MISSING' },
@@ -295,14 +303,15 @@ describe('auth session lifecycle (e2e)', () => {
 
   it('refreshes successfully and sets new AT/RT cookies', async () => {
     const seeded = await seedSession();
+    csrf = await bootstrapBrowserCsrf(app.getHttpServer() as Server);
 
-    const response = await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/refresh')
-      .set(
-        'Cookie',
+    const response = await browserRequest(
+      request(app.getHttpServer() as Server).post('/api/v1/auth/refresh'),
+      csrf,
+      [
         `${REFRESH_TOKEN_COOKIE_NAME}=${encodeURIComponent(seeded.refreshToken)}`,
-      )
-      .expect(200);
+      ],
+    ).expect(200);
 
     expect(response.body).toEqual({ data: { authenticated: true } });
     expect(response.headers['cache-control']).toBe('no-store');
@@ -319,57 +328,60 @@ describe('auth session lifecycle (e2e)', () => {
 
   it('logout clears cookies and is idempotent', async () => {
     const seeded = await seedSession();
-    const refreshResponse = await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/refresh')
-      .set(
-        'Cookie',
+    csrf = await bootstrapBrowserCsrf(app.getHttpServer() as Server);
+    const refreshResponse = await browserRequest(
+      request(app.getHttpServer() as Server).post('/api/v1/auth/refresh'),
+      csrf,
+      [
         `${REFRESH_TOKEN_COOKIE_NAME}=${encodeURIComponent(seeded.refreshToken)}`,
-      )
-      .expect(200);
+      ],
+    ).expect(200);
     const setCookie = refreshResponse.headers['set-cookie'];
     const access = cookieValue(setCookie, ACCESS_TOKEN_COOKIE_NAME);
     const refresh = cookieValue(setCookie, REFRESH_TOKEN_COOKIE_NAME);
 
-    const logout = await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/logout')
-      .set(
-        'Cookie',
-        `${ACCESS_TOKEN_COOKIE_NAME}=${encodeURIComponent(access ?? '')}; ${REFRESH_TOKEN_COOKIE_NAME}=${encodeURIComponent(refresh ?? '')}`,
-      )
-      .expect(200);
+    const logout = await browserRequest(
+      request(app.getHttpServer() as Server).post('/api/v1/auth/logout'),
+      csrf,
+      [
+        `${ACCESS_TOKEN_COOKIE_NAME}=${encodeURIComponent(access ?? '')}`,
+        `${REFRESH_TOKEN_COOKIE_NAME}=${encodeURIComponent(refresh ?? '')}`,
+      ],
+    ).expect(200);
 
     expect(logout.body).toEqual({ data: { authenticated: false } });
     const cleared = asCookieHeaders(logout.headers['set-cookie']);
     expect(cleared.some((value) => value.includes('Max-Age=0'))).toBe(true);
 
-    await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/logout')
-      .expect(200);
+    await browserRequest(
+      request(app.getHttpServer() as Server).post('/api/v1/auth/logout'),
+      csrf,
+    ).expect(200);
   });
 
   it('logout-all requires authentication and clears cookies', async () => {
-    await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/logout-all')
-      .expect(401);
+    csrf = await bootstrapBrowserCsrf(app.getHttpServer() as Server);
+    await browserRequest(
+      request(app.getHttpServer() as Server).post('/api/v1/auth/logout-all'),
+      csrf,
+    ).expect(401);
 
     const seeded = await seedSession();
-    const refreshResponse = await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/refresh')
-      .set(
-        'Cookie',
+    const refreshResponse = await browserRequest(
+      request(app.getHttpServer() as Server).post('/api/v1/auth/refresh'),
+      csrf,
+      [
         `${REFRESH_TOKEN_COOKIE_NAME}=${encodeURIComponent(seeded.refreshToken)}`,
-      )
-      .expect(200);
+      ],
+    ).expect(200);
     const setCookie = refreshResponse.headers['set-cookie'];
     const access = cookieValue(setCookie, ACCESS_TOKEN_COOKIE_NAME);
 
-    const response = await request(app.getHttpServer() as Server)
-      .post('/api/v1/auth/logout-all')
-      .set(
-        'Cookie',
-        `${ACCESS_TOKEN_COOKIE_NAME}=${encodeURIComponent(access ?? '')}`,
-      )
-      .expect(200);
+    const response = await browserRequest(
+      request(app.getHttpServer() as Server).post('/api/v1/auth/logout-all'),
+      csrf,
+      [`${ACCESS_TOKEN_COOKIE_NAME}=${encodeURIComponent(access ?? '')}`],
+    ).expect(200);
 
     expect(response.body).toEqual({ data: { authenticated: false } });
   });

@@ -7,14 +7,14 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   106 |
-| DONE        |    55 |
-| IN_PROGRESS |     1 |
+| DONE        |    56 |
+| IN_PROGRESS |     0 |
 | READY       |     5 |
 | BLOCKED     |     0 |
 | PLANNED     |    45 |
 
-- Current task: `AUTH-10` verification is in progress. `ORD-04`, `ORD-05`, and `ORD-06` remain DONE. `REF-01` remains READY for referral attribution and abuse policy. No task remains BLOCKED.
-- Current milestone: `M1 — Foundation complete`. `AUTH-10` implementation exists, but its required browser E2E migration/security proof is incomplete; M2 must not be reported as complete or production-ready.
+- Current task: no task is in progress. `AUTH-10`, `ORD-04`, `ORD-05`, and `ORD-06` remain DONE. `REF-01` remains READY for referral attribution and abuse policy. No task remains BLOCKED.
+- Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate.
 
 ## Status model
 
@@ -275,19 +275,19 @@ Acceptance criteria: ADR 0019 records the accepted signed double-submit cookie m
 
 Explicitly out of scope: Implementing middleware, switching to LocalStorage, mobile auth, or splitting customer/Admin CSRF into separate mechanisms.
 
-Deliverables: [ADR 0019](adr/0019-csrf-browser-mutation-protection.md) and AUTH-10 implementation scope. Cookie-authenticated browser mutation APIs remain blocked from production until AUTH-10 is DONE.
+Deliverables: [ADR 0019](adr/0019-csrf-browser-mutation-protection.md) and AUTH-10 implementation scope. Cookie-authenticated browser mutation APIs are governed by the completed AUTH-10 enforcement and verification gate.
 
 ### AUTH-10 — CSRF enforcement for browser mutations
 
-Status: IN_PROGRESS | Depends on: AUTH-09 | Primary: Codex after Human security approval | Review: Claude/Cursor security/E2E review, Human production-readiness approval
+Status: DONE | Depends on: AUTH-09 | Primary: Codex after Human security approval | Review: Claude/Cursor security/E2E review, Human production-readiness approval
 
 Scope: Implement the AUTH-09 shared signed double-submit CSRF architecture for customer and Admin browser flows: centralized default-on unsafe-method enforcement, token issuance/validation, dedicated typed secret and origin configuration, namespace/path-aware cookies, strict Origin/Referer policy, Fetch Metadata defense-in-depth, explicit route metadata, and browser contract/OpenAPI documentation.
 
-Acceptance criteria: Customer and Admin cookie-authenticated profile/order/auth-session and every current Admin mutation are protected; bearer-only non-browser requests are not forced through browser CSRF; login/OTP behavior matches ADR 0019; errors are stable and safe; no in-memory or Redis CSRF state is introduced; unit, E2E, cross-site, production-cookie, local-development, future-route fail-closed, and native/non-cookie regression tests pass. The production-readiness gate remains closed until this task and its security review are complete.
+Acceptance criteria: Customer and Admin cookie-authenticated profile/order/auth-session and every current Admin mutation are protected; bearer-only non-browser requests are not forced through browser CSRF; login/OTP behavior matches ADR 0019; errors are stable and safe; no in-memory or Redis CSRF state is introduced; unit, E2E, cross-site, production-cookie, local-development, future-route fail-closed, and native/non-cookie regression tests pass. The production-readiness gate is satisfied by this task and its security review.
 
 Delivered: Stateless HMAC-SHA-256 signed double-submit tokens with 256-bit nonces, namespace/path-aware readable CSRF cookies, `GET /api/v1/auth/csrf` and `GET /api/v1/admin/auth/csrf` bootstrap endpoints, global default-on unsafe-method enforcement, strict configured Origin/Referer validation, Fetch Metadata defense-in-depth, Bearer-only exemption, stable 403 CSRF errors, OpenAPI/configuration updates, and logout/login cookie lifecycle handling. No schema migration.
 
-Verification note: implementation/unit checks pass, but the existing cookie-based Auth/Admin E2E fixtures still exercise pre-AUTH-10 requests without Origin and CSRF headers; the required browser E2E proof and fixture migration remain outstanding.
+Verification note: implementation, focused security tests, all 18 lightweight E2E suites (148 tests), typecheck, lint, formatting, OpenAPI, build, release, and agent-tooling checks pass. Legacy cookie-based fixtures now bootstrap the correct customer/Admin CSRF namespace, send the matching token and allowed Origin, and preserve Bearer-only coverage.
 
 Explicitly out of scope: Mobile authentication design, LocalStorage refresh tokens, unrelated business features, and deployment cutover.
 
@@ -509,11 +509,11 @@ Status: DONE | Depends on: ORD-03, COM-03, DLU-02, AUTH-08 | Primary: Codex | Re
 
 Scope: Close the current User/Region transaction-context gap, then bind the approved transactional create service to a customer Order-create endpoint with strict DTOs, principal-derived ownership, UUID idempotency key, commerce-policy/lifetime-discount enforcement, stable errors, OpenAPI, and e2e coverage. This closes the pre-existing ORD-03 HTTP-create gap without overloading the read-only ORD-04 task.
 
-Acceptance criteria: User, Region, Product, Discount, Commerce policy, Order, discount usage, and Inventory work share the approved outer transaction/snapshot where required; clients cannot submit authoritative price/snapshot/owner fields; retries map to ORD-03 replay/conflict; COM-03/DLU-02 cannot be bypassed; Inventory/policy/discount errors follow the approved structured contract; cookie-authenticated mutation security follows the shared CSRF production blocker.
+Acceptance criteria: User, Region, Product, Discount, Commerce policy, Order, discount usage, and Inventory work share the approved outer transaction/snapshot where required; clients cannot submit authoritative price/snapshot/owner fields; retries map to ORD-03 replay/conflict; COM-03/DLU-02 cannot be bypassed; Inventory/policy/discount errors follow the approved structured contract; cookie-authenticated mutation security follows the completed AUTH-10 CSRF guard.
 
 Explicitly out of scope: Order list/detail (ORD-04), cancellation/transitions, policy or discount-usage persistence, and frontend behavior.
 
-Delivered: `POST /api/v1/orders` (`Orders_create`) with `AccessTokenGuard` + `requireCustomerOwnerId` (USER only; Admin → `AUTH_FORBIDDEN`); body `{ regionId, lines }` only; required UUID `Idempotency-Key`; principal-bound USER actor; `201` create / `200` replay; `Cache-Control: no-store`; User/Region reads join ORD-03 RR `TransactionContext`; OpenAPI + unit/e2e/PostgreSQL coverage. CSRF remains the shared production blocker (documented, not implemented). No schema migration.
+Delivered: `POST /api/v1/orders` (`Orders_create`) with `AccessTokenGuard` + `requireCustomerOwnerId` (USER only; Admin → `AUTH_FORBIDDEN`); body `{ regionId, lines }` only; required UUID `Idempotency-Key`; principal-bound USER actor; `201` create / `200` replay; `Cache-Control: no-store`; User/Region reads join ORD-03 RR `TransactionContext`; OpenAPI + unit/e2e/PostgreSQL coverage. Cookie-authenticated browser requests are protected by the completed AUTH-10 CSRF guard. No schema migration.
 
 ### ORD-04 — Customer order list and detail
 
@@ -537,7 +537,7 @@ Acceptance criteria: Order transition, discount-usage release, and Inventory rel
 
 Explicitly out of scope: Returns and refunds.
 
-Delivered: `POST /api/v1/orders/:id/cancel` (`Orders_cancel`) for authenticated USER principals with owner-scoped cancellation, `PENDING_REVIEW → CANCELLED` conditional transition, idempotent cancelled replay, atomic DLU release followed by Inventory reservation release, customer-safe response/error mapping, `Cache-Control: no-store`, OpenAPI, and unit/e2e coverage. CSRF remains the shared AUTH-09 production blocker. No schema migration.
+Delivered: `POST /api/v1/orders/:id/cancel` (`Orders_cancel`) for authenticated USER principals with owner-scoped cancellation, `PENDING_REVIEW → CANCELLED` conditional transition, idempotent cancelled replay, atomic DLU release followed by Inventory reservation release, customer-safe response/error mapping, `Cache-Control: no-store`, OpenAPI, and unit/e2e coverage. Cookie-authenticated browser requests are protected by the completed AUTH-10 CSRF guard. No schema migration.
 
 ### ORD-06 — Admin order list, detail, and transitions
 
@@ -549,7 +549,7 @@ Acceptance criteria: Filters/sorts are allowlisted and indexed; transition confl
 
 Explicitly out of scope: Bulk operations, dispatch board, and returns.
 
-Delivered: Permissioned `GET /api/v1/admin/orders` and `GET /api/v1/admin/orders/:id` plus explicit `confirm`, `cancel`, `ship`, and `deliver` commands. Admin list filters/sorts are strictly allowlisted with bounded pagination and stable `id` tie-break ordering; rows and details use persisted snapshots and omit internal idempotency/commerce metadata. `ORDER_READ` and `ORDER_TRANSITION` are enforced by the central guards, with WAREHOUSE read-only and ORDER_OPS/SUPER_ADMIN operational access. Commands delegate to ORD-02 for conditional transitions, replay idempotency, lifecycle timestamps, DLU/Inventory transaction orchestration, and stable errors. All Admin Order reads/mutations are no-store. No schema migration. CSRF remains the shared AUTH-09 production blocker. Unit/lightweight HTTP/OpenAPI and live PostgreSQL concurrency verification are complete.
+Delivered: Permissioned `GET /api/v1/admin/orders` and `GET /api/v1/admin/orders/:id` plus explicit `confirm`, `cancel`, `ship`, and `deliver` commands. Admin list filters/sorts are strictly allowlisted with bounded pagination and stable `id` tie-break ordering; rows and details use persisted snapshots and omit internal idempotency/commerce metadata. `ORDER_READ` and `ORDER_TRANSITION` are enforced by the central guards, with WAREHOUSE read-only and ORDER_OPS/SUPER_ADMIN operational access. Commands delegate to ORD-02 for conditional transitions, replay idempotency, lifecycle timestamps, DLU/Inventory transaction orchestration, and stable errors. All Admin Order reads/mutations are no-store. Cookie-authenticated browser requests are protected by the completed AUTH-10 CSRF guard. Unit/lightweight HTTP/OpenAPI and live PostgreSQL concurrency verification are complete.
 
 ### ORD-07 — Returns, bulk transitions, and dispatch board
 
@@ -861,7 +861,7 @@ Acceptance criteria:
 - USER tokens on Admin auth routes and ADMIN tokens on customer-only routes return 403, not 401.
 - Inactive Admin cannot log in or refresh. Disabling an Admin does not yet auto-revoke sessions (owed by `ADM-01`).
 - `pnpm admin:create` never runs automatically, never defaults an omitted role to a privileged role, never prints the password, and never creates known/default credentials.
-- No general Admin CRUD HTTP. CSRF remains the shared production blocker for cookie-authenticated browser mutations.
+- No general Admin CRUD HTTP. Cookie-authenticated browser mutations use the completed shared AUTH-10 CSRF guard.
 
 Explicitly out of scope: Admin list/create/update/disable/reset-password HTTP, impersonation, default credentials, automatic startup bootstrap, polymorphic User/Admin sessions, and a separate Admin CSRF mechanism.
 
@@ -1310,7 +1310,7 @@ Complete when MIG-01 through MIG-05 are DONE, MIG-06 acceptance prerequisites pa
 The following are not implementation assumptions:
 
 - Final browser access-token transport details after product confirmation of cross-site needs (`SameSite=None` only if required); numeric JWT TTLs after load confirmation (session strategy and default cookie names/attributes decided in AUTH-01 / AUTH-04 / ADR 0004).
-- CSRF mechanism details (production blocker for browser cookie-authenticated mutations, including Admin cookie auth) are now tracked in `AUTH-09`. Admin login identifier is settled as canonical email (ADM-00 / ADR 0008). Admin password policy for creation/bootstrap is length-oriented (min 12 / max 128); breach-corpus rejection and rotation remain deferred. Admin identity persistence and `PrismaAdminRoleResolver` are DONE (ADM-00). Admin sessions, login HTTP, ADMIN token issuance, namespaced cookies, and operator-controlled first-`SUPER_ADMIN` provisioning are DONE (`ADM-AUTH-01` / ADR 0009). `ADM-01` (account management) depends on ADM-AUTH-01 so disablement can revoke Admin sessions. Permissioned Admin catalog routes (CAT-02) already attach `AccessTokenGuard` + `PermissionGuard`; ADM-01 still owes the same for Admin account-management routes.
+- CSRF mechanism details for browser cookie-authenticated mutations, including Admin cookie auth, are implemented and verified by `AUTH-10` under the architecture accepted in `AUTH-09`. Admin login identifier is settled as canonical email (ADM-00 / ADR 0008). Admin password policy for creation/bootstrap is length-oriented (min 12 / max 128); breach-corpus rejection and rotation remain deferred. Admin identity persistence and `PrismaAdminRoleResolver` are DONE (ADM-00). Admin sessions, login HTTP, ADMIN token issuance, namespaced cookies, and operator-controlled first-`SUPER_ADMIN` provisioning are DONE (`ADM-AUTH-01` / ADR 0009). `ADM-01` (account management) depends on ADM-AUTH-01 so disablement can revoke Admin sessions. Permissioned Admin catalog routes (CAT-02) already attach `AccessTokenGuard` + `PermissionGuard`; ADM-01 still owes the same for Admin account-management routes.
 - Legacy capability evidence for the `WAREHOUSE` and `ORDER_OPS` permission grants (MIG-01). The AUTH-08 grants are provisional; widening or narrowing them is a reviewed policy change.
 - Trusted reverse-proxy / Nest Express `trust proxy` configuration so OTP IP rate limits see the real client behind Liara; live Kavenegar credential smoke test when account access exists (deploy).
 - Customer/store business profile fields required at registration vs later completion (store name, manager name, address, region, coordinates): no in-repo legacy inventory yet (`MIG-01`); AUTH-07 shipped Pattern A phone-only identity with empty profile update allowlist. Region **reference** rows exist (CAT-02); profile `regionId` FK remains deferred.

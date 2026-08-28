@@ -2,7 +2,7 @@
 
 Canonical identity and authentication policy for EggShip API. Authorization and ownership live in [authorization.md](authorization.md). Session strategy rationale lives in [ADR 0004](../docs/adr/0004-auth-session-strategy.md). OTP verification-grant handoff rationale lives in [ADR 0005](../docs/adr/0005-otp-verification-grant.md). Redis→PostgreSQL consume-first session handoff lives in [ADR 0006](../docs/adr/0006-verification-grant-session-handoff.md). Role/permission architecture lives in [ADR 0007](../docs/adr/0007-authorization-model.md). Admin identity and session placement live in [ADR 0008](../docs/adr/0008-admin-identity.md). Admin authentication runtime lives in [ADR 0009](../docs/adr/0009-admin-authentication.md).
 
-This policy records AUTH-01 decisions, AUTH-02 persistence, AUTH-03 token infrastructure, AUTH-04 refresh/logout lifecycle, AUTH-05 OTP policy/primitives, AUTH-06 public OTP HTTP + verification-grant handoff, AUTH-07 customer auth completion / current-user profile, AUTH-08 admin RBAC, AUTH-09 CSRF architecture ([ADR 0019](../docs/adr/0019-csrf-browser-mutation-protection.md)), ADM-00 Admin identity persistence, and ADM-AUTH-01 Admin login/session HTTP. AUTH-10 remains the implementation gate for cookie-authenticated browser mutations. Do not invent endpoints here beyond what those tasks deliver.
+This policy records AUTH-01 decisions, AUTH-02 persistence, AUTH-03 token infrastructure, AUTH-04 refresh/logout lifecycle, AUTH-05 OTP policy/primitives, AUTH-06 public OTP HTTP + verification-grant handoff, AUTH-07 customer auth completion / current-user profile, AUTH-08 admin RBAC, AUTH-09 CSRF architecture ([ADR 0019](../docs/adr/0019-csrf-browser-mutation-protection.md)), AUTH-10 verified CSRF enforcement, ADM-00 Admin identity persistence, and ADM-AUTH-01 Admin login/session HTTP. Do not invent endpoints here beyond what those tasks deliver.
 
 ## Identity categories
 
@@ -527,7 +527,7 @@ Success (`200`, `Cache-Control: no-store`, Set-Cookie `eggship_at` / `eggship_rt
 
 Tokens are never returned in JSON. Multiple device sessions remain supported; normal completion does not revoke prior sessions.
 
-CSRF: pre-authentication grant consumption — `POST /auth/complete` has no authenticated-cookie requirement, but browser clients still send the AUTH-09 CSRF header to prevent login-CSRF before the new cookies are issued. After cookies are set, future cookie-authenticated mutations require the AUTH-10 implementation.
+CSRF: pre-authentication grant consumption — `POST /auth/complete` has no authenticated-cookie requirement, but browser clients still send the AUTH-10 CSRF header to prevent login-CSRF before the new cookies are issued. After cookies are set, cookie-authenticated mutations remain subject to the same centralized guard.
 
 #### Current user
 

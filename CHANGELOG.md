@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- AUTH-10 completion: migrated all ten legacy cookie-based E2E suites to the real browser CSRF contract with customer/Admin namespace-aware bootstrap, matching token headers, allowed origins, preserved auth cookies, and regression coverage for Bearer independence.
 - AUTH-10 verification tooling: updated the deterministic OpenAPI environment fixture with the required CSRF secret and configured origins.
 
 - ORD-05 customer cancellation now returns HTTP 200 as specified, with dedicated lightweight E2E coverage for authorization, owner scoping, strict command input, safe response fields, BOLA mapping, and OpenAPI.

@@ -29,6 +29,11 @@ import { AuthSubjectType } from '../src/modules/auth/domain/subject-type';
 import { AccessTokenService } from '../src/modules/auth/infrastructure/access-token.service';
 import { AdminAuthSessionRepository } from '../src/modules/auth/infrastructure/admin-auth-session.repository';
 import type { PasswordHasher } from '../src/modules/auth/domain/password-hasher';
+import {
+  bootstrapBrowserCsrf,
+  browserRequest,
+  type BrowserCsrfSession,
+} from './helpers/csrf-browser';
 
 const PASSWORD = 'correct horse battery staple';
 
@@ -263,6 +268,7 @@ describe('Admin auth (e2e)', () => {
   let identity: InMemoryAdminIdentity;
   let sessions: InMemoryAdminAuthSessionRepository;
   let accessTokens: AccessTokenService;
+  let csrf: BrowserCsrfSession;
 
   beforeAll(async () => {
     identity = new InMemoryAdminIdentity();
@@ -294,6 +300,10 @@ describe('Admin auth (e2e)', () => {
     await app.close();
   });
 
+  beforeEach(async () => {
+    csrf = await bootstrapBrowserCsrf(server(), 'admin');
+  });
+
   function server(): Server {
     return app.getHttpServer() as Server;
   }
@@ -317,10 +327,10 @@ describe('Admin auth (e2e)', () => {
   }
 
   function login(email: string, password = PASSWORD): request.Test {
-    return request(server()).post('/api/v1/admin/auth/login').send({
-      email,
-      password,
-    });
+    return browserRequest(
+      request(server()).post('/api/v1/admin/auth/login'),
+      csrf,
+    ).send({ email, password });
   }
 
   it('logs in with canonical email and sets namespaced Admin cookies', async () => {
@@ -455,13 +465,13 @@ describe('Admin auth (e2e)', () => {
       ADMIN_REFRESH_TOKEN_COOKIE_NAME,
     );
 
-    const response = await request(server())
-      .post('/api/v1/admin/auth/refresh')
-      .set(
-        'Cookie',
+    const response = await browserRequest(
+      request(server()).post('/api/v1/admin/auth/refresh'),
+      csrf,
+      [
         `${ADMIN_REFRESH_TOKEN_COOKIE_NAME}=${encodeURIComponent(refresh ?? '')}`,
-      )
-      .expect(200);
+      ],
+    ).expect(200);
 
     expect(response.body).toEqual({ data: { authenticated: true } });
     expect(response.headers['cache-control']).toBe('no-store');
@@ -478,13 +488,11 @@ describe('Admin auth (e2e)', () => {
 
   it('does not treat a User refresh cookie as an Admin session', async () => {
     const userRefresh = `${randomUUID()}.${'a'.repeat(43)}`;
-    const response = await request(server())
-      .post('/api/v1/admin/auth/refresh')
-      .set(
-        'Cookie',
-        `${REFRESH_TOKEN_COOKIE_NAME}=${encodeURIComponent(userRefresh)}`,
-      )
-      .expect(401);
+    const response = await browserRequest(
+      request(server()).post('/api/v1/admin/auth/refresh'),
+      csrf,
+      [`${REFRESH_TOKEN_COOKIE_NAME}=${encodeURIComponent(userRefresh)}`],
+    ).expect(401);
     expect(asApiErrorBody(response.body).error.code).toBe(
       'AUTH_REFRESH_TOKEN_MISSING',
     );
@@ -502,13 +510,14 @@ describe('Admin auth (e2e)', () => {
       ADMIN_REFRESH_TOKEN_COOKIE_NAME,
     );
 
-    const logout = await request(server())
-      .post('/api/v1/admin/auth/logout')
-      .set(
-        'Cookie',
-        `${ADMIN_ACCESS_TOKEN_COOKIE_NAME}=${access ?? ''}; ${ADMIN_REFRESH_TOKEN_COOKIE_NAME}=${refresh ?? ''}`,
-      )
-      .expect(200);
+    const logout = await browserRequest(
+      request(server()).post('/api/v1/admin/auth/logout'),
+      csrf,
+      [
+        `${ADMIN_ACCESS_TOKEN_COOKIE_NAME}=${access ?? ''}`,
+        `${ADMIN_REFRESH_TOKEN_COOKIE_NAME}=${refresh ?? ''}`,
+      ],
+    ).expect(200);
 
     expect(logout.body).toEqual({ data: { authenticated: false } });
     expect(
@@ -517,7 +526,10 @@ describe('Admin auth (e2e)', () => {
       ),
     ).toBe(true);
 
-    await request(server()).post('/api/v1/admin/auth/logout').expect(200);
+    await browserRequest(
+      request(server()).post('/api/v1/admin/auth/logout'),
+      csrf,
+    ).expect(200);
   });
 
   it('rejects /me with AUTH_ACCOUNT_DISABLED after the Admin is deactivated', async () => {
@@ -565,21 +577,22 @@ describe('Admin auth (e2e)', () => {
       ADMIN_ACCESS_TOKEN_COOKIE_NAME,
     );
 
-    await request(server())
-      .post('/api/v1/admin/auth/logout-all')
-      .set('Cookie', `${ADMIN_ACCESS_TOKEN_COOKIE_NAME}=${access ?? ''}`)
-      .expect(200);
+    await browserRequest(
+      request(server()).post('/api/v1/admin/auth/logout-all'),
+      csrf,
+      [`${ADMIN_ACCESS_TOKEN_COOKIE_NAME}=${access ?? ''}`],
+    ).expect(200);
 
     const refresh = cookieValue(
       loggedIn.headers['set-cookie'],
       ADMIN_REFRESH_TOKEN_COOKIE_NAME,
     );
-    await request(server())
-      .post('/api/v1/admin/auth/refresh')
-      .set(
-        'Cookie',
+    await browserRequest(
+      request(server()).post('/api/v1/admin/auth/refresh'),
+      csrf,
+      [
         `${ADMIN_REFRESH_TOKEN_COOKIE_NAME}=${encodeURIComponent(refresh ?? '')}`,
-      )
-      .expect(401);
+      ],
+    ).expect(401);
   });
 });

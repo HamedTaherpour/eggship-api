@@ -32,7 +32,8 @@ import { LOG_DESTINATION } from '../src/common/observability/application-logger.
 import { ObservabilityModule } from '../src/common/observability/observability.module';
 import { createConfigModuleOptions } from '../src/config/config-module.options';
 import { AccessTokenGuard } from '../src/modules/auth/api/access-token.guard';
-import { ACCESS_TOKEN_COOKIE_NAME } from '../src/modules/auth/domain/auth-cookies';
+import { CsrfGuard } from '../src/modules/auth/api/csrf.guard';
+import { CsrfService } from '../src/modules/auth/api/csrf.service';
 import { AuthSubjectType } from '../src/modules/auth/domain/subject-type';
 import { AccessTokenService } from '../src/modules/auth/infrastructure/access-token.service';
 
@@ -98,7 +99,7 @@ class AuthorizationProbeController {
  */
 @Module({
   controllers: [AuthorizationProbeController],
-  providers: [AccessTokenService, AccessTokenGuard],
+  providers: [AccessTokenService, AccessTokenGuard, CsrfService, CsrfGuard],
 })
 class ProbeFeatureModule {}
 
@@ -454,9 +455,7 @@ describe('authorization guard boundary (e2e)', () => {
     admins.activeRole(AdminRole.ORDER_OPS);
     const token = signAccessToken(AuthSubjectType.ADMIN);
 
-    await post('inventory/adjustments', token)
-      .set('Cookie', `${ACCESS_TOKEN_COOKIE_NAME}=${token}`)
-      .expect(403);
+    await post('inventory/adjustments', token).expect(403);
 
     const denials = logs.events('authz.denied');
     expect(denials).toHaveLength(1);

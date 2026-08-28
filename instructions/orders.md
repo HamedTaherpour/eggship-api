@@ -91,13 +91,13 @@ Admin Order HTTP (ORD-06): `GET /api/v1/admin/orders`, `GET /api/v1/admin/orders
 - Admin list uses CAT-01 pagination with optional `status`, `regionId`, inclusive `createdFrom`/`createdTo`, and the explicit sort allowlist `createdAt`, `total`, `status`, `deliveryAt` (default `createdAt` descending with stable `id` tie-break). It intentionally has no free-text search and returns summary snapshots only.
 - Admin reads and commands require `ORDER_READ` or `ORDER_TRANSITION`, respectively, through `AccessTokenGuard` + `PermissionGuard`. `ORDER_OPS` and `SUPER_ADMIN` can operate; `WAREHOUSE` is read-only; `USER` is forbidden.
 - Admin detail and mutation responses use persisted historical snapshots and include operational cancellation metadata, but omit idempotency payload/hash, commerce-policy metadata, Prisma entities, and infrastructure fields. All Admin Order responses are `Cache-Control: no-store`.
-- Admin command actor identity is derived from the authenticated Admin principal. Commands delegate to the ORD-02 transition service; they do not add a generic status update or a second state machine. Cookie-authenticated mutations remain subject to the shared AUTH-09 CSRF blocker.
+- Admin command actor identity is derived from the authenticated Admin principal. Commands delegate to the ORD-02 transition service; they do not add a generic status update or a second state machine. Cookie-authenticated mutations remain subject to the shared AUTH-10 CSRF guard.
 - Success responses use `Cache-Control: no-store`.
 - Body: `{ regionId, lines: [{ productId, quantity }] }` only. No `userId`, actor, phone, prices, names, discount ids, totals, status, or commerce-policy fields.
 - Header: required UUID `Idempotency-Key` (stable `IDEMPOTENCY_KEY_REQUIRED` / `IDEMPOTENCY_KEY_INVALID`).
 - Actor/userId bound from the authenticated principal only.
 - Success: `201` on create, `200` on identical idempotent replay; `Cache-Control: no-store`.
-- CSRF middleware remains the shared cookie-auth production blocker — not implemented in ORD-03A.
+- Cookie-authenticated browser requests to ORD-03A remain subject to the shared AUTH-10 CSRF guard.
 
 Conceptual input:
 
@@ -356,7 +356,7 @@ discount usage data, or idempotency internals. The Orders-owned transaction
 conditionally transitions the Order, then releases DLU usage and Inventory
 reservations through their application contracts. Any failure rolls back the
 Order transition and all release records. Cookie-authenticated browser use is
-still subject to the shared AUTH-09 CSRF production blocker.
+still subject to the shared AUTH-10 CSRF guard.
 
 ## Inventory boundary
 

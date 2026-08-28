@@ -137,19 +137,20 @@ export class OutboxDispatcher {
 
   private async publish(event: ClaimedOutboxEvent): Promise<void> {
     const payload = this.asPayload(event.payload);
-    const envelope = this.jobContext.createEnvelope<OutboxJobData>({
-      outboxEventId: event.id,
-      eventType: event.eventType,
-      eventVersion: event.eventVersion,
-      occurredAt: event.occurredAt.toISOString(),
-      payload,
-    });
     await this.requestContext.run(
       { requestId: `outbox_${event.id}`, correlationId: event.correlationId },
-      () =>
-        this.getQueue().add(event.eventType, envelope, {
+      async () => {
+        const envelope = this.jobContext.createEnvelope<OutboxJobData>({
+          outboxEventId: event.id,
+          eventType: event.eventType,
+          eventVersion: event.eventVersion,
+          occurredAt: event.occurredAt.toISOString(),
+          payload,
+        });
+        await this.getQueue().add(event.eventType, envelope, {
           jobId: `outbox-${event.id}`,
-        }),
+        });
+      },
     );
     this.logger.info(
       {

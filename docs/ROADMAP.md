@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   107 |
-| DONE        |    61 |
-| IN_PROGRESS |     1 |
-| READY       |     3 |
+| DONE        |    62 |
+| IN_PROGRESS |     0 |
+| READY       |     4 |
 | BLOCKED     |     0 |
-| PLANNED     |    43 |
+| PLANNED     |    42 |
 
-- Current task: `ASY-02` implementation is complete pending real PostgreSQL + Redis integration execution. `AUTH-10`, `ORD-04`, `ORD-05`, `ORD-06`, and `NOT-03` are DONE. `REF-01` remains READY; no task remains BLOCKED.
+- Current task: `ASY-02` is DONE after real PostgreSQL + Redis integration verification. `ASY-03` is READY. `REF-01` remains READY; no task remains BLOCKED.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate.
 
 ## Status model
@@ -933,19 +933,19 @@ Explicitly out of scope: Domain-specific events and dispatch workers.
 
 ### ASY-02 — Outbox dispatcher
 
-Status: IN_PROGRESS | Depends on: ASY-01, FND-07 | Primary: Codex | Review: Claude/Cursor concurrency/operations review
+Status: DONE | Depends on: ASY-01, FND-07 | Primary: Codex | Review: Claude/Cursor concurrency/operations review
 
 Scope: Implement concurrent-safe claiming, BullMQ publication, acknowledgement, retry/backoff, and crash recovery for pending outbox records.
 
 Acceptance criteria: Multiple dispatchers cannot lose or incorrectly double-complete records; Redis outages preserve PostgreSQL state; real integration tests prove restart behavior.
 
-Delivered: Added PostgreSQL-native bounded `FOR UPDATE SKIP LOCKED` claiming with durable expiring leases, bounded concurrent BullMQ publication through the shared versioned envelope, deterministic event-derived job IDs, conditional acknowledgement, bounded retry backoff, and recovery-safe at-least-once semantics. Real PostgreSQL + Redis integration coverage is guarded by the existing FND-07 test harness but still needs execution against dedicated distinct test resources. ASY-03 remains responsible for the worker process composition root.
+Delivered: PostgreSQL-native bounded `FOR UPDATE SKIP LOCKED` claiming with durable expiring leases, bounded concurrent BullMQ publication through the shared versioned envelope, deterministic event-derived job IDs, conditional acknowledgement, bounded retry backoff, and recovery-safe at-least-once semantics. Real PostgreSQL + Redis integration coverage proves concurrent claiming, ordering, bounded batches, Redis outage/recovery, lease reclaim, duplicate job-id bounds, NOT-03 envelope compatibility, and privacy-safe queue payloads against dedicated `TEST_*` resources isolated from runtime Redis.
 
 Explicitly out of scope: Exactly-once claims and business processors.
 
 ### ASY-03 — Worker process entrypoint and lifecycle
 
-Status: PLANNED | Depends on: ASY-02 | Primary: Codex | Review: Claude/Cursor architecture/operations review
+Status: READY | Depends on: ASY-02 | Primary: Codex | Review: Claude/Cursor architecture/operations review
 
 Scope: Add a non-HTTP worker composition root that loads only required infrastructure/application modules and establishes async correlation context.
 

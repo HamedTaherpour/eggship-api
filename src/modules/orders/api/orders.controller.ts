@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Header,
+  HttpCode,
   HttpStatus,
   Param,
   ParseUUIDPipe,
@@ -165,6 +166,7 @@ export class OrdersController {
   }
 
   @Post(':id/cancel')
+  @HttpCode(HttpStatus.OK)
   @UseGuards(AccessTokenGuard)
   @Header('Cache-Control', ORDER_CUSTOMER_CACHE_CONTROL)
   @ApiOperation({

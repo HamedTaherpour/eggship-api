@@ -2,7 +2,7 @@
 
 Canonical identity and authentication policy for EggShip API. Authorization and ownership live in [authorization.md](authorization.md). Session strategy rationale lives in [ADR 0004](../docs/adr/0004-auth-session-strategy.md). OTP verification-grant handoff rationale lives in [ADR 0005](../docs/adr/0005-otp-verification-grant.md). Redis→PostgreSQL consume-first session handoff lives in [ADR 0006](../docs/adr/0006-verification-grant-session-handoff.md). Role/permission architecture lives in [ADR 0007](../docs/adr/0007-authorization-model.md). Admin identity and session placement live in [ADR 0008](../docs/adr/0008-admin-identity.md). Admin authentication runtime lives in [ADR 0009](../docs/adr/0009-admin-authentication.md).
 
-This policy records AUTH-01 decisions, AUTH-02 persistence, AUTH-03 token infrastructure, AUTH-04 refresh/logout lifecycle, AUTH-05 OTP policy/primitives, AUTH-06 public OTP HTTP + verification-grant handoff, AUTH-07 customer auth completion / current-user profile, AUTH-08 admin RBAC, ADM-00 Admin identity persistence, and ADM-AUTH-01 Admin login/session HTTP. CSRF middleware remains a later production blocker for cookie-authenticated browser mutations (customer and Admin). Do not invent endpoints here beyond what those tasks deliver.
+This policy records AUTH-01 decisions, AUTH-02 persistence, AUTH-03 token infrastructure, AUTH-04 refresh/logout lifecycle, AUTH-05 OTP policy/primitives, AUTH-06 public OTP HTTP + verification-grant handoff, AUTH-07 customer auth completion / current-user profile, AUTH-08 admin RBAC, AUTH-09 CSRF architecture ([ADR 0019](../docs/adr/0019-csrf-browser-mutation-protection.md)), ADM-00 Admin identity persistence, and ADM-AUTH-01 Admin login/session HTTP. AUTH-10 remains the implementation gate for cookie-authenticated browser mutations. Do not invent endpoints here beyond what those tasks deliver.
 
 ## Identity categories
 
@@ -472,7 +472,7 @@ Do not treat `{ "verified": true }` or a bare challenge id as proof.
 
 ### CSRF
 
-OTP request/verify are pre-authentication and do not mutate authenticated cookie session state. Protect them with strict validation, phone/IP abuse controls, and Redis atomicity. Do not apply authenticated-cookie CSRF requirements to these anonymous endpoints.
+OTP request/verify are pre-authentication and do not mutate authenticated cookie session state, but browser POSTs still pass the AUTH-09 browser mutation boundary to prevent login-CSRF and cross-site abuse submission. Their primary controls remain strict validation, phone/IP abuse controls, and Redis atomicity; explicit-token native clients are outside browser CSRF semantics.
 
 ### Cache and retry metadata
 
@@ -527,7 +527,7 @@ Success (`200`, `Cache-Control: no-store`, Set-Cookie `eggship_at` / `eggship_rt
 
 Tokens are never returned in JSON. Multiple device sessions remain supported; normal completion does not revoke prior sessions.
 
-CSRF: pre-authentication grant consumption — do not require authenticated-cookie CSRF on `POST /auth/complete`. After cookies are set, future cookie-authenticated mutations still require CSRF (AUTH-04 production blocker unchanged).
+CSRF: pre-authentication grant consumption — `POST /auth/complete` has no authenticated-cookie requirement, but browser clients still send the AUTH-09 CSRF header to prevent login-CSRF before the new cookies are issued. After cookies are set, future cookie-authenticated mutations require the AUTH-10 implementation.
 
 #### Current user
 
@@ -698,7 +698,7 @@ Indexes: unique `phone`; unique `email` on `Admin`; unique `refreshTokenHash`; `
 
 These remain open for later Auth / frontend tasks; do not treat them as implemented:
 
-1. CSRF token mechanism details (double-submit vs synchronizer), header name, and middleware (production blocker for browser cookie mutations, including Admin cookie auth).
+1. CSRF middleware implementation and tests (AUTH-10; production blocker for browser cookie mutations, including Admin cookie auth). The mechanism, header, cookie namespaces, origin policy, and error contract are locked by ADR 0019.
 2. Final numeric TTL values after product/load confirmation.
 3. Breached-password corpus rejection and Admin password rotation/expiry.
 4. Automatic Admin session revocation when `ADM-01` disables an Admin or changes a security-sensitive role (required for ADM-01; not implemented in ADM-AUTH-01).

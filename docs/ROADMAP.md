@@ -6,15 +6,15 @@ This is the authoritative execution plan for completing the standalone EggShip A
 
 | Measure     | Count |
 | ----------- | ----: |
-| Total       |   105 |
-| DONE        |    53 |
+| Total       |   106 |
+| DONE        |    55 |
 | IN_PROGRESS |     0 |
-| READY       |     7 |
+| READY       |     6 |
 | BLOCKED     |     0 |
 | PLANNED     |    45 |
 
-- Current task: none in progress. `ORD-04`, `ORD-05`, and `ORD-06` are DONE (customer/admin order reads, cancellation, and admin transitions). `AUTH-09` is the dedicated CSRF security task for cookie-authenticated browser mutations. `REF-01` remains READY for referral attribution and abuse policy. No task remains BLOCKED.
-- Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
+- Current task: none in progress. `ORD-04`, `ORD-05`, and `ORD-06` are DONE (customer/admin order reads, cancellation, and admin transitions). `AUTH-09` is DONE as the dedicated CSRF security architecture task; `AUTH-10` is READY for implementation. `REF-01` remains READY for referral attribution and abuse policy. No task remains BLOCKED.
+- Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-09`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but AUTH-10 CSRF enforcement remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
 
@@ -267,21 +267,25 @@ Explicitly out of scope: Inventing organization tenancy or granting implicit sup
 
 ### AUTH-09 — CSRF architecture and browser-mutation protection
 
-Status: READY | Depends on: AUTH-01, AUTH-04, AUTH-08, ADM-AUTH-01 | Primary: Human + ChatGPT architecture process | Review: Claude/Cursor security review, Human approval
+Status: DONE | Depends on: AUTH-01, AUTH-04, AUTH-08, ADM-AUTH-01 | Primary: Human + ChatGPT architecture process | Review: Claude/Cursor security review, Human approval
 
-Scope: Approve the shared CSRF contract for cookie-authenticated browser mutations across customer and Admin flows, including the protected route inventory, browser/site constraints, failure behavior, and implementation boundaries. This task does not implement middleware.
+Scope: Approve the shared CSRF contract for customer and Admin browser mutations, including threat model, complete route inventory, browser/site constraints, failure behavior, native-client boundary, and enforcement boundary. This task does not implement middleware.
 
-Acceptance criteria: The approved decision names the customer and Admin mutation endpoints that must be protected before production readiness, records the browser/request contract and deployment assumptions, and produces the follow-up implementation scope without inventing separate customer/Admin CSRF systems.
+Acceptance criteria: ADR 0019 records the accepted signed double-submit cookie mechanism, strict Origin/Referer policy, Fetch Metadata defense-in-depth, typed configuration, customer/Admin contract, explicit bearer/native boundary, route classifications, stable errors, tests, and production-readiness gate. The stale AUTH-08 delivery text is removed.
 
-Explicitly out of scope: Implementing middleware, switching to LocalStorage, or splitting customer and Admin CSRF into different mechanisms.
+Explicitly out of scope: Implementing middleware, switching to LocalStorage, mobile auth, or splitting customer/Admin CSRF into separate mechanisms.
 
-Delivered: code-defined `Permission` catalog and `AdminRole` → permission policy ([ADR 0007](adr/0007-authorization-model.md)), `AuthorizationService`, `@RequirePermissions` (ALL semantics), `PermissionGuard`, `AdminRoleResolver` port with a fail-closed default supplied through `AuthorizationModule.forRoot()`, principal-derived customer ownership scoping, `AUTH_FORBIDDEN` (403), and the `authz.denied` security log. Access-token claims are unchanged: no role or permission snapshot.
+Deliverables: [ADR 0019](adr/0019-csrf-browser-mutation-protection.md) and AUTH-10 implementation scope. Cookie-authenticated browser mutation APIs remain blocked from production until AUTH-10 is DONE.
 
-Completed by ADM-00: Admin identity persistence, the `email` login identifier, `PrismaAdminRoleResolver` wiring, and the settled wrong-subject 403 contract.
+### AUTH-10 — CSRF enforcement for browser mutations
 
-`ADM-AUTH-01` owns Admin session persistence, login/refresh/logout HTTP, ADMIN access-token issuance, namespaced Admin cookies, and operator-controlled first-`SUPER_ADMIN` provisioning. `ADM-01` owns general Admin account management.
+Status: READY | Depends on: AUTH-09 | Primary: Codex after Human security approval | Review: Claude/Cursor security/E2E review, Human production-readiness approval
 
-Owed by the first permissioned admin HTTP surface (`ADM-01` or the earliest admin management/catalog API): an architecture test asserting every registered admin route carries `AccessTokenGuard`, `PermissionGuard`, and permission metadata, except the AUTH-lifecycle allowlist on `/admin/auth/*` (public login/refresh/logout; `/me` and logout-all authenticate without a permission). Guard attachment is the one authorization failure mode that cannot fail closed on its own.
+Scope: Implement the AUTH-09 shared signed double-submit CSRF architecture for customer and Admin browser flows: centralized default-on unsafe-method enforcement, token issuance/validation, dedicated typed secret and origin configuration, namespace/path-aware cookies, strict Origin/Referer policy, Fetch Metadata defense-in-depth, explicit route metadata, and browser contract/OpenAPI documentation.
+
+Acceptance criteria: Customer and Admin cookie-authenticated profile/order/auth-session and every current Admin mutation are protected; bearer-only non-browser requests are not forced through browser CSRF; login/OTP behavior matches ADR 0019; errors are stable and safe; no in-memory or Redis CSRF state is introduced; unit, E2E, cross-site, production-cookie, local-development, future-route fail-closed, and native/non-cookie regression tests pass. The production-readiness gate remains closed until this task and its security review are complete.
+
+Explicitly out of scope: Mobile authentication design, LocalStorage refresh tokens, unrelated business features, and deployment cutover.
 
 ## Phase 2 — Core Reference & Catalog
 
@@ -1275,7 +1279,7 @@ Complete when all Phase 0 tasks are DONE: OpenAPI and contract verification exis
 
 ### M2 — Identity complete
 
-Complete when AUTH-01 through AUTH-08 are DONE: customer/admin authentication, secure password/access/refresh/OTP/session lifecycle, registration/profile, RBAC, ownership, CSRF/cookie behavior, migrations, OpenAPI, and security/concurrency tests are approved and passing.
+Complete when AUTH-01 through AUTH-10 are DONE: customer/admin authentication, secure password/access/refresh/OTP/session lifecycle, registration/profile, RBAC, ownership, CSRF/cookie behavior, migrations, OpenAPI, and security/concurrency tests are approved and passing. Cookie-authenticated browser mutation APIs are not production-ready before AUTH-10 is DONE.
 
 ### M3 — Catalog + Inventory complete
 

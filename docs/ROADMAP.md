@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   105 |
-| DONE        |    52 |
+| DONE        |    53 |
 | IN_PROGRESS |     0 |
-| READY       |     8 |
+| READY       |     7 |
 | BLOCKED     |     0 |
 | PLANNED     |    45 |
 
-- Current task: none in progress. `ORD-04` and `ORD-05` are DONE (customer order list/detail and cancellation). `AUTH-09` is the dedicated CSRF security task for cookie-authenticated browser mutations; `ORD-06` is the next product-critical READY task. `REF-01` remains READY for referral attribution and abuse policy. No task remains BLOCKED.
+- Current task: none in progress. `ORD-04`, `ORD-05`, and `ORD-06` are DONE (customer/admin order reads, cancellation, and admin transitions). `AUTH-09` is the dedicated CSRF security task for cookie-authenticated browser mutations. `REF-01` remains READY for referral attribution and abuse policy. No task remains BLOCKED.
 - Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
@@ -541,7 +541,7 @@ Acceptance criteria: Filters/sorts are allowlisted and indexed; transition confl
 
 Explicitly out of scope: Bulk operations, dispatch board, and returns.
 
-Delivered: Permissioned `GET /api/v1/admin/orders` and `GET /api/v1/admin/orders/:id` plus explicit `confirm`, `cancel`, `ship`, and `deliver` commands. Admin list filters/sorts are strictly allowlisted with bounded pagination and stable `id` tie-break ordering; rows and details use persisted snapshots and omit internal idempotency/commerce metadata. `ORDER_READ` and `ORDER_TRANSITION` are enforced by the central guards, with WAREHOUSE read-only and ORDER_OPS/SUPER_ADMIN operational access. Commands delegate to ORD-02 for conditional transitions, replay idempotency, lifecycle timestamps, DLU/Inventory transaction orchestration, and stable errors. All Admin Order reads/mutations are no-store. No schema migration. CSRF remains the shared AUTH-09 production blocker. Unit/lightweight HTTP/OpenAPI verification is included; live PostgreSQL concurrency verification remains environment-dependent where TEST_DATABASE_URL is unavailable.
+Delivered: Permissioned `GET /api/v1/admin/orders` and `GET /api/v1/admin/orders/:id` plus explicit `confirm`, `cancel`, `ship`, and `deliver` commands. Admin list filters/sorts are strictly allowlisted with bounded pagination and stable `id` tie-break ordering; rows and details use persisted snapshots and omit internal idempotency/commerce metadata. `ORDER_READ` and `ORDER_TRANSITION` are enforced by the central guards, with WAREHOUSE read-only and ORDER_OPS/SUPER_ADMIN operational access. Commands delegate to ORD-02 for conditional transitions, replay idempotency, lifecycle timestamps, DLU/Inventory transaction orchestration, and stable errors. All Admin Order reads/mutations are no-store. No schema migration. CSRF remains the shared AUTH-09 production blocker. Unit/lightweight HTTP/OpenAPI and live PostgreSQL concurrency verification are complete.
 
 ### ORD-07 — Returns, bulk transitions, and dispatch board
 
@@ -1308,7 +1308,7 @@ The following are not implementation assumptions:
 - Customer/store business profile fields required at registration vs later completion (store name, manager name, address, region, coordinates): no in-repo legacy inventory yet (`MIG-01`); AUTH-07 shipped Pattern A phone-only identity with empty profile update allowlist. Region **reference** rows exist (CAT-02); profile `regionId` FK remains deferred.
 - Category/Region legacy parity gaps (MIG-01): name uniqueness, public slug, sortOrder, category hierarchy/parent, shipping-related Region fields, and whether hard delete is ever allowed after Product/profile FKs land.
 - Product legacy parity gaps (MIG-01): SKU/code uniqueness, description, unit/package semantics, media/image attachment once CAT-04 exists, whether zero-price products should be allowed, and whether product name uniqueness is ever required.
-- Order transition runtime (ORD-02), customer create/read HTTP (`ORD-03A`/`ORD-04`), and customer cancellation HTTP (`ORD-05`) are DONE; Admin Orders HTTP (`ORD-06`) remains READY. V1 state machine, actors, concurrency, and Inventory orchestration rules are settled in ADR 0014 / [instructions/orders.md](../instructions/orders.md). Shipping/address snapshot fields, dispatch board, return HTTP beyond ORD-07 scope, and payment/refund semantics remain deferred. Deferred settlement is separately planned in SET-01/SET-02 and must not become Order state.
+- Order transition runtime (ORD-02), customer create/read HTTP (`ORD-03A`/`ORD-04`), customer cancellation HTTP (`ORD-05`), and Admin Orders HTTP (`ORD-06`) are DONE. V1 state machine, actors, concurrency, and Inventory orchestration rules are settled in ADR 0014 / [instructions/orders.md](../instructions/orders.md). Shipping/address snapshot fields, dispatch board, return HTTP beyond ORD-07 scope, and payment/refund semantics remain deferred. Deferred settlement is separately planned in SET-01/SET-02 and must not become Order state.
 - Whether a future `PACKED`/`PICKED` state should move the physical `onHand` decrement earlier than `SHIPPED`.
 - Whether partial fulfillment or split shipment is ever allowed after V1.
 - Public exposure of exact inventory `available`, and any preferred-customer allocation/fairness policy under contention.

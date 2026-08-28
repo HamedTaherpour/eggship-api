@@ -21,6 +21,7 @@ import { UsersModule } from './modules/users/users.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { CommercePolicyModule } from './modules/commerce-policy/commerce-policy.module';
 import { SettlementsModule } from './modules/settlements/settlements.module';
+import { OutboxModule } from './modules/outbox/outbox.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { SettlementsModule } from './modules/settlements/settlements.module';
     OrdersModule,
     CommercePolicyModule,
     SettlementsModule,
+    OutboxModule,
   ],
   controllers: [HealthController],
 })

@@ -665,3 +665,28 @@ model OrderLine {
   @@index([orderId])
   @@index([productId])
 }
+
+/// PostgreSQL-authoritative transactional outbox record (ASY-01). The event
+/// intent is inserted by the caller's existing transaction; publication state
+/// is advanced later by ASY-02.
+model OutboxEvent {
+  id            String           @id @db.Uuid
+  eventType     String           @db.VarChar(100)
+  eventVersion  Int
+  correlationId String           @db.VarChar(128)
+  occurredAt    DateTime         @db.Timestamptz(3)
+  payload       Json
+  state         OutboxEventState @default(PENDING)
+  publishedAt   DateTime?
+  createdAt     DateTime         @default(now()) @db.Timestamptz(3)
+
+  /// ASY-02 lookup/claim order: pending oldest event, stable UUID tie-break.
+  @@index([state, createdAt, id])
+  /// DATA-02/ASY-05 cleanup can bound retained published history.
+  @@index([publishedAt, id])
+}
+
+enum OutboxEventState {
+  PENDING
+  PUBLISHED
+}

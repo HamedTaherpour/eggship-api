@@ -16,6 +16,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- ASY-01 transactional outbox foundation: PostgreSQL-authoritative versioned `OutboxEvent` records, bounded privacy-safe JSON payloads, explicit same-transaction publisher contract, duplicate identity constraints, future dispatcher indexes, and guarded PostgreSQL atomicity/concurrency coverage. No workers, queues, or domain event producers.
+
 - AI-03 host-neutral agent tooling: canonical shared skills under `.agents/skills`, thin documented Claude Code/Qoder adapters, Cursor skill deduplication, Codex configuration/hook audit, host capability/onboarding policy, and expanded `check:agent-tooling` drift validation. No product or infrastructure behavior changed.
 
 - CSRF browser mutation protection (AUTH-10): centralized default-on unsafe-method enforcement with stateless signed double-submit tokens, separate customer/Admin namespaces, strict configured Origin/Referer validation, Fetch Metadata defense-in-depth, Bearer-only native exemption, bootstrap endpoints, stable 403 errors, and no database/Redis state.

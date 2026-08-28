@@ -7,9 +7,9 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   107 |
-| DONE        |    57 |
+| DONE        |    58 |
 | IN_PROGRESS |     0 |
-| READY       |     5 |
+| READY       |     4 |
 | BLOCKED     |     0 |
 | PLANNED     |    45 |
 
@@ -915,11 +915,13 @@ Explicitly out of scope: Selecting unapproved transformations or deleting refere
 
 ### ASY-01 — Transactional outbox schema and publisher contract
 
-Status: READY | Depends on: INF-01 | Primary: Codex | Review: Claude/Cursor concurrency review, Human migration review
+Status: DONE | Depends on: INF-01 | Primary: Codex | Review: Claude/Cursor concurrency review, Human migration review
 
 Scope: Add a minimal versioned outbox model and application contract that persists business events in the same PostgreSQL transaction as critical state.
 
 Acceptance criteria: Event identity, correlation, type/version, payload restrictions, publish state, indexes, cleanup ownership, and duplicate semantics are explicit and tested.
+
+Delivered: PostgreSQL-authoritative `OutboxEvent` persistence and reviewed migration, bounded/versioned event envelope, explicit caller-transaction `OutboxPublisher`, payload/privacy guards, and guarded real-PostgreSQL atomicity/idempotency/concurrency coverage. ASY-02 owns claiming, publication, retries, crash recovery, and cleanup execution.
 
 Explicitly out of scope: Domain-specific events and dispatch workers.
 

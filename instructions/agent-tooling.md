@@ -1,84 +1,60 @@
 # Agent tooling
 
-This policy governs Cursor, Claude Code, Codex, and Qoder project configuration. Tool-specific directories are adapters around canonical EggShip policy; they must not become competing rule systems.
+This policy governs Cursor, Claude Code, Codex, Qoder, and future coding-agent adapters. Host-specific directories are adapters around canonical EggShip policy; they must not become competing rule systems.
 
 ## Canonical ownership
 
-| Source                   | Owns                                                        |
-| ------------------------ | ----------------------------------------------------------- |
-| `AGENTS.md`              | Entry point and required-reading map for every coding agent |
-| `instructions/*`         | Engineering policy                                          |
-| `docs/adr/*`             | Accepted architecture decisions                             |
-| `docs/ROADMAP.md`        | Execution plan, task status, and dependency order           |
-| `docs/agent-workflows/*` | Shared skill/workflow behavior used by host adapters        |
+| Source                      | Owns                                                    |
+| --------------------------- | ------------------------------------------------------- |
+| `AGENTS.md`                 | Repository-wide agent guidance and required-reading map |
+| `instructions/*`            | Engineering policy                                      |
+| `docs/adr/*`                | Accepted architecture decisions                         |
+| `docs/ROADMAP.md`           | Execution plan and task status                          |
+| `docs/agent-workflows/*`    | Detailed shared workflow behavior                       |
+| `.agents/skills/*/SKILL.md` | Reusable, host-neutral skill entrypoints                |
 
-Policy changes belong in `instructions/*` (or ADRs/roadmap when those are the correct artifact). Do not copy large policy sections into `.cursor/`, `.claude/`, `.codex/`, or `.qoder/`.
+Policy changes belong in the canonical sources above. Do not copy policy, ADRs, or full workflow bodies into host directories.
+
+## Verified host capability matrix
+
+| Host        | Durable project guidance                     | Project skill discovery                                | EggShip adapter                                                                 |
+| ----------- | -------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| Cursor      | `AGENTS.md` and `.cursor/rules`              | `.agents/skills` (also recognizes compatibility paths) | `.cursor/rules` only for Cursor scoping/tool hints; shared skills are canonical |
+| Codex       | `AGENTS.md` and trusted `.codex/config.toml` | `.agents/skills`                                       | `.codex/config.toml` plus justified lifecycle hooks; no `.codex/skills` mirror  |
+| Claude Code | root `CLAUDE.md` / project guidance          | `.claude/skills`                                       | Thin `CLAUDE.md` redirect and thin native skill adapters                        |
+| Qoder       | `AGENTS.md`                                  | `.qoder/skills`                                        | Thin native skill adapters and host rules                                       |
+
+This matrix was checked against current official host documentation on 2026-08-28: [Codex skills](https://developers.openai.com/codex/skills), [Cursor Agent Skills](https://cursor.com/docs/skills), [Claude Code skills](https://code.claude.com/docs/en/slash-commands), [Claude Code memory](https://code.claude.com/docs/en/memory), and [Qoder CLI skills](https://docs.qoder.com/cli/Skills). Documentation describes `.agents/skills` as the shared Agent Skills location for Codex/Cursor, while Claude Code and Qoder document their own project skill roots. Do not infer support for an undocumented host path.
+
+## Shared skills
+
+The authoritative skills are `implement-roadmap-task`, `review-eggship-change`, `review-prisma-migration`, and `review-concurrency-sensitive-change`. Each canonical `SKILL.md` has standard YAML frontmatter and points to the relevant detailed workflow. Claude and Qoder wrappers are retained only because their documented project discovery roots differ; wrappers must point to `.agents/skills/<name>/SKILL.md` and the shared workflow. Cursor and Codex consume `.agents/skills` directly.
+
+Add a shared skill only when a repeated workflow justifies it. Keep the entrypoint concise and load detailed references progressively.
 
 ## Adapter responsibilities
 
-Host directories may:
+Host directories may point agents to canonical sources, describe host-specific invocation/scoping, and run deterministic mechanical guardrails where supported. They must not redefine architecture, API, security, database, testing, release, or business policy; store secrets; silently install MCP servers; or make autonomous release/deploy decisions.
 
-- point agents to `AGENTS.md` and the relevant instruction files;
-- describe tool-specific invocation and review workflows;
-- expose thin skill wrappers that load `docs/agent-workflows/*`;
-- run deterministic guardrails where the host supports them (hooks, validation scripts);
-- document host-specific limitations.
+`.cursor/rules` and `.qoder/rules` are host activation/scoping adapters only. `CLAUDE.md` redirects to `AGENTS.md`; `AGENTS.md` remains authoritative. `.codex/config.toml` contains only trusted-repository settings supported by the installed Codex release. No project-scoped MCP is enabled.
 
-Host directories must not:
+## Hooks and safety
 
-- redefine architecture, API, security, database, or testing policy;
-- grant broad shell, filesystem, GitHub, database, or network permissions without need;
-- store API tokens, credentials, or other secrets;
-- silently install or modify MCP servers;
-- broaden a task scope or make autonomous release/deploy decisions without explicit approval.
+Git enforcement belongs under `.husky` and is distinct from AI lifecycle hooks. `.codex/hooks` currently provides context pointers and a completion-evidence check; it does not own policy or make architecture decisions. Host hooks must remain mechanical and preserve canonical safety: no automatic push/tag/release/deploy, no production/shared-infrastructure mutation without approval, no secret commits, no unsafe test-database destruction, no legacy-backup access, and no discarding unrelated changes.
 
-## Host roles
+## Future host onboarding
 
-| Host            | Primary use in EggShip                                                 |
-| --------------- | ---------------------------------------------------------------------- |
-| Cursor          | Primary implementation environment when available, including Auto mode |
-| Qoder           | Bounded implementation and review when available                       |
-| Codex           | Bounded implementation when available                                  |
-| Claude Code     | High-value adversarial review and analysis                             |
-| ChatGPT + human | Architecture and unresolved business decisions                         |
+1. Keep EggShip policy in `AGENTS.md`, `instructions/*`, ADRs, and shared workflows.
+2. Verify what the new host natively discovers using current official documentation.
+3. Reuse `AGENTS.md` and `.agents/skills` when supported.
+4. Add only a thin native adapter for unsupported discovery or activation surfaces.
+5. Extend `scripts/check-agent-tooling.mjs` with stable path/frontmatter/source checks.
+6. Never copy policy or full shared skills into a new host directory.
 
-Keep root `CLAUDE.md` thin: it must redirect to `AGENTS.md`. Prefer focused Cursor rules over one giant rule file. Codex project config and hooks may reinforce governance; they must not make architectural decisions.
+## Model and MCP independence
 
-## Skills and workflows
-
-Shared workflow content lives in `docs/agent-workflows/`. Cursor and Claude skill files are thin adapters that instruct the agent to read the shared document. Do not maintain three divergent skill bodies.
-
-Approved initial workflows:
-
-- `implement-roadmap-task`
-- `review-eggship-change`
-- `review-prisma-migration`
-- `review-concurrency-sensitive-change`
-
-Add a new shared workflow only when the need is repeated and justified. Claude reviewer agents must review against canonical EggShip policy rather than inventing separate standards.
-
-## Model independence
-
-Do not encode a required commercial model name in repository rules, skills, or task specs. The repository must work with Cursor Auto mode. Bounded implementation relies on policies, roadmap tasks, and verification—not on a particular LLM. Humans may manually select a stronger reasoning model for high-risk review.
-
-## MCP governance
-
-MCP integration must solve a concrete project workflow. Prefer official or otherwise trusted providers, minimize permissions, and prefer read-only access when write access is unnecessary.
-
-Rules:
-
-- Never store MCP secrets in Git.
-- Never expose production database credentials to development MCPs.
-- Adding an MCP with write access requires explicit human approval.
-- External MCPs must be reviewed for security and maintenance risk.
-- AI agents must not install or modify MCP servers silently.
-
-Candidate integrations (GitHub, PostgreSQL/Prisma development tooling, NestJS docs, Liara) may be evaluated later. None are enabled in this repository until a concrete workflow and human approval exist. Absence of project MCP config means no project-scoped MCP is configured.
-
-## Permissions and secrets
-
-Project AI config must remain least-privilege. Secrets belong in local/user configuration or deployment secrets, never under `.cursor/`, `.claude/`, `.codex/`, or `.qoder/`. Gitignore personal override files such as `.claude/settings.local.json` and `.qoder/settings.local.json`.
+Do not encode a required commercial model name. The repository must work with Cursor Auto mode and host-default models. MCP integration requires a concrete workflow, trusted provider review, least privilege, and explicit human approval for write access; no project MCP is currently configured.
 
 ## Validation
 
-`pnpm check:agent-tooling` verifies that required canonical files exist, host wrappers stay thin and point at `AGENTS.md`, and shared workflows remain referenced by adapters. It does not claim that Cursor, Qoder, Claude, or Codex themselves validated host-native schemas unless an official validator was actually run.
+`pnpm check:agent-tooling` verifies canonical files, skill frontmatter and uniqueness, workflow references, thin Claude/Qoder adapters, host-rule pointers, Codex absence of a duplicate shared skill tree, required host files, and secret-pattern absence. It does not claim that host binaries or undocumented schemas were run.

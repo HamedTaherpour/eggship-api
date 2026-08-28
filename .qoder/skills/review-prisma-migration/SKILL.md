@@ -5,6 +5,6 @@ description: Reviews Prisma schema and migration changes for data loss, locking,
 
 # review-prisma-migration
 
-Read and follow the shared workflow at `docs/agent-workflows/review-prisma-migration.md`.
+This Qoder-native adapter points to the canonical Agent Skill at `.agents/skills/review-prisma-migration/SKILL.md`.
 
-Also read `instructions/database.md`. Do not apply destructive migrations without explicit human review.
+Read that skill and follow `docs/agent-workflows/review-prisma-migration.md`.

@@ -6,8 +6,8 @@ This is the authoritative execution plan for completing the standalone EggShip A
 
 | Measure     | Count |
 | ----------- | ----: |
-| Total       |   106 |
-| DONE        |    56 |
+| Total       |   107 |
+| DONE        |    57 |
 | IN_PROGRESS |     0 |
 | READY       |     5 |
 | BLOCKED     |     0 |
@@ -129,6 +129,22 @@ Acceptance criteria:
 - No MCP server is added and no business feature is implemented.
 
 Explicitly out of scope: Business features, installing MCP servers, duplicating large policy sections, and making Qoder mandatory for non-tooling workflows.
+
+### AI-03 — Host-neutral agent tooling and canonical skills
+
+Status: DONE | Depends on: AI-02 | Primary: Codex | Review: Human
+
+Scope: Consolidate reusable EggShip Agent Skills under `.agents/skills`, retain only documented native host adapters, audit Codex configuration and hooks, and extend drift validation for Cursor, Codex, Claude Code, Qoder, and future hosts without implementing business features.
+
+Acceptance criteria:
+
+- `.agents/skills` is the canonical owner of the four approved shared workflows with valid frontmatter and references to `docs/agent-workflows/*`.
+- Cursor and Codex consume canonical skills directly; Claude Code and Qoder retain thin native wrappers only where their documented project discovery roots require them.
+- Host rules, `CLAUDE.md`, Codex config/hooks, and Qoder adapters remain host-specific and do not duplicate canonical policy.
+- `pnpm check:agent-tooling` detects missing canonical skills, duplicate shared bodies, invalid frontmatter/names, broken workflow references, invalid adapters, unsupported duplicate skill trees, and secret-pattern regressions.
+- Future-agent onboarding and the verified host capability matrix are documented in `instructions/agent-tooling.md`.
+
+Explicitly out of scope: Business features, installing MCP servers, changing host binaries, unsupported host configuration formats, and production infrastructure changes.
 
 ### INF-01 — Redis and BullMQ infrastructure foundation
 

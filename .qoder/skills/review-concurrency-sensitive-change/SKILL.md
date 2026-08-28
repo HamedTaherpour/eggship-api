@@ -5,6 +5,6 @@ description: Reviews concurrent mutation paths for races, lost updates, locking,
 
 # review-concurrency-sensitive-change
 
-Read and follow the shared workflow at `docs/agent-workflows/review-concurrency-sensitive-change.md`.
+This Qoder-native adapter points to the canonical Agent Skill at `.agents/skills/review-concurrency-sensitive-change/SKILL.md`.
 
-Review against canonical EggShip database, queue, architecture, and testing policies.
+Read that skill and follow `docs/agent-workflows/review-concurrency-sensitive-change.md`.

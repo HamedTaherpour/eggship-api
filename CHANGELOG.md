@@ -16,6 +16,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- AI-03 host-neutral agent tooling: canonical shared skills under `.agents/skills`, thin documented Claude Code/Qoder adapters, Cursor skill deduplication, Codex configuration/hook audit, host capability/onboarding policy, and expanded `check:agent-tooling` drift validation. No product or infrastructure behavior changed.
+
 - CSRF browser mutation protection (AUTH-10): centralized default-on unsafe-method enforcement with stateless signed double-submit tokens, separate customer/Admin namespaces, strict configured Origin/Referer validation, Fetch Metadata defense-in-depth, Bearer-only native exemption, bootstrap endpoints, stable 403 errors, and no database/Redis state.
 
 - AUTH-09 CSRF architecture (ADR 0019): accepted a shared signed double-submit cookie contract with strict Origin/Referer validation and Fetch Metadata defense-in-depth for customer and Admin browser mutations; classified current routes, defined the bearer/native boundary and stable failures, and added AUTH-10 as the implementation gate. No runtime code or middleware was changed.

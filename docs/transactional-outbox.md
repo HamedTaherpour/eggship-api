@@ -20,3 +20,9 @@ publication. Its future claim transaction should select `PENDING` rows in
 `createdAt, id` order with row locks and `SKIP LOCKED`, then update durable
 state according to its approved at-least-once protocol. Cleanup/retention of
 published rows belongs to a later approved DATA/ASY lifecycle task.
+
+NOT-03 uses `order.status.changed` version `1` for the approved customer
+Order lifecycle transitions. Its event identity is a deterministic UUID
+derived from `(Order.id, status)`, matching the state machine's one-time
+lifecycle events. The event is appended through the existing publisher in the
+Order transition transaction; no event is marked `PUBLISHED` by NOT-03.

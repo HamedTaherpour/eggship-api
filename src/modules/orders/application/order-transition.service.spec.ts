@@ -12,6 +12,7 @@ import {
 } from '../../inventory/domain/inventory-errors';
 import { InventoryLedgerActorType } from '../../inventory/domain/inventory-ledger';
 import type { DiscountUsageService } from '../../pricing/application/discount-usage.service';
+import type { OrderStatusNotificationService } from '../../notifications/application/order-status-notification.service';
 import { OrderActorType } from '../domain/order-actor';
 import type { OrderRecord } from '../domain/order';
 import {
@@ -129,6 +130,9 @@ describe('OrderTransitionService', () => {
     Pick<InventoryService, 'releaseForOrder' | 'shipForOrder'>
   >;
   let logger: jest.Mocked<Pick<ApplicationLogger, 'info' | 'warn'>>;
+  let orderStatusNotifications: jest.Mocked<
+    Pick<OrderStatusNotificationService, 'generate'>
+  >;
   let service: OrderTransitionService;
 
   const admin = { type: OrderActorType.ADMIN, id: ADMIN_ID } as const;
@@ -155,12 +159,14 @@ describe('OrderTransitionService', () => {
       shipForOrder: jest.fn(),
     };
     logger = { info: jest.fn(), warn: jest.fn() };
+    orderStatusNotifications = { generate: jest.fn() };
     service = new OrderTransitionService(
       new ImmediateTransactionRunner(),
       repository as unknown as OrderRepository,
       discountUsage as unknown as DiscountUsageService,
       inventory as unknown as InventoryService,
       logger as unknown as ApplicationLogger,
+      orderStatusNotifications as unknown as OrderStatusNotificationService,
     );
   });
 

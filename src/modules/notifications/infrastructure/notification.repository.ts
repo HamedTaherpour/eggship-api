@@ -33,6 +33,9 @@ export class NotificationRepository {
     try {
       const row = await this.db(tx).notification.create({
         data: {
+          ...(normalized.notificationId === undefined
+            ? {}
+            : { id: normalized.notificationId }),
           userId: normalized.userId,
           type: normalized.type,
           source: normalized.source,

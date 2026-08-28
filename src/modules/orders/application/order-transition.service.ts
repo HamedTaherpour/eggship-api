@@ -37,6 +37,8 @@ import {
   ZeroRowClassification,
 } from '../domain/order-transitions';
 import { OrderRepository } from '../infrastructure/order.repository';
+import { OrderStatusNotificationService } from '../../notifications/application/order-status-notification.service';
+import type { OrderStatusNotificationInput } from '../../notifications/application/order-status-notification.service';
 import type {
   CancelOrderByAdminCommand,
   CancelPendingOrderByCustomerCommand,
@@ -59,6 +61,7 @@ export class OrderTransitionService {
     private readonly discountUsage: DiscountUsageService,
     private readonly inventory: InventoryService,
     private readonly logger: ApplicationLogger,
+    private readonly orderStatusNotifications: OrderStatusNotificationService,
   ) {}
 
   async confirmOrder(
@@ -84,6 +87,7 @@ export class OrderTransitionService {
           ctx,
         });
       }
+      await this.orderStatusNotifications.generate(notificationInput(won), ctx);
       return this.succeeded(
         won,
         actor,
@@ -120,6 +124,7 @@ export class OrderTransitionService {
 
       await this.releaseDiscountUsage(orderId, actor.id, ctx);
       await this.releaseInventoryForCustomer(orderId, actor, ctx);
+      await this.orderStatusNotifications.generate(notificationInput(won), ctx);
       return this.succeeded(
         won,
         actor,
@@ -190,6 +195,7 @@ export class OrderTransitionService {
         { orderId, actor: toInventoryActor(actor) },
         ctx,
       );
+      await this.orderStatusNotifications.generate(notificationInput(won), ctx);
       return this.succeeded(won, actor, 'order.shipped', OrderStatus.CONFIRMED);
     });
   }
@@ -212,6 +218,7 @@ export class OrderTransitionService {
           ctx,
         });
       }
+      await this.orderStatusNotifications.generate(notificationInput(won), ctx);
       return this.succeeded(won, actor, 'order.delivered', OrderStatus.SHIPPED);
     });
   }
@@ -241,6 +248,7 @@ export class OrderTransitionService {
       { orderId, actor: toInventoryActor(actor) },
       ctx,
     );
+    await this.orderStatusNotifications.generate(notificationInput(won), ctx);
     return this.succeeded(
       won,
       actor,
@@ -274,6 +282,7 @@ export class OrderTransitionService {
       { orderId, actor: toInventoryActor(actor) },
       ctx,
     );
+    await this.orderStatusNotifications.generate(notificationInput(won), ctx);
     return this.succeeded(won, actor, 'order.cancelled', OrderStatus.CONFIRMED);
   }
 
@@ -483,4 +492,26 @@ function toInventoryActor(actor: OrderActor): InventoryActor {
     return { type: InventoryLedgerActorType.USER, id: actor.id };
   }
   return { type: InventoryLedgerActorType.ADMIN, id: actor.id };
+}
+
+function notificationInput(order: OrderRecord): OrderStatusNotificationInput {
+  const occurredAt =
+    order.status === OrderStatus.CONFIRMED
+      ? order.confirmedAt
+      : order.status === OrderStatus.SHIPPED
+        ? order.shippedAt
+        : order.status === OrderStatus.DELIVERED
+          ? order.deliveredAt
+          : order.cancelledAt;
+  if (occurredAt === null) {
+    throw new Error(
+      'Order notification transition is missing its lifecycle timestamp.',
+    );
+  }
+  return {
+    orderId: order.id,
+    userId: order.userId,
+    status: order.status,
+    occurredAt,
+  };
 }

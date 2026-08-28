@@ -25,6 +25,17 @@ Notifications accumulate as durable customer-facing history. Retention,
 cleanup, archival, and deletion rules belong to the Data Lifecycle phase
 (DATA-01/DATA-02); NOT-01 does not invent a duration or cleanup job.
 
+## Order-status generation (NOT-03)
+
+NOT-03 owns generation for the approved `CONFIRMED`, `SHIPPED`, `DELIVERED`,
+and `CANCELLED` transitions. The winning Order transition writes one
+`ORDER_STATUS` / `ORDER_TRANSITION` inbox record and one ASY-01 outbox event in
+the same caller transaction. Replays and invalid transitions do neither.
+The notification payload and outbox payload contain only the Order UUID and
+new status; cancellation reasons, customer contact data, addresses, and full
+Order entities are excluded. Push delivery, claiming, retries, and Redis /
+BullMQ processing remain outside NOT-03.
+
 ## Customer inbox API (NOT-02)
 
 Authenticated `USER` principals can use these `/api/v1/notifications`

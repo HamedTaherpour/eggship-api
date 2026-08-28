@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- NOT-03 order-status notification generation: winning CONFIRMED, SHIPPED, DELIVERED, and CANCELLED transitions now atomically create a durable customer inbox record and versioned ASY-01 outbox intent with deterministic event identity and privacy-safe `{ orderId, status }` payloads. No push delivery, worker, or Redis dependency.
 - Customer notification inbox APIs (NOT-02): owner-scoped paginated list, PostgreSQL-derived unread count, idempotent mark-one-read and mark-all-read endpoints with strict pagination, minimized response DTOs, `no-store`, OpenAPI, and customer/Admin/CSRF boundary enforcement.
 
 ### Fixed

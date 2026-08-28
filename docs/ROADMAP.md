@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   107 |
-| DONE        |    60 |
+| DONE        |    61 |
 | IN_PROGRESS |     0 |
-| READY       |     4 |
+| READY       |     3 |
 | BLOCKED     |     0 |
 | PLANNED     |    43 |
 
-- Current task: no task is in progress. `AUTH-10`, `ORD-04`, `ORD-05`, and `ORD-06` remain DONE. `REF-01` and `NOT-03` are READY; no task remains BLOCKED.
+- Current task: no task is in progress. `AUTH-10`, `ORD-04`, `ORD-05`, `ORD-06`, and `NOT-03` are DONE. `REF-01` remains READY; no task remains BLOCKED.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate.
 
 ## Status model
@@ -805,11 +805,13 @@ Explicitly out of scope: Notification deletion and push delivery.
 
 ### NOT-03 — Order-status notification generation
 
-Status: READY | Depends on: NOT-01, ORD-02A, ASY-01 | Primary: Codex | Review: Claude/Cursor concurrency review
+Status: DONE | Depends on: NOT-01, ORD-02A, ASY-01 | Primary: Codex | Review: Claude/Cursor concurrency review
 
 Scope: Create durable inbox notifications from approved order transitions in the same transaction/outbox boundary where required.
 
 Acceptance criteria: Duplicate transitions/retries create at most one logical notification per event; content uses safe historical data; generation cannot make order durability depend on Redis.
+
+Delivered: Approved CONFIRMED, SHIPPED, DELIVERED, and CANCELLED winners now atomically create a durable customer inbox record and `order.status.changed` v1 ASY-01 event with deterministic identity and minimized `{ orderId, status }` payloads. Replays/invalid transitions produce no new records; push delivery and workers remain deferred to NOT-04/NOT-05.
 
 Explicitly out of scope: Push delivery and unapproved notification types.
 

@@ -5,6 +5,7 @@ import { CommercePolicyModule } from '../commerce-policy/commerce-policy.module'
 import { InventoryModule } from '../inventory/inventory.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { RegionsModule } from '../regions/regions.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
 import { OrdersController } from './api/orders.controller';
 import { AdminOrdersController } from './api/admin-orders.controller';
@@ -30,6 +31,7 @@ import { OrderRepository } from './infrastructure/order.repository';
     PricingModule,
     UsersModule,
     forwardRef(() => RegionsModule),
+    NotificationsModule,
   ],
   controllers: [OrdersController, AdminOrdersController],
   providers: [

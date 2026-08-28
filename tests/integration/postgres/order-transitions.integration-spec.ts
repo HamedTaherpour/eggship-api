@@ -43,7 +43,7 @@ async function truncateOrderTransitionTables(
 ): Promise<void> {
   assertDestructiveOperationsAllowed();
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "DiscountUsageRecord", "DiscountCustomerUsage", "InventoryLedger", "InventoryReservation", "Inventory", "OrderLine", "Order", "Product", "Category", "Region", "User" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "OutboxEvent", "DiscountUsageRecord", "DiscountCustomerUsage", "InventoryLedger", "InventoryReservation", "Inventory", "OrderLine", "Order", "Product", "Category", "Region", "User" RESTART IDENTITY CASCADE',
   );
 }
 
@@ -193,6 +193,16 @@ describe('Order transitions (integration)', () => {
     expect(result.replay).toBe(false);
     expect(result.order.status).toBe(OrderStatus.CONFIRMED);
     expect(result.order.confirmedAt).toBeInstanceOf(Date);
+    expect(
+      await prisma.outboxEvent.count({
+        where: { eventType: 'order.status.changed' },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.notification.count({
+        where: { userId: result.order.userId, type: 'ORDER_STATUS' },
+      }),
+    ).toBe(1);
     expect(result.order.deliveryAt).toEqual(deliveryAt);
   });
 
@@ -212,6 +222,16 @@ describe('Order transitions (integration)', () => {
 
     expect(replay.replay).toBe(true);
     expect(replay.order.confirmedAt).toEqual(first.order.confirmedAt);
+    expect(
+      await prisma.outboxEvent.count({
+        where: { eventType: 'order.status.changed' },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.notification.count({
+        where: { userId: first.order.userId, type: 'ORDER_STATUS' },
+      }),
+    ).toBe(1);
     expect(replay.order.deliveryAt).toEqual(first.order.deliveryAt);
   });
 

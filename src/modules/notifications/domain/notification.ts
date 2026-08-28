@@ -32,6 +32,8 @@ export type NotificationPayload = {
 };
 
 export interface CreateNotificationInput {
+  /** Optional server-assigned id used to bind a notification to an outbox event. */
+  notificationId?: string;
   userId: string;
   type: NotificationType;
   source: NotificationSource;
@@ -68,6 +70,12 @@ const FORBIDDEN_PAYLOAD_KEY =
 export function normalizeNotificationInput(
   input: CreateNotificationInput,
 ): CreateNotificationInput {
+  if (
+    input.notificationId !== undefined &&
+    !UUID_PATTERN.test(input.notificationId)
+  ) {
+    throw new NotificationInvalidInputError('notificationId must be a UUID.');
+  }
   if (!UUID_PATTERN.test(input.userId)) {
     throw new NotificationInvalidInputError('userId must be a UUID.');
   }
@@ -89,6 +97,7 @@ export function normalizeNotificationInput(
   validatePayload(input.payload);
   return {
     ...input,
+    notificationId: input.notificationId?.toLowerCase(),
     userId: input.userId.toLowerCase(),
     title,
     body,

@@ -116,6 +116,11 @@ describe('OpenAPI foundation', () => {
               JWT_ACCESS_SECRET:
                 process.env['JWT_ACCESS_SECRET'] ??
                 'openapi-jwt-access-secret-at-least-32ch',
+              CSRF_SECRET:
+                process.env['CSRF_SECRET'] ??
+                'openapi-csrf-secret-at-least-32-characters!!',
+              CSRF_ALLOWED_ORIGINS:
+                process.env['CSRF_ALLOWED_ORIGINS'] ?? 'http://localhost:3000',
               JWT_ACCESS_TTL_SECONDS: 900,
               REFRESH_TOKEN_TTL_SECONDS: 2_592_000,
               OTP_PROVIDER: 'development',

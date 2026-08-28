@@ -21,6 +21,7 @@ Business migrations live here and are applied with `prisma migrate deploy`.
 | `20260825200000_order_commerce_policy_revision` | COM-03 Order.commercePolicyRevision                               |
 | `20260825220000_discount_lifetime_usage`        | DLU-02 lifetime caps, usage aggregate/records, discountedQuantity |
 | `20260827090000_deferred_settlement`            | SET-02 OrderSettlement lifecycle and receipt references           |
+| `20260828180000_referral_visitor_persistence`   | REF-02 Visitor codes and immutable registration attribution       |
 
 Integration suites apply migrations with `prisma migrate deploy` against `TEST_DATABASE_URL`. Do not use `prisma db push` as the canonical path.
 

@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsUUID } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 
 export class CompleteAuthBodyDto {
   @ApiProperty({
@@ -12,6 +12,15 @@ export class CompleteAuthBodyDto {
   })
   @IsUUID('4')
   verificationGrantId!: string;
+
+  @ApiPropertyOptional({
+    description: 'Optional Visitor referral code for a new registration.',
+    example: 'ABCD2345EF',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(12)
+  referralCode?: string;
 }
 
 export class CompleteAuthUserDto {

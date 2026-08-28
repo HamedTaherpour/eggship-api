@@ -4,6 +4,7 @@ import { RedisModule } from '../../infrastructure/redis/redis.module';
 import { PrismaModule } from '../../infrastructure/database/prisma/prisma.module';
 import { AdminsModule } from '../admins/admins.module';
 import { UsersModule } from '../users/users.module';
+import { VisitorsModule } from '../visitors/visitors.module';
 import { AccessTokenGuard } from './api/access-token.guard';
 import { CsrfGuard } from './api/csrf.guard';
 import { CsrfService } from './api/csrf.service';
@@ -43,6 +44,7 @@ import { SecureOtpCodeIssuer } from './infrastructure/secure-otp-code-issuer';
     forwardRef(() => UsersModule),
     forwardRef(() => AdminsModule),
     RedisModule,
+    VisitorsModule,
   ],
   controllers: [AuthController, AdminAuthController],
   providers: [

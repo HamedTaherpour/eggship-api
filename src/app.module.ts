@@ -23,6 +23,7 @@ import { CommercePolicyModule } from './modules/commerce-policy/commerce-policy.
 import { SettlementsModule } from './modules/settlements/settlements.module';
 import { OutboxModule } from './modules/outbox/outbox.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { VisitorsModule } from './modules/visitors/visitors.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     SettlementsModule,
     OutboxModule,
     NotificationsModule,
+    VisitorsModule,
   ],
   controllers: [HealthController],
 })

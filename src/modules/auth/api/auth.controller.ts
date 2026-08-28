@@ -233,6 +233,7 @@ export class AuthController {
       'Existing active Users receive a new AuthSession (multi-device; prior sessions kept).',
       'Unknown phones create exactly one User (phone uniqueness) then issue a session.',
       'Canonical phone comes only from the grant; do not send phone in the body.',
+      'An optional referralCode is accepted only for a new registration and is attributed atomically.',
       'Sets HttpOnly `eggship_at` / `eggship_rt` cookies; tokens are never returned in JSON.',
       'Pre-authentication endpoint: authenticated-cookie CSRF does not apply here.',
       'After cookies are set, future cookie-authenticated mutations still require CSRF',
@@ -293,6 +294,7 @@ export class AuthController {
 
     const result = await this.completion.completeAuthentication(
       body.verificationGrantId,
+      body.referralCode,
     );
 
     this.cookies.setAuthCookies(

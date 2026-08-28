@@ -98,6 +98,44 @@ model User {
   notifications         Notification[]
   discountCustomerUsage DiscountCustomerUsage[]
   discountUsageRecords  DiscountUsageRecord[]
+  referralAttribution   ReferralAttribution?
+}
+
+/// Internal acquisition actor. Deactivation preserves code identity and history.
+model Visitor {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String   @db.VarChar(160)
+  /// Canonical trimmed uppercase manual-entry-safe code; never reused.
+  referralCode String   @unique @db.VarChar(12)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  attributions ReferralAttribution[]
+
+  @@index([isActive, createdAt, id])
+}
+
+enum ReferralSource {
+  VISITOR
+}
+
+/// Immutable registration-time attribution. No update/delete repository API.
+/// The source enum leaves room for a future USER source without a polymorphic
+/// JSON record; V1 requires VISITOR and the Visitor FK is therefore non-null.
+model ReferralAttribution {
+  id           String         @id @default(uuid()) @db.Uuid
+  userId       String         @unique @db.Uuid
+  source       ReferralSource
+  visitorId    String         @db.Uuid
+  referralCode String         @db.VarChar(12)
+  attributedAt DateTime       @default(now()) @db.Timestamptz(3)
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  visitor Visitor @relation(fields: [visitorId], references: [id], onDelete: Restrict)
+
+  @@index([visitorId, attributedAt, id])
+  @@index([source, attributedAt, id])
 }
 
 /// Durable customer inbox record. This is authoritative independently of push

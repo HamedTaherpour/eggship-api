@@ -16,6 +16,11 @@ import { AuthSessionRepository } from '../infrastructure/auth-session.repository
 import { AccessTokenService } from '../infrastructure/access-token.service';
 import { RefreshTokenService } from '../infrastructure/refresh-token.service';
 import { OtpService } from './otp.service';
+import { VisitorRepository } from '../../visitors/infrastructure/visitor.repository';
+import {
+  InvalidReferralCodeError,
+  VisitorInactiveError,
+} from '../../visitors/domain/visitor-errors';
 
 export interface CustomerAuthCompletionResult {
   accessToken: string;
@@ -48,6 +53,7 @@ export class CustomerAuthCompletionService {
     private readonly refreshTokens: RefreshTokenService,
     private readonly accessTokens: AccessTokenService,
     private readonly prisma: PrismaService,
+    private readonly visitors: VisitorRepository,
     private readonly logger: ApplicationLogger,
     config: ConfigService,
   ) {
@@ -61,6 +67,7 @@ export class CustomerAuthCompletionService {
 
   async completeAuthentication(
     verificationGrantId: string,
+    referralCode?: string,
   ): Promise<CustomerAuthCompletionResult> {
     const grant = await this.consumeVerificationGrant(verificationGrantId);
 
@@ -109,6 +116,27 @@ export class CustomerAuthCompletionService {
           throw new AuthError(
             AuthErrorCode.ACCOUNT_DISABLED,
             'Account is disabled.',
+          );
+        }
+
+        if (createdNew && referralCode !== undefined) {
+          let visitor;
+          try {
+            visitor = await this.visitors.findByReferralCode(referralCode, tx);
+          } catch (error: unknown) {
+            if (error instanceof InvalidReferralCodeError) throw error;
+            throw error;
+          }
+          if (visitor === null) throw new InvalidReferralCodeError();
+          if (!visitor.isActive) throw new VisitorInactiveError();
+          await this.visitors.createAttribution(
+            {
+              userId: existing.id,
+              visitorId: visitor.id,
+              referralCode,
+              attributedAt: now,
+            },
+            tx,
           );
         }
 

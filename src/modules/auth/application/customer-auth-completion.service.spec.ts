@@ -14,6 +14,7 @@ import type { AccessTokenService } from '../infrastructure/access-token.service'
 import { RefreshTokenService } from '../infrastructure/refresh-token.service';
 import type { OtpService } from './otp.service';
 import { CustomerAuthCompletionService } from './customer-auth-completion.service';
+import type { VisitorRepository } from '../../visitors/infrastructure/visitor.repository';
 
 describe('CustomerAuthCompletionService', () => {
   const now = new Date('2026-08-21T12:00:00.000Z');
@@ -30,6 +31,9 @@ describe('CustomerAuthCompletionService', () => {
   let prisma: { $transaction: jest.Mock };
   let service: CustomerAuthCompletionService;
   let refreshTokens: RefreshTokenService;
+  let visitors: jest.Mocked<
+    Pick<VisitorRepository, 'findByReferralCode' | 'createAttribution'>
+  >;
 
   beforeEach(() => {
     jest.useFakeTimers();
@@ -54,6 +58,10 @@ describe('CustomerAuthCompletionService', () => {
       }),
     };
     logger = { info: jest.fn() };
+    visitors = {
+      findByReferralCode: jest.fn(),
+      createAttribution: jest.fn(),
+    };
     prisma = {
       $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
         fn({}),
@@ -67,6 +75,7 @@ describe('CustomerAuthCompletionService', () => {
       refreshTokens,
       accessTokens as unknown as AccessTokenService,
       prisma as unknown as PrismaService,
+      visitors as unknown as VisitorRepository,
       logger as unknown as ApplicationLogger,
       {
         getOrThrow: (key: string) => {

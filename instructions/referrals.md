@@ -73,11 +73,12 @@ Referral codes must be unique, stable, URL/manual-entry safe, consistently
 normalized, indexed for lookup, and reasonably resistant to accidental
 ambiguity and typos. REF-02 should use trimmed uppercase normalization over a
 restricted URL-safe alphabet, making lookup case-insensitive while preserving
-one canonical stored representation. Admin provisions the code. It remains
-unresolved whether Admin selects the exact code or the system generates it
-during Visitor creation; REF-02 must not invent that choice. Code reuse after
-deactivation is also unresolved and requires an explicit decision; the safe
-default for historical integrity is non-reuse.
+one canonical stored representation. Admin may provide a preferred code or let
+the system generate one. Codes are 6–10 characters from
+`ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (excluding O/0/I/1); generated codes use
+10 characters and retry boundedly on a database collision. Codes are globally
+unique and never reused, including after deactivation. Reactivation preserves
+the same code.
 
 ## Persistence, authority, and analytics
 
@@ -94,6 +95,9 @@ valid referral attribution must commit in the same authoritative PostgreSQL
 transaction. A rollback leaves neither the successful registration nor its
 attribution. REF-02/REF-03 must use database uniqueness/conditional writes or
 equivalent transaction-safe primitives; check-then-insert is insufficient.
+REF-02 uses a dedicated `ReferralAttribution` row with unique `userId`, Visitor
+`RESTRICT` FKs, and no update/delete API; REF-03 owns future capture/link
+behavior.
 
 The attribution record is historical data: no customer edit, Admin edit,
 reassignment, or later override is allowed. Rewards, if approved later, must
@@ -112,7 +116,7 @@ registered phone accounts, and no speculative fraud signal is inferred. Raw
 Visitor/referral data remains subject to the future DATA-01 classification and
 retention decision.
 
-REF-02 must define the minimal relational schema, ownership/provenance,
+REF-02 defines the minimal relational schema, ownership/provenance,
 normalization, uniqueness, deletion behavior, duplicate/idempotency behavior,
 and privacy classification. REF-03
 must integrate the valid-code decision into the existing new-registration

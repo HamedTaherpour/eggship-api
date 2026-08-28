@@ -24,6 +24,7 @@ import { SettlementsModule } from './modules/settlements/settlements.module';
 import { OutboxModule } from './modules/outbox/outbox.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { VisitorsModule } from './modules/visitors/visitors.module';
+import { BlogsModule } from './modules/blogs/blogs.module';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { VisitorsModule } from './modules/visitors/visitors.module';
     OutboxModule,
     NotificationsModule,
     VisitorsModule,
+    BlogsModule,
   ],
   controllers: [HealthController],
 })

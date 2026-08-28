@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Public blog model and APIs (CNT-01): Prisma `Blog` (`id`, unique canonical kebab-case `slug`, `title`, opaque `body`, `isPublished`, UTC `publishedAt`, timestamps) with additive migration and publication/slug CHECKs; public paginated `GET /api/v1/blogs` and `GET /api/v1/blogs/:slug` exposing published posts only (draft list/search/count/detail cannot leak); CAT-01 pagination/search(title)/sort allowlist with `id` tie-break; no Media FK (MED-01); no Admin editing, scheduling, or Redis caching; `instructions/content.md`; OpenAPI `Blogs_list` / `Blogs_get`.
 - REL-01 real PostgreSQL and Redis test environments: closed FND-07 overlap with PostgreSQL runtime/test target-equivalence guards, documented the approved local/CI/remote TEST environment model, capability-aware integration suites, and future remote TEST contract. No Liara provisioning.
 - REF-03 roadmap rebaseline: referral capture is recorded as delivered by REF-02, with focused existing-user privacy/OpenAPI verification and no new referral endpoint or infrastructure.
 - REF-02 Visitor persistence and immutable PostgreSQL registration attribution: canonical non-ambiguous referral codes with collision-safe generation, inactive Visitor handling, unique historical User attribution, and optional new-registration referral input. Visitor Admin HTTP, rewards, and tracking remain deferred.

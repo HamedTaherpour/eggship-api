@@ -2,7 +2,7 @@
 
 Durable policy for EggShip reusable Media. Field-level HTTP contracts belong in OpenAPI; this file records storage, upload, and lifecycle rules that must not drift.
 
-CAT-04 implements the Media domain. Product, Blog, and Category attachment is later work and must not assume a one-to-one relationship.
+CAT-04 implements the Media domain. Product, Blog, and Category attachment is later work (MED-01) and must not assume a one-to-one relationship. CNT-01 Blog persistence has no Media FK.
 
 ## Ownership
 
@@ -127,7 +127,7 @@ Upload and delete are auditable Admin candidates for AUD-01. Do not write fake A
 
 ## Follow-ups
 
-- Product/Blog/Category attachment (not CAT-04)
+- Product/Blog/Category attachment (not CAT-04; CNT-01 Blog has no Media FK)
 - Orphan object reconciliation, failed-delete retry, unused-Media policy (DATA-02; no retention periods invented here)
 - Live production-bucket verification (DEP-02 / credentials)
 - Historical-reference rules when content starts pointing at Media (CNT/PRC)

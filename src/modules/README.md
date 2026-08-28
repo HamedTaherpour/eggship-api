@@ -11,6 +11,7 @@ EggShip business modules live here when a roadmap task justifies them.
 | `regions/`    | Region reference (CAT-02)                                      |
 | `products/`   | Product catalog identity and current Toman price (CAT-03)      |
 | `media/`      | Reusable Media library metadata and Admin uploads (CAT-04)     |
+| `blogs/`      | Public published blog list/detail (CNT-01)                     |
 | `inventory/`  | Stock balances, reservations, and ledger persistence (INV-01B) |
 
-Canonical policy: [instructions/authentication.md](../../instructions/authentication.md), [instructions/authorization.md](../../instructions/authorization.md), [instructions/catalog.md](../../instructions/catalog.md), [instructions/media.md](../../instructions/media.md), and [instructions/inventory.md](../../instructions/inventory.md).
+Canonical policy: [instructions/authentication.md](../../instructions/authentication.md), [instructions/authorization.md](../../instructions/authorization.md), [instructions/catalog.md](../../instructions/catalog.md), [instructions/content.md](../../instructions/content.md), [instructions/media.md](../../instructions/media.md), and [instructions/inventory.md](../../instructions/inventory.md).

@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   107 |
-| DONE        |    68 |
+| DONE        |    69 |
 | IN_PROGRESS |     0 |
 | READY       |     1 |
 | BLOCKED     |     0 |
-| PLANNED     |    38 |
+| PLANNED     |    37 |
 
-- Current task: `REL-02` is closed. `CNT-01` is READY. No task remains BLOCKED.
+- Current task: `CNT-01` is closed. `CNT-02` is READY. No task remains BLOCKED.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate.
 
 ## Status model
@@ -845,17 +845,19 @@ Explicitly out of scope: Admin UI and additional delivery channels.
 
 ### CNT-01 — Blog model and public APIs
 
-Status: READY | Depends on: CAT-01, CAT-04 | Primary: Codex | Review: Claude/Cursor, Human migration review
+Status: DONE | Depends on: CAT-01, CAT-04 | Primary: Codex | Review: Claude/Cursor, Human migration review
 
 Scope: Model legacy blog/content relationships and implement public published list/detail APIs with explicit slugs, visibility, and publication timestamps.
 
 Acceptance criteria: Draft/unpublished content cannot leak; pagination/search and Tehran/UTC publication semantics are approved; media history is preserved.
 
+Delivered: Minimal `Blog` Prisma model and additive migration (`id`, unique canonical `slug`, `title`, opaque `body`, `isPublished`, UTC `publishedAt`, timestamps; CHECKs for slug/title/body/publication; public list index). Public `GET /api/v1/blogs` and `GET /api/v1/blogs/:slug` with CAT-01 pagination/search(title)/sort allowlist (`publishedAt`/`title`/`createdAt`, default `publishedAt`/`desc` with `id` tie-break). Shared `isPublished = true` eligibility for list, detail, search, and counts; unpublished detail is indistinguishable from missing (`BLOG_NOT_FOUND`). No Media FK (MED-01); no scheduling (`publishedAt` is evidence, not a future gate); no Admin HTTP. `instructions/content.md`; unit/e2e/PostgreSQL coverage; OpenAPI `Blogs_list` / `Blogs_get`.
+
 Explicitly out of scope: Admin editing and Redis caching.
 
 ### CNT-02 — Blog administration and publishing
 
-Status: PLANNED | Depends on: CNT-01, AUTH-08 | Primary: Codex | Review: Claude/Cursor
+Status: READY | Depends on: CNT-01, AUTH-08 | Primary: Codex | Review: Claude/Cursor
 
 Scope: Implement authorized create/edit/publish/unpublish workflows with explicit state transitions and media references.
 
@@ -1362,7 +1364,8 @@ The following are not implementation assumptions:
 - Deferred settlement lifecycle is decided in [ADR 0018](adr/0018-deferred-settlement-lifecycle.md) / SET-01 (separate `OrderSettlement` module; `DELIVERED`-only creation; `OPEN`/`SETTLED` with derived overdue; one current receipt; receipt-required explicit settle; no V1 reopen; `RETURNED` leaves settlement untouched; full `Order.total`; `SUPER_ADMIN`-only grants). Remaining explicit decisions, not implementation assumptions: `WAREHOUSE`/`ORDER_OPS` settlement permission grants (MIG-01 evidence), settlement without receipt, correction/reopen workflow, return/refund/credit adjustments interacting with settlement, multiple receipts or PDF proof, customer-facing settlement surfaces, and due/overdue reminders. No gateway, card/bank fields, refunds, or accounting subsystem is approved.
 - Future USER referral, visitor conversion, attribution correction/reassignment, reward policy, and any broader self-referral rule remain deferred. V1 Visitor attribution, duplicate handling, no-op existing-user behavior, no-reuse codes, and no speculative self-referral matching are settled in ADR 0020 / `instructions/referrals.md`.
 - Notification type/content rules, push provider/consent, delivery guarantees, and token lifecycle.
-- Media historical-reference behavior when Product/Blog/Category attach to Media (MED-01). Upload limits/types and the S3-compatible provider abstraction are decided in CAT-04 / ADR 0011; orphan cleanup remains DATA-02 (no retention periods invented). Live production-bucket verification remains pending credentials (DEP-02).
+- Media historical-reference behavior when Product/Blog/Category attach to Media (MED-01). CNT-01 Blog has no Media FK. Upload limits/types and the S3-compatible provider abstraction are decided in CAT-04 / ADR 0011; orphan cleanup remains DATA-02 (no retention periods invented). Live production-bucket verification remains pending credentials (DEP-02).
+- Blog legacy parity gaps (MIG-01): author, tags/categories, SEO metadata, excerpt, comments, cover/gallery media, HTML vs Markdown distinction, slug redirects, and whether scheduled publishing is required. CNT-01 shipped `isPublished` + UTC `publishedAt` without a schedule gate.
 - Tehran/business-day definitions and canceled/returned treatment for each analytics metric.
 - Retention periods for every data class and backup recovery objectives.
 - Legacy compatibility, migration transforms, rollout waves, parallel-validation feasibility, and final cutover strategy.

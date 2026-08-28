@@ -23,4 +23,4 @@ Redis may support queues, OTP short-lived state, rate limits, short-lived coordi
 
 A cache requires a documented key namespace, ownership, maximum TTL, invalidation behavior, serialization version, failure behavior, and protection against cross-tenant or cross-user leakage. Cache correctness must tolerate eviction, expiration, duplication, and temporary Redis unavailability. Do not cache sensitive data without an explicit security and privacy review. AI agents must not add a cache merely because Redis is available.
 
-Good candidates may include public catalog reads, public blog/content reads, and low-volatility reference or configuration data. Cached values must not be authoritative for inventory availability, order status, discount eligibility, payment state, permissions, or security decisions.
+Good candidates may include public catalog reads, public blog/content reads, and low-volatility reference or configuration data. CNT-01 does not implement a blog cache. Cached values must not be authoritative for inventory availability, order status, discount eligibility, payment state, permissions, or security decisions.

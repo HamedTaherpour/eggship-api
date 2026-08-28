@@ -116,6 +116,7 @@ export function buildOpenApiConfig(
     )
     .addTag('Users', 'Authenticated customer/store profile')
     .addTag('Categories', 'Public product category reference list')
+    .addTag('Blogs', 'Public published blog list and detail')
     .addTag('Regions', 'Public region reference list')
     .addTag('AdminCategories', 'Admin category reference management')
     .addTag('AdminRegions', 'Admin region reference management')

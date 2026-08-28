@@ -460,6 +460,27 @@ model Media {
   @@index([mimeType, createdAt])
 }
 
+/// Public storefront blog post (CNT-01). No Media FK (MED-01 owns attachment).
+/// No author, tags, SEO, excerpt, comments, or scheduled publishing. CHECKs live
+/// in the SQL migration. Public eligibility is `isPublished = true` only.
+model Blog {
+  id          String    @id @default(uuid()) @db.Uuid
+  /// Canonical public lookup key. Unique across drafts and published posts.
+  slug        String    @unique @db.VarChar(120)
+  title       String    @db.VarChar(200)
+  /// Opaque stored body (HTML or Markdown). Backend does not sanitize or render.
+  body        String    @db.Text
+  /// Public APIs return only published rows. Drafts never leak via list/detail.
+  isPublished Boolean   @default(false)
+  /// UTC timestamptz of publication when published. Not a future-schedule gate.
+  publishedAt DateTime? @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+
+  /// Public list: published rows ordered by publishedAt with id tie-break.
+  @@index([isPublished, publishedAt, id])
+}
+
 /// Per-product aggregate sellable balances (INV-01B). `productId` is the natural
 /// identity — one Inventory row per Product. `available` is derived, never stored.
 /// CHECK constraints live in the SQL migration (`onHand >= 0`, `reserved >= 0`,

@@ -23,6 +23,7 @@ Business migrations live here and are applied with `prisma migrate deploy`.
 | `20260827090000_deferred_settlement`            | SET-02 OrderSettlement lifecycle and receipt references           |
 | `20260828180000_referral_visitor_persistence`   | REF-02 Visitor codes and immutable registration attribution       |
 | `20260828200000_referral_code_invariants`       | REF-02 canonical code checks and database immutability guard      |
+| `20260828220000_blog_content`                   | CNT-01 Blog persistence for public published list/detail          |
 
 Integration suites apply migrations with `prisma migrate deploy` against `TEST_DATABASE_URL`. Do not use `prisma db push` as the canonical path.
 

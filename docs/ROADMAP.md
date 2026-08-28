@@ -533,13 +533,15 @@ Delivered: `POST /api/v1/orders/:id/cancel` (`Orders_cancel`) for authenticated 
 
 ### ORD-06 — Admin order list, detail, and transitions
 
-Status: READY | Depends on: ORD-02, ORD-03, AUTH-08 | Primary: Codex | Review: Claude/Cursor
+Status: DONE | Depends on: ORD-02, ORD-03, AUTH-08 | Primary: Codex | Review: Claude/Cursor
 
 Scope: Implement permissioned admin queries and single-order transitions with transition preconditions and inventory integration.
 
 Acceptance criteria: Filters/sorts are allowlisted and indexed; transition conflicts are explicit; actor/request/correlation data reaches audit hooks.
 
 Explicitly out of scope: Bulk operations, dispatch board, and returns.
+
+Delivered: Permissioned `GET /api/v1/admin/orders` and `GET /api/v1/admin/orders/:id` plus explicit `confirm`, `cancel`, `ship`, and `deliver` commands. Admin list filters/sorts are strictly allowlisted with bounded pagination and stable `id` tie-break ordering; rows and details use persisted snapshots and omit internal idempotency/commerce metadata. `ORDER_READ` and `ORDER_TRANSITION` are enforced by the central guards, with WAREHOUSE read-only and ORDER_OPS/SUPER_ADMIN operational access. Commands delegate to ORD-02 for conditional transitions, replay idempotency, lifecycle timestamps, DLU/Inventory transaction orchestration, and stable errors. All Admin Order reads/mutations are no-store. No schema migration. CSRF remains the shared AUTH-09 production blocker. Unit/lightweight HTTP/OpenAPI verification is included; live PostgreSQL concurrency verification remains environment-dependent where TEST_DATABASE_URL is unavailable.
 
 ### ORD-07 — Returns, bulk transitions, and dispatch board
 

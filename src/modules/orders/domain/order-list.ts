@@ -27,3 +27,26 @@ export interface OrderListQuery extends PageRequest {
   createdFrom?: Date;
   createdTo?: Date;
 }
+
+export const ADMIN_ORDER_SORT_FIELDS = [
+  'createdAt',
+  'total',
+  'status',
+  'deliveryAt',
+] as const;
+
+export type AdminOrderSortField = (typeof ADMIN_ORDER_SORT_FIELDS)[number];
+
+export interface AdminOrderListRecord extends OrderListRecord {
+  customerPhone: string;
+  deliveryAt: Date | null;
+}
+
+export interface AdminOrderListQuery extends PageRequest {
+  sortBy: AdminOrderSortField;
+  sortOrder: SortOrder;
+  status?: OrderStatus;
+  regionId?: string;
+  createdFrom?: Date;
+  createdTo?: Date;
+}

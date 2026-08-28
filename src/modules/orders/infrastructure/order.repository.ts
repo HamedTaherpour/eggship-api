@@ -31,6 +31,9 @@ import type {
   TrustedCreateOrderInput,
 } from '../domain/order';
 import type {
+  AdminOrderListQuery,
+  AdminOrderListRecord,
+  AdminOrderSortField,
   CustomerOrderSortField,
   OrderListQuery,
   OrderListRecord,
@@ -205,6 +208,35 @@ export class OrderRepository {
       items: rows.map(mapOrderListRecord),
       total,
     };
+  }
+
+  /** Permissioned Admin list; deliberately unscoped by customer ownership. */
+  async listAdmin(
+    query: AdminOrderListQuery,
+  ): Promise<PageResult<AdminOrderListRecord>> {
+    const where = buildAdminListWhere(query);
+    const { skip, take } = toSkipTake(query);
+    const orderBy = buildAdminListOrderBy(query.sortBy, query.sortOrder);
+    const [total, rows] = await this.prisma.$transaction([
+      this.prisma.order.count({ where }),
+      this.prisma.order.findMany({
+        where,
+        orderBy,
+        skip,
+        take,
+        select: {
+          id: true,
+          status: true,
+          customerPhone: true,
+          regionId: true,
+          regionName: true,
+          total: true,
+          deliveryAt: true,
+          createdAt: true,
+        },
+      }),
+    ]);
+    return { items: rows.map(mapAdminOrderListRecord), total };
   }
 
   async findByUserIdAndIdempotencyKey(
@@ -778,6 +810,39 @@ function buildOwnedListOrderBy(
   return [{ [field]: sortOrder }, { id: 'asc' }];
 }
 
+const ADMIN_SORT_FIELD_MAP: Record<AdminOrderSortField, string> = {
+  createdAt: 'createdAt',
+  total: 'total',
+  status: 'status',
+  deliveryAt: 'deliveryAt',
+};
+
+function buildAdminListWhere(
+  query: AdminOrderListQuery,
+): Prisma.OrderWhereInput {
+  return {
+    ...(query.status === undefined ? {} : { status: query.status }),
+    ...(query.regionId === undefined ? {} : { regionId: query.regionId }),
+    ...(query.createdFrom === undefined && query.createdTo === undefined
+      ? {}
+      : {
+          createdAt: {
+            ...(query.createdFrom === undefined
+              ? {}
+              : { gte: query.createdFrom }),
+            ...(query.createdTo === undefined ? {} : { lte: query.createdTo }),
+          },
+        }),
+  };
+}
+
+function buildAdminListOrderBy(
+  sortBy: AdminOrderSortField,
+  sortOrder: 'asc' | 'desc',
+): Prisma.OrderOrderByWithRelationInput[] {
+  return [{ [ADMIN_SORT_FIELD_MAP[sortBy]]: sortOrder }, { id: 'asc' }];
+}
+
 function mapOrderListRecord(row: OrderListRow): OrderListRecord {
   return {
     id: row.id,
@@ -785,6 +850,28 @@ function mapOrderListRecord(row: OrderListRow): OrderListRecord {
     regionId: row.regionId,
     regionName: row.regionName,
     total: row.total,
+    createdAt: row.createdAt,
+  };
+}
+
+function mapAdminOrderListRecord(row: {
+  id: string;
+  status: string;
+  customerPhone: string;
+  regionId: string;
+  regionName: string;
+  total: bigint;
+  deliveryAt: Date | null;
+  createdAt: Date;
+}): AdminOrderListRecord {
+  return {
+    id: row.id,
+    status: row.status as AdminOrderListRecord['status'],
+    customerPhone: row.customerPhone,
+    regionId: row.regionId,
+    regionName: row.regionName,
+    total: row.total,
+    deliveryAt: row.deliveryAt,
     createdAt: row.createdAt,
   };
 }

@@ -85,6 +85,13 @@ Customer read HTTP (ORD-04): `GET /api/v1/orders` (`Orders_list`) and `GET /api/
 - List: CAT-01 pagination; optional `status`, inclusive `createdFrom`/`createdTo`; sort allowlist `createdAt`/`total`/`status` (default `createdAt` desc, stable `id` tie-break); no search; unknown query params rejected.
 - List items are summary snapshots (no line items). Detail returns persisted line snapshots and lifecycle timestamps; does not join current Product/Discount state.
 - Missing or other-owner detail → `ORDER_NOT_FOUND` (404), same shape. Wrong subject type → `AUTH_FORBIDDEN` (403).
+
+Admin Order HTTP (ORD-06): `GET /api/v1/admin/orders`, `GET /api/v1/admin/orders/:id`, and explicit `POST` commands at `/confirm`, `/cancel`, `/ship`, and `/deliver`.
+
+- Admin list uses CAT-01 pagination with optional `status`, `regionId`, inclusive `createdFrom`/`createdTo`, and the explicit sort allowlist `createdAt`, `total`, `status`, `deliveryAt` (default `createdAt` descending with stable `id` tie-break). It intentionally has no free-text search and returns summary snapshots only.
+- Admin reads and commands require `ORDER_READ` or `ORDER_TRANSITION`, respectively, through `AccessTokenGuard` + `PermissionGuard`. `ORDER_OPS` and `SUPER_ADMIN` can operate; `WAREHOUSE` is read-only; `USER` is forbidden.
+- Admin detail and mutation responses use persisted historical snapshots and include operational cancellation metadata, but omit idempotency payload/hash, commerce-policy metadata, Prisma entities, and infrastructure fields. All Admin Order responses are `Cache-Control: no-store`.
+- Admin command actor identity is derived from the authenticated Admin principal. Commands delegate to the ORD-02 transition service; they do not add a generic status update or a second state machine. Cookie-authenticated mutations remain subject to the shared AUTH-09 CSRF blocker.
 - Success responses use `Cache-Control: no-store`.
 - Body: `{ regionId, lines: [{ productId, quantity }] }` only. No `userId`, actor, phone, prices, names, discount ids, totals, status, or commerce-policy fields.
 - Header: required UUID `Idempotency-Key` (stable `IDEMPOTENCY_KEY_REQUIRED` / `IDEMPOTENCY_KEY_INVALID`).
@@ -370,7 +377,7 @@ When profile/address support lands, Orders must snapshot address at creation —
 
 ## Module layout
 
-`src/modules/orders/` — domain types, money helpers, `OrderCreationService` (`createOrder`), `OrderReadService` (customer list/detail), `OrdersController` (`POST`/`GET /orders`, ORD-03A/ORD-04, customer cancel ORD-05), `OrderTransitionService` (confirm/cancel/ship/deliver), `OrderRepository` (`createWithTrustedSnapshots`, `findById`, `findOwnedById`, `listOwned`, idempotency lookup/lock, closed conditional status updates). Admin transition HTTP remains ORD-06. Orders imports Pricing + Inventory application contracts; Inventory must not import Orders.
+`src/modules/orders/` — domain types, money helpers, `OrderCreationService` (`createOrder`), `OrderReadService` (customer and Admin list/detail), `OrdersController` (customer HTTP), `AdminOrdersController` (permissioned Admin list/detail/confirm/cancel/ship/deliver), `OrderTransitionService` (confirm/cancel/ship/deliver), and `OrderRepository` (`createWithTrustedSnapshots`, Admin/owner reads, idempotency lookup/lock, closed conditional status updates). Orders imports Pricing + Inventory application contracts; Inventory must not import Orders.
 
 ## Related ADRs
 

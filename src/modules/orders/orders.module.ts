@@ -7,6 +7,7 @@ import { PricingModule } from '../pricing/pricing.module';
 import { RegionsModule } from '../regions/regions.module';
 import { UsersModule } from '../users/users.module';
 import { OrdersController } from './api/orders.controller';
+import { AdminOrdersController } from './api/admin-orders.controller';
 import { OrderCreationService } from './application/order-creation.service';
 import { OrderReadService } from './application/order-read.service';
 import { OrderTransitionService } from './application/order-transition.service';
@@ -30,7 +31,7 @@ import { OrderRepository } from './infrastructure/order.repository';
     UsersModule,
     forwardRef(() => RegionsModule),
   ],
-  controllers: [OrdersController],
+  controllers: [OrdersController, AdminOrdersController],
   providers: [
     OrderRepository,
     OrderCreationService,

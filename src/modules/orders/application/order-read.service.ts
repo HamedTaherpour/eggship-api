@@ -6,9 +6,12 @@ import {
 } from '../../../common/list';
 import type { CustomerOrderListQueryDto } from '../api/dto/customer-order-list-query.dto';
 import { resolveCustomerOrderSort } from '../api/dto/customer-order-list-query.dto';
+import type { AdminOrderListQueryDto } from '../api/dto/admin-order-list-query.dto';
+import { resolveAdminOrderSort } from '../api/dto/admin-order-list-query.dto';
 import { OrderNotFoundError } from '../domain/order-errors';
 import type { OrderRecord } from '../domain/order';
 import type { OrderListRecord } from '../domain/order-list';
+import type { AdminOrderListRecord } from '../domain/order-list';
 import { OrderRepository } from '../infrastructure/order.repository';
 
 @Injectable()
@@ -42,6 +45,34 @@ export class OrderReadService {
     if (found === null) {
       throw new OrderNotFoundError();
     }
+    return found;
+  }
+
+  async listAdmin(
+    query: AdminOrderListQueryDto,
+  ): Promise<PaginatedResponse<AdminOrderListRecord>> {
+    const pageRequest = resolvePageRequest(query);
+    const sort = resolveAdminOrderSort(query);
+    const page = await this.orders.listAdmin({
+      page: pageRequest.page,
+      pageSize: pageRequest.pageSize,
+      sortBy: sort.sortBy,
+      sortOrder: sort.sortOrder,
+      status: query.status,
+      regionId: query.regionId,
+      createdFrom:
+        query.createdFrom === undefined
+          ? undefined
+          : new Date(query.createdFrom),
+      createdTo:
+        query.createdTo === undefined ? undefined : new Date(query.createdTo),
+    });
+    return toPaginatedResponse(page.items, pageRequest, page.total);
+  }
+
+  async getAdmin(orderId: string): Promise<OrderRecord> {
+    const found = await this.orders.findById(orderId);
+    if (found === null) throw new OrderNotFoundError();
     return found;
   }
 }

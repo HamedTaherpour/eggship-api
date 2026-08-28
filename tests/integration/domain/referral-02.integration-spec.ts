@@ -82,7 +82,7 @@ describe('REF-02 referral persistence (real PostgreSQL)', () => {
 
   function nextPhone(): string {
     phoneSequence += 1;
-    return `+98912${String(Date.now() % 10_000_000).padStart(7, '0')}${String(phoneSequence).slice(-1)}`.slice(
+    return `+98912${String(Date.now() % 100_000).padStart(5, '0')}${String(phoneSequence % 100).padStart(2, '0')}`.slice(
       0,
       13,
     );
@@ -133,7 +133,7 @@ describe('REF-02 referral persistence (real PostgreSQL)', () => {
   it('rejects invalid and inactive codes without User or attribution residue', async () => {
     const visitor = await visitors.create({
       name: 'Inactive owner',
-      referralCode: 'GHIJKL2345',
+      referralCode: 'GHJKLM2345',
     });
     await visitors.deactivate(visitor.id);
     const phone = nextPhone();
@@ -159,7 +159,7 @@ describe('REF-02 referral persistence (real PostgreSQL)', () => {
   it('allows many distinct Users to use one active Visitor and preserves same-phone semantics', async () => {
     const visitor = await visitors.create({
       name: 'Stampede owner',
-      referralCode: 'MNOPQR2345',
+      referralCode: 'MNPQRS2345',
     });
     const phones = Array.from({ length: 12 }, () => nextPhone());
     const outcomes = await Promise.allSettled(
@@ -239,7 +239,7 @@ describe('REF-02 referral persistence (real PostgreSQL)', () => {
   it('makes the registration-before-deactivation serial history explicit with a held Visitor lock', async () => {
     const visitor = await visitors.create({
       name: 'Race owner',
-      referralCode: 'EFGHIJ2345',
+      referralCode: 'EFGHJK2345',
     });
     let releaseLock!: () => void;
     const lockReleased = new Promise<void>((resolve) => {

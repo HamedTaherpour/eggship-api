@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   107 |
-| DONE        |    64 |
-| IN_PROGRESS |     1 |
-| READY       |     2 |
+| DONE        |    65 |
+| IN_PROGRESS |     0 |
+| READY       |     3 |
 | BLOCKED     |     0 |
-| PLANNED     |    40 |
+| PLANNED     |    39 |
 
-- Current task: `REF-02` implementation is in progress pending focused concurrency/migration/privacy review. No task remains BLOCKED.
+- Current task: `REF-02` live PostgreSQL verification is complete. `REF-03` is READY but has not started. No task remains BLOCKED.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate.
 
 ## Status model
@@ -751,7 +751,7 @@ Explicitly out of scope: Inventing reward amounts or assuming last/first-touch b
 
 ### REF-02 — Referral and visitor persistence
 
-Status: IN_PROGRESS | Depends on: REF-01 | Primary: Codex | Review: Claude/Cursor, Human migration/privacy review
+Status: DONE | Depends on: REF-01 | Primary: Codex | Review: Claude/Cursor, Human migration/privacy review
 
 Scope: Model visitor identities where justified, user/store referral codes and links, attribution records, ownership, provenance, and uniqueness/idempotency constraints.
 
@@ -761,9 +761,11 @@ Explicitly out of scope: Rewards, broad tracking, and fingerprinting without pri
 
 Implemented pending required review: Dedicated PostgreSQL-authoritative `Visitor` and immutable `ReferralAttribution` persistence with RESTRICT foreign keys, unique non-reusable canonical referral codes, bounded collision-safe generation, active-code validation, and atomic integration into new-user OTP completion. Existing-user authentication cannot acquire attribution; no Visitor Admin HTTP, rewards, click tracking, or aggregates were added.
 
+Verified live: PostgreSQL integration and concurrency proof passed against the dedicated `eggship_test` database, including registration attribution/rollback, Visitor lifecycle serialization, uniqueness races, code immutability/non-reuse, and Auth unique-conflict recovery. REF-03 remains unstarted.
+
 ### REF-03 — Referral capture and attribution services
 
-Status: PLANNED | Depends on: REF-02 | Primary: Codex | Review: Claude/Cursor security/concurrency review
+Status: READY | Depends on: REF-02 | Primary: Codex | Review: Claude/Cursor security/concurrency review
 
 Scope: Implement bounded referral-link resolution, attribution capture, registration/store association, ownership enforcement, and duplicate/self-referral handling.
 

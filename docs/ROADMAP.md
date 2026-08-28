@@ -6,14 +6,14 @@ This is the authoritative execution plan for completing the standalone EggShip A
 
 | Measure     | Count |
 | ----------- | ----: |
-| Total       |   104 |
+| Total       |   105 |
 | DONE        |    51 |
 | IN_PROGRESS |     0 |
-| READY       |     1 |
+| READY       |     9 |
 | BLOCKED     |     0 |
-| PLANNED     |    52 |
+| PLANNED     |    45 |
 
-- Current task: none in progress. `SET-02` is DONE (deferred-settlement persistence and Admin operations). `REF-01` is the next READY task and requires the Human + ChatGPT architecture process for referral attribution and abuse policy. No task remains BLOCKED.
+- Current task: none in progress. `SET-02` is DONE (deferred-settlement persistence and Admin operations). `AUTH-09` is the dedicated CSRF security task for cookie-authenticated browser mutations; `ORD-04` is the next product-critical READY task. `REF-01` remains READY for referral attribution and abuse policy. No task remains BLOCKED.
 - Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-08`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but CSRF middleware for cookie-authenticated browser mutations remains a production blocker, so M2 must not be reported as production-ready.
 
 ## Status model
@@ -265,6 +265,16 @@ Acceptance criteria: Default denial and server-side ownership are enforced; auth
 
 Explicitly out of scope: Inventing organization tenancy or granting implicit superuser access.
 
+### AUTH-09 — CSRF architecture and browser-mutation protection
+
+Status: READY | Depends on: AUTH-01, AUTH-04, AUTH-08, ADM-AUTH-01 | Primary: Human + ChatGPT architecture process | Review: Claude/Cursor security review, Human approval
+
+Scope: Approve the shared CSRF contract for cookie-authenticated browser mutations across customer and Admin flows, including the protected route inventory, browser/site constraints, failure behavior, and implementation boundaries. This task does not implement middleware.
+
+Acceptance criteria: The approved decision names the customer and Admin mutation endpoints that must be protected before production readiness, records the browser/request contract and deployment assumptions, and produces the follow-up implementation scope without inventing separate customer/Admin CSRF systems.
+
+Explicitly out of scope: Implementing middleware, switching to LocalStorage, or splitting customer and Admin CSRF into different mechanisms.
+
 Delivered: code-defined `Permission` catalog and `AdminRole` → permission policy ([ADR 0007](adr/0007-authorization-model.md)), `AuthorizationService`, `@RequirePermissions` (ALL semantics), `PermissionGuard`, `AdminRoleResolver` port with a fail-closed default supplied through `AuthorizationModule.forRoot()`, principal-derived customer ownership scoping, `AUTH_FORBIDDEN` (403), and the `authz.denied` security log. Access-token claims are unchanged: no role or permission snapshot.
 
 Completed by ADM-00: Admin identity persistence, the `email` login identifier, `PrismaAdminRoleResolver` wiring, and the settled wrong-subject 403 contract.
@@ -499,7 +509,7 @@ Delivered: `POST /api/v1/orders` (`Orders_create`) with `AccessTokenGuard` + `re
 
 ### ORD-04 — Customer order list and detail
 
-Status: PLANNED | Depends on: ORD-03, AUTH-08 | Primary: Codex | Review: Claude/Cursor
+Status: READY | Depends on: ORD-03, AUTH-08 | Primary: Codex | Review: Claude/Cursor
 
 Scope: Implement owner-scoped customer order list/detail APIs using historical snapshots and standardized list behavior.
 
@@ -509,7 +519,7 @@ Explicitly out of scope: Mutation and admin fields.
 
 ### ORD-05 — Customer cancellation and stock release
 
-Status: PLANNED | Depends on: ORD-02, ORD-03, DLU-02 | Primary: Codex | Review: Claude/Cursor concurrency review
+Status: READY | Depends on: ORD-02, ORD-03, DLU-02 | Primary: Codex | Review: Claude/Cursor concurrency review
 
 Scope: Implement authorized idempotent cancellation for approved states, release Inventory reservations through its application contract, and release lifetime discounted-quantity consumption per ADR 0017 in the same transaction.
 
@@ -519,7 +529,7 @@ Explicitly out of scope: Returns and refunds.
 
 ### ORD-06 — Admin order list, detail, and transitions
 
-Status: PLANNED | Depends on: ORD-02, ORD-03, AUTH-08 | Primary: Codex | Review: Claude/Cursor
+Status: READY | Depends on: ORD-02, ORD-03, AUTH-08 | Primary: Codex | Review: Claude/Cursor
 
 Scope: Implement permissioned admin queries and single-order transitions with transition preconditions and inventory integration.
 
@@ -741,7 +751,7 @@ Explicitly out of scope: Defining monetary rewards in this roadmap.
 
 ### NOT-01 — Durable notification inbox model
 
-Status: PLANNED | Depends on: AUTH-07 | Primary: Codex | Review: Claude/Cursor, Human migration review
+Status: READY | Depends on: AUTH-07 | Primary: Codex | Review: Claude/Cursor, Human migration review
 
 Scope: Model durable user Notification records, approved notification types, safe payload/versioning, read state, creation source, and timestamps.
 
@@ -793,7 +803,7 @@ Explicitly out of scope: Admin UI and additional delivery channels.
 
 ### CNT-01 — Blog model and public APIs
 
-Status: PLANNED | Depends on: CAT-01, CAT-04 | Primary: Codex | Review: Claude/Cursor, Human migration review
+Status: READY | Depends on: CAT-01, CAT-04 | Primary: Codex | Review: Claude/Cursor, Human migration review
 
 Scope: Model legacy blog/content relationships and implement public published list/detail APIs with explicit slugs, visibility, and publication timestamps.
 
@@ -875,7 +885,7 @@ Explicitly out of scope: Selecting unapproved transformations or deleting refere
 
 ### ASY-01 — Transactional outbox schema and publisher contract
 
-Status: PLANNED | Depends on: INF-01 | Primary: Codex | Review: Claude/Cursor concurrency review, Human migration review
+Status: READY | Depends on: INF-01 | Primary: Codex | Review: Claude/Cursor concurrency review, Human migration review
 
 Scope: Add a minimal versioned outbox model and application contract that persists business events in the same PostgreSQL transaction as critical state.
 
@@ -1011,7 +1021,7 @@ Explicitly out of scope: General debug dumps and an Admin UI.
 
 ### REL-01 — Real PostgreSQL and Redis test environments
 
-Status: PLANNED | Depends on: FND-07, INF-01 | Primary: Codex | Review: Claude/Cursor, Human infrastructure review
+Status: READY | Depends on: FND-07, INF-01 | Primary: Codex | Review: Claude/Cursor, Human infrastructure review
 
 Scope: Provision CI/staging-compatible disposable PostgreSQL and Redis integration targets with isolation, cleanup, secrets, and explicit opt-in local remote use.
 
@@ -1286,7 +1296,7 @@ Complete when MIG-01 through MIG-05 are DONE, MIG-06 acceptance prerequisites pa
 The following are not implementation assumptions:
 
 - Final browser access-token transport details after product confirmation of cross-site needs (`SameSite=None` only if required); numeric JWT TTLs after load confirmation (session strategy and default cookie names/attributes decided in AUTH-01 / AUTH-04 / ADR 0004).
-- CSRF mechanism details (production blocker for browser cookie-authenticated mutations, including Admin cookie auth). Admin login identifier is settled as canonical email (ADM-00 / ADR 0008). Admin password policy for creation/bootstrap is length-oriented (min 12 / max 128); breach-corpus rejection and rotation remain deferred. Admin identity persistence and `PrismaAdminRoleResolver` are DONE (ADM-00). Admin sessions, login HTTP, ADMIN token issuance, namespaced cookies, and operator-controlled first-`SUPER_ADMIN` provisioning are DONE (`ADM-AUTH-01` / ADR 0009). `ADM-01` (account management) depends on ADM-AUTH-01 so disablement can revoke Admin sessions. Permissioned Admin catalog routes (CAT-02) already attach `AccessTokenGuard` + `PermissionGuard`; ADM-01 still owes the same for Admin account-management routes.
+- CSRF mechanism details (production blocker for browser cookie-authenticated mutations, including Admin cookie auth) are now tracked in `AUTH-09`. Admin login identifier is settled as canonical email (ADM-00 / ADR 0008). Admin password policy for creation/bootstrap is length-oriented (min 12 / max 128); breach-corpus rejection and rotation remain deferred. Admin identity persistence and `PrismaAdminRoleResolver` are DONE (ADM-00). Admin sessions, login HTTP, ADMIN token issuance, namespaced cookies, and operator-controlled first-`SUPER_ADMIN` provisioning are DONE (`ADM-AUTH-01` / ADR 0009). `ADM-01` (account management) depends on ADM-AUTH-01 so disablement can revoke Admin sessions. Permissioned Admin catalog routes (CAT-02) already attach `AccessTokenGuard` + `PermissionGuard`; ADM-01 still owes the same for Admin account-management routes.
 - Legacy capability evidence for the `WAREHOUSE` and `ORDER_OPS` permission grants (MIG-01). The AUTH-08 grants are provisional; widening or narrowing them is a reviewed policy change.
 - Trusted reverse-proxy / Nest Express `trust proxy` configuration so OTP IP rate limits see the real client behind Liara; live Kavenegar credential smoke test when account access exists (deploy).
 - Customer/store business profile fields required at registration vs later completion (store name, manager name, address, region, coordinates): no in-repo legacy inventory yet (`MIG-01`); AUTH-07 shipped Pattern A phone-only identity with empty profile update allowlist. Region **reference** rows exist (CAT-02); profile `regionId` FK remains deferred.

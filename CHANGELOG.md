@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Added the non-HTTP Nest worker composition root and bounded BullMQ worker lifecycle with correlation restoration, graceful signal shutdown, and worker runtime configuration.
+- Completed ASY-03 real Redis/BullMQ WorkerService lifecycle verification, including configured concurrency, retry/failure retention, graceful/forced shutdown, restart recovery, multi-worker distribution, and non-HTTP composition coverage.
 
 ### Added
 

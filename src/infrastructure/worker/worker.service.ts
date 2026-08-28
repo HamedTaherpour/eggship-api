@@ -16,6 +16,9 @@ type EggShipWorker = Worker<AsyncJobEnvelope<unknown>, void, string>;
 export class WorkerService {
   private workers: Array<{ worker: EggShipWorker; connection: Redis }> = [];
   private stopping = false;
+  private activeJobs = 0;
+  private activeJobsDrained: Promise<void> = Promise.resolve();
+  private resolveActiveJobsDrained?: () => void;
 
   constructor(
     private readonly config: ConfigService,
@@ -29,7 +32,7 @@ export class WorkerService {
     if (processors.length === 0)
       throw new Error('Worker cannot start without an approved processor.');
     const policy = buildWorkerRuntimePolicy({
-      concurrency: this.config.get<number>('WORKER_CONCURRENCY'),
+      concurrency: this.configuredNumber('WORKER_CONCURRENCY'),
     });
     const redisUrl = this.config.getOrThrow<string>('REDIS_URL');
     for (const processor of processors) {
@@ -39,6 +42,7 @@ export class WorkerService {
         async (job) => {
           if (processor.jobName !== undefined && processor.jobName !== job.name)
             return;
+          this.beginJob();
           const started = Date.now();
           const correlationId = job.data?.metadata?.correlationId ?? 'invalid';
           this.logger.info(
@@ -48,6 +52,7 @@ export class WorkerService {
               queue: processor.queueName,
               jobId: job.id,
               jobName: job.name,
+              correlationId,
               attemptNumber: job.attemptsMade + 1,
             },
             'Worker job started',
@@ -63,6 +68,7 @@ export class WorkerService {
                 queue: processor.queueName,
                 jobId: job.id,
                 jobName: job.name,
+                correlationId,
                 durationMs: Date.now() - started,
               },
               'Worker job completed',
@@ -83,6 +89,8 @@ export class WorkerService {
               normalized,
             );
             throw normalized;
+          } finally {
+            this.finishJob();
           }
         },
         {
@@ -91,6 +99,17 @@ export class WorkerService {
           lockDuration: policy.lockDurationMs,
         },
       );
+      worker.on('error', (error: Error) => {
+        this.logger.error(
+          {
+            module: 'worker',
+            operation: 'worker_error',
+            queue: processor.queueName,
+          },
+          'Worker infrastructure error',
+          error,
+        );
+      });
       await worker.waitUntilReady();
       this.workers.push({ worker, connection });
     }
@@ -113,7 +132,10 @@ export class WorkerService {
       'Worker stopping',
     );
     const timeoutMs =
-      this.config.get<number>('WORKER_SHUTDOWN_TIMEOUT_MS') ?? 30_000;
+      this.configuredNumber('WORKER_SHUTDOWN_TIMEOUT_MS') ?? 30_000;
+    await Promise.all(
+      this.workers.map((resource) => resource.worker.pause(true)),
+    );
     for (const resource of this.workers) {
       await this.closeWithGrace(resource.worker, timeoutMs);
       if (resource.connection.status === 'ready')
@@ -134,14 +156,40 @@ export class WorkerService {
     let timer: NodeJS.Timeout | undefined;
     try {
       const result = await Promise.race([
-        worker.close().then(() => 'closed' as const),
+        this.activeJobsDrained.then(() => 'closed' as const),
         new Promise<'timed_out'>((resolve) => {
           timer = setTimeout(() => resolve('timed_out'), timeoutMs);
         }),
       ]);
-      if (result === 'timed_out') await worker.close(true);
+      if (result === 'timed_out') {
+        await worker.close(true);
+      } else {
+        await worker.close();
+      }
     } finally {
       if (timer !== undefined) clearTimeout(timer);
     }
+  }
+
+  private beginJob(): void {
+    if (this.activeJobs === 0) {
+      this.activeJobsDrained = new Promise<void>((resolve) => {
+        this.resolveActiveJobsDrained = resolve;
+      });
+    }
+    this.activeJobs += 1;
+  }
+
+  private finishJob(): void {
+    this.activeJobs -= 1;
+    if (this.activeJobs === 0) {
+      this.resolveActiveJobsDrained?.();
+      this.resolveActiveJobsDrained = undefined;
+    }
+  }
+
+  private configuredNumber(name: string): number | undefined {
+    const value = this.config.get<number | string>(name);
+    return value === undefined ? undefined : Number(value);
   }
 }

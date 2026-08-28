@@ -8,5 +8,13 @@ export function createWorkerConfigModuleOptions(): ConfigModuleOptions {
     isGlobal: true,
     ignoreEnvFile: shouldIgnoreEnvFile(),
     validate: validateWorkerEnvironment,
+    load: [
+      (): Record<string, number> => ({
+        WORKER_CONCURRENCY: Number(process.env['WORKER_CONCURRENCY'] ?? 5),
+        WORKER_SHUTDOWN_TIMEOUT_MS: Number(
+          process.env['WORKER_SHUTDOWN_TIMEOUT_MS'] ?? 30_000,
+        ),
+      }),
+    ],
   };
 }

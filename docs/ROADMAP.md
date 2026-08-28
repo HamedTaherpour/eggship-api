@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   107 |
-| DONE        |    62 |
-| IN_PROGRESS |     1 |
+| DONE        |    63 |
+| IN_PROGRESS |     0 |
 | READY       |     3 |
 | BLOCKED     |     0 |
 | PLANNED     |    42 |
 
-- Current task: `ASY-03` implementation is complete but verification remains IN_PROGRESS pending a committed real-worker lifecycle harness. `REF-01` remains READY; no task remains BLOCKED.
+- Current task: `ASY-03` is DONE after committed real-worker lifecycle verification. `REF-01` remains READY; no task remains BLOCKED.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate.
 
 ## Status model
@@ -945,13 +945,13 @@ Explicitly out of scope: Exactly-once claims and business processors.
 
 ### ASY-03 — Worker process entrypoint and lifecycle
 
-Status: IN_PROGRESS | Depends on: ASY-02 | Primary: Codex | Review: Claude/Cursor architecture/operations review
+Status: DONE | Depends on: ASY-02 | Primary: Codex | Review: Claude/Cursor architecture/operations review
 
 Scope: Add a non-HTTP worker composition root that loads only required infrastructure/application modules and establishes async correlation context.
 
 Acceptance criteria: API and worker processes share business code without duplicate logic; startup/readiness/shutdown, concurrency, timeouts, and signals are verified.
 
-Delivered: Non-HTTP Nest worker composition root at `src/worker.ts`, explicit processor registration contract, bounded worker concurrency and shutdown timeout validation, Redis readiness on startup, envelope correlation restoration with fallback for invalid/missing metadata, structured lifecycle/failure logging, and idempotent graceful signal shutdown. The entrypoint refuses to run without an approved business processor, consistent with the task's no-empty-worker boundary; no business processor, Liara automation, schema, or migration was added. Verification remains open until an isolated real-Redis harness exercises the WorkerService lifecycle with a test-only processor.
+Delivered: Non-HTTP Nest worker composition root at `src/worker.ts`, explicit processor registration contract, bounded worker concurrency and shutdown timeout validation, Redis readiness on startup, envelope correlation restoration with fallback for invalid/missing metadata, structured lifecycle/failure logging, and idempotent graceful signal shutdown. The entrypoint refuses to run without an approved business processor, consistent with the task's no-empty-worker boundary; no business processor, Liara automation, schema, or migration was added. A focused real-Redis/BullMQ harness now verifies WorkerService startup, correlation/fallback, configured concurrency, retry/failure retention, graceful and forced shutdown, restart persistence, multi-worker distribution, non-HTTP composition, and clean open-handle shutdown.
 
 Explicitly out of scope: Running empty/fake workers and Liara automation.
 

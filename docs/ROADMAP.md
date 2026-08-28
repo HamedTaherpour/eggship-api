@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   107 |
-| DONE        |    58 |
+| DONE        |    59 |
 | IN_PROGRESS |     0 |
-| READY       |     4 |
+| READY       |     5 |
 | BLOCKED     |     0 |
-| PLANNED     |    45 |
+| PLANNED     |    43 |
 
-- Current task: no task is in progress. `AUTH-10`, `ORD-04`, `ORD-05`, and `ORD-06` remain DONE. `REF-01` remains READY for referral attribution and abuse policy. No task remains BLOCKED.
+- Current task: no task is in progress. `AUTH-10`, `ORD-04`, `ORD-05`, and `ORD-06` remain DONE. `REF-01`, `NOT-02`, and `NOT-03` are READY; no task remains BLOCKED.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate.
 
 ## Status model
@@ -781,17 +781,19 @@ Explicitly out of scope: Defining monetary rewards in this roadmap.
 
 ### NOT-01 — Durable notification inbox model
 
-Status: READY | Depends on: AUTH-07 | Primary: Codex | Review: Claude/Cursor, Human migration review
+Status: DONE | Depends on: AUTH-07 | Primary: Codex | Review: Claude/Cursor, Human migration review
 
 Scope: Model durable user Notification records, approved notification types, safe payload/versioning, read state, creation source, and timestamps.
 
 Acceptance criteria: The inbox record is authoritative independently of push delivery; ownership/indexes support list and unread count; sensitive snapshots are avoided.
 
+Delivered: PostgreSQL-authoritative `Notification` persistence with approved `ORDER_STATUS` type and source provenance, bounded privacy-safe payload validation, nullable `readAt`, owner-scoped/idempotent repository primitives, transaction-context compatibility, reviewed migration, and guarded PostgreSQL integration coverage. No HTTP, push, outbox producer, queue worker, or retention policy.
+
 Explicitly out of scope: Push tokens, providers, and queue workers.
 
 ### NOT-02 — User notification inbox APIs
 
-Status: PLANNED | Depends on: NOT-01, AUTH-08 | Primary: Codex | Review: Claude/Cursor
+Status: READY | Depends on: NOT-01, AUTH-08 | Primary: Codex | Review: Claude/Cursor
 
 Scope: Implement owner-scoped notification list, unread count, mark-one-read, and mark-all-read endpoints.
 
@@ -801,7 +803,7 @@ Explicitly out of scope: Notification deletion and push delivery.
 
 ### NOT-03 — Order-status notification generation
 
-Status: PLANNED | Depends on: NOT-01, ORD-02A, ASY-01 | Primary: Codex | Review: Claude/Cursor concurrency review
+Status: READY | Depends on: NOT-01, ORD-02A, ASY-01 | Primary: Codex | Review: Claude/Cursor concurrency review
 
 Scope: Create durable inbox notifications from approved order transitions in the same transaction/outbox boundary where required.
 

@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- NOT-01 durable customer notification inbox persistence: PostgreSQL-authoritative owner-scoped `Notification` records with an approved `ORDER_STATUS` category, source provenance, bounded privacy-safe payloads, nullable `readAt`, reviewed indexes/constraints, transaction-compatible repository primitives, and guarded PostgreSQL coverage. No HTTP, push, outbox producer, queue worker, or retention policy.
 - ASY-01 transactional outbox foundation: PostgreSQL-authoritative versioned `OutboxEvent` records, bounded privacy-safe JSON payloads, explicit same-transaction publisher contract, duplicate identity constraints, future dispatcher indexes, and guarded PostgreSQL atomicity/concurrency coverage. No workers, queues, or domain event producers.
 
 - AI-03 host-neutral agent tooling: canonical shared skills under `.agents/skills`, thin documented Claude Code/Qoder adapters, Cursor skill deduplication, Codex configuration/hook audit, host capability/onboarding policy, and expanded `check:agent-tooling` drift validation. No product or infrastructure behavior changed.

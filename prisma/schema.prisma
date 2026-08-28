@@ -95,8 +95,42 @@ model User {
 
   sessions              AuthSession[]
   orders                Order[]
+  notifications         Notification[]
   discountCustomerUsage DiscountCustomerUsage[]
   discountUsageRecords  DiscountUsageRecord[]
+}
+
+/// Durable customer inbox record. This is authoritative independently of push
+/// delivery; provider state belongs to a later delivery task.
+model Notification {
+  id        String             @id @default(uuid()) @db.Uuid
+  userId    String             @db.Uuid
+  type      NotificationType
+  source    NotificationSource
+  title     String             @db.VarChar(160)
+  body      String             @db.VarChar(2000)
+  payload   Json
+  createdAt DateTime           @default(now()) @db.Timestamptz(3)
+  readAt    DateTime?          @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  /// Newest-first customer inbox reads.
+  @@index([userId, createdAt, id])
+  /// Unread filtering/counting followed by newest-first ordering.
+  @@index([userId, readAt, createdAt, id])
+}
+
+/// Only notification categories with an approved producer are persisted here.
+/// New categories are additive enum migrations rather than uncontrolled text.
+enum NotificationType {
+  ORDER_STATUS
+}
+
+/// Provenance of the application operation that created the inbox record.
+enum NotificationSource {
+  ORDER_TRANSITION
+  SYSTEM
 }
 
 /// Server-side refresh session for a User only. Admin sessions live on

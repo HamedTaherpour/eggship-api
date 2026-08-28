@@ -22,6 +22,7 @@ import { OrdersModule } from './modules/orders/orders.module';
 import { CommercePolicyModule } from './modules/commerce-policy/commerce-policy.module';
 import { SettlementsModule } from './modules/settlements/settlements.module';
 import { OutboxModule } from './modules/outbox/outbox.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { OutboxModule } from './modules/outbox/outbox.module';
     CommercePolicyModule,
     SettlementsModule,
     OutboxModule,
+    NotificationsModule,
   ],
   controllers: [HealthController],
 })

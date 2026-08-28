@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - REF-02 Visitor persistence and immutable PostgreSQL registration attribution: canonical non-ambiguous referral codes with collision-safe generation, inactive Visitor handling, unique historical User attribution, and optional new-registration referral input. Visitor Admin HTTP, rewards, and tracking remain deferred.
+- REF-02 hardening: User uniqueness races now retry only after transaction rollback; registration and Visitor lifecycle commands serialize on a PostgreSQL Visitor row lock; activate/deactivate primitives preserve historical attribution and referral-code identity.
 
 - REF-01 referral attribution architecture (ADR 0020): registration-only immutable Visitor acquisition attribution with link/manual-code semantics, invalid/inactive-code rejection, PostgreSQL transaction authority, relational Order-derived analytics, reward separation, proportional abuse policy, and explicit REF-02 decisions. No schema, API, click tracking, Admin UI, or rewards.
 - Added the non-HTTP Nest worker composition root and bounded BullMQ worker lifecycle with correlation restoration, graceful signal shutdown, and worker runtime configuration.

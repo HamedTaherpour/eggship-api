@@ -99,6 +99,15 @@ REF-02 uses a dedicated `ReferralAttribution` row with unique `userId`, Visitor
 `RESTRICT` FKs, and no update/delete API; REF-03 owns future capture/link
 behavior.
 
+Registration locks the canonical Visitor row with PostgreSQL `FOR UPDATE` before
+checking `isActive` and inserting attribution. Activate/deactivate commands
+update that same row and therefore serialize with registration. If registration
+gets the lock first, it is the earlier legal serial history and deactivation
+commits afterward; if deactivation commits first, registration locks the row
+with `isActive = false` and rejects. Visitor code identity is also protected by
+an additive database check and an update trigger; lifecycle commands only change
+`isActive`.
+
 The attribution record is historical data: no customer edit, Admin edit,
 reassignment, or later override is allowed. Rewards, if approved later, must
 consume this immutable attribution and must not redefine acquisition ownership.

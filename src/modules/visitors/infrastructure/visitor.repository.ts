@@ -14,6 +14,7 @@ import {
   InvalidVisitorNameError,
   ReferralAttributionConflictError,
   ReferralCodeAlreadyExistsError,
+  VisitorNotFoundError,
 } from '../domain/visitor-errors';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
@@ -59,6 +60,63 @@ export class VisitorRepository {
     return found === null ? null : mapVisitor(found);
   }
 
+  /**
+   * Locks the Visitor row for the duration of the caller's registration
+   * transaction. Registration and lifecycle commands therefore serialize on
+   * the same row: an inactive code is never attributed after deactivation
+   * has committed, while a registration that acquired the lock first is a
+   * valid earlier serial history.
+   */
+  async findByReferralCodeForUpdate(
+    code: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<VisitorRecord | null> {
+    const rows = await tx.$queryRaw<VisitorRow[]>(Prisma.sql`
+      SELECT "id", "name", "referralCode", "isActive", "createdAt", "updatedAt"
+      FROM "Visitor"
+      WHERE "referralCode" = ${normalizeReferralCode(code)}
+      FOR UPDATE
+    `);
+    const found = rows[0];
+    return found === undefined ? null : mapVisitor(found);
+  }
+
+  async deactivate(
+    id: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<VisitorRecord> {
+    const db: DbClient = tx ?? this.prisma;
+    try {
+      return mapVisitor(
+        await db.visitor.update({
+          where: { id },
+          data: { isActive: false },
+        }),
+      );
+    } catch (error: unknown) {
+      if (isRecordNotFoundError(error)) throw new VisitorNotFoundError();
+      throw error;
+    }
+  }
+
+  async activate(
+    id: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<VisitorRecord> {
+    const db: DbClient = tx ?? this.prisma;
+    try {
+      return mapVisitor(
+        await db.visitor.update({
+          where: { id },
+          data: { isActive: true },
+        }),
+      );
+    } catch (error: unknown) {
+      if (isRecordNotFoundError(error)) throw new VisitorNotFoundError();
+      throw error;
+    }
+  }
+
   async createAttribution(
     input: {
       userId: string;
@@ -95,14 +153,23 @@ function isUniqueConstraintError(error: unknown): boolean {
   );
 }
 
-function mapVisitor(row: {
+function isRecordNotFoundError(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === 'P2025'
+  );
+}
+
+type VisitorRow = {
   id: string;
   name: string;
   referralCode: string;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
-}): VisitorRecord {
+};
+
+function mapVisitor(row: VisitorRow): VisitorRecord {
   return {
     id: row.id,
     name: row.name,

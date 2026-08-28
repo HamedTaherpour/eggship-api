@@ -89,79 +89,39 @@ export class CustomerAuthCompletionService {
 
     let persisted: { user: UserRecord; isNewUser: boolean };
     try {
-      persisted = await this.prisma.$transaction(async (tx) => {
-        let existing = await this.users.findByPhone(grant.phone, tx);
-        let createdNew = false;
-
-        if (existing === null) {
-          try {
-            existing = await this.users.create({ phone: grant.phone }, tx);
-            createdNew = true;
-          } catch (error: unknown) {
-            if (!isUniqueConstraintError(error)) {
-              throw error;
-            }
-            existing = await this.users.findByPhone(grant.phone, tx);
-            if (existing === null) {
-              throw new AuthError(
-                AuthErrorCode.REGISTRATION_CONFLICT,
-                'Registration could not be completed.',
-              );
-            }
-            createdNew = false;
-          }
-        }
-
-        if (!existing.isActive) {
-          throw new AuthError(
-            AuthErrorCode.ACCOUNT_DISABLED,
-            'Account is disabled.',
-          );
-        }
-
-        if (createdNew && referralCode !== undefined) {
-          let visitor;
-          try {
-            visitor = await this.visitors.findByReferralCode(referralCode, tx);
-          } catch (error: unknown) {
-            if (error instanceof InvalidReferralCodeError) throw error;
-            throw error;
-          }
-          if (visitor === null) throw new InvalidReferralCodeError();
-          if (!visitor.isActive) throw new VisitorInactiveError();
-          await this.visitors.createAttribution(
-            {
-              userId: existing.id,
-              visitorId: visitor.id,
-              referralCode,
-              attributedAt: now,
-            },
-            tx,
-          );
-        }
-
-        await this.sessions.createSession(
-          {
-            id: sessionId,
-            userId: existing.id,
-            refreshTokenHash: issuedRefresh.digest,
-            tokenFamilyId,
-            expiresAt,
-            lastUsedAt: now,
-          },
-          tx,
-        );
-
-        return { user: existing, isNewUser: createdNew };
-      });
+      persisted = await this.persistAuthentication(
+        grant.phone,
+        referralCode,
+        now,
+        sessionId,
+        tokenFamilyId,
+        issuedRefresh.digest,
+        expiresAt,
+      );
     } catch (error: unknown) {
-      if (
-        error instanceof AuthError &&
-        error.code === AuthErrorCode.ACCOUNT_DISABLED
-      ) {
-        this.logRejected('account_disabled');
+      if (!(error instanceof UserCreationUniqueRaceError)) {
+        if (
+          error instanceof AuthError &&
+          error.code === AuthErrorCode.ACCOUNT_DISABLED
+        ) {
+          this.logRejected('account_disabled');
+        }
+        throw error;
       }
-      throw error;
+
+      // The failed create has already aborted its PostgreSQL transaction.
+      // Retry only after Prisma has rolled that transaction back, using a new
+      // transaction/connection to prove the competing User now exists.
+      persisted = await this.persistAuthentication(
+        grant.phone,
+        referralCode,
+        now,
+        sessionId,
+        tokenFamilyId,
+        issuedRefresh.digest,
+        expiresAt,
+        true,
+      );
     }
 
     const { user, isNewUser } = persisted;
@@ -199,6 +159,81 @@ export class CustomerAuthCompletionService {
       user,
       sessionId,
     };
+  }
+
+  private async persistAuthentication(
+    phone: string,
+    referralCode: string | undefined,
+    now: Date,
+    sessionId: string,
+    tokenFamilyId: string,
+    refreshTokenHash: string,
+    expiresAt: Date,
+    resolveUserCreationRace = false,
+  ): Promise<{ user: UserRecord; isNewUser: boolean }> {
+    return this.prisma.$transaction(async (tx) => {
+      let existing = await this.users.findByPhone(phone, tx);
+      let createdNew = false;
+
+      if (existing === null) {
+        if (resolveUserCreationRace) {
+          existing = await this.users.findByPhone(phone, tx);
+          if (existing === null) {
+            throw new AuthError(
+              AuthErrorCode.REGISTRATION_CONFLICT,
+              'Registration could not be completed.',
+            );
+          }
+        } else {
+          try {
+            existing = await this.users.create({ phone }, tx);
+            createdNew = true;
+          } catch (error: unknown) {
+            if (!isUniqueConstraintError(error)) throw error;
+            throw new UserCreationUniqueRaceError();
+          }
+        }
+      }
+
+      if (!existing.isActive) {
+        throw new AuthError(
+          AuthErrorCode.ACCOUNT_DISABLED,
+          'Account is disabled.',
+        );
+      }
+
+      if (createdNew && referralCode !== undefined) {
+        const visitor = await this.visitors.findByReferralCodeForUpdate(
+          referralCode,
+          tx,
+        );
+        if (visitor === null) throw new InvalidReferralCodeError();
+        if (!visitor.isActive) throw new VisitorInactiveError();
+        await this.visitors.createAttribution(
+          {
+            userId: existing.id,
+            visitorId: visitor.id,
+            referralCode,
+            attributedAt: now,
+          },
+          tx,
+        );
+      }
+
+      await this.sessions.createSession(
+        {
+          id: sessionId,
+          userId: existing.id,
+          refreshTokenHash,
+          tokenFamilyId,
+          expiresAt,
+          lastUsedAt: now,
+        },
+        tx,
+      );
+
+      return { user: existing, isNewUser: createdNew };
+    });
   }
 
   private async consumeVerificationGrant(grantId: string): Promise<{
@@ -246,5 +281,11 @@ export class CustomerAuthCompletionService {
       },
       'Customer authentication rejected',
     );
+  }
+}
+
+class UserCreationUniqueRaceError extends Error {
+  constructor() {
+    super('User creation lost a uniqueness race.');
   }
 }

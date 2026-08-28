@@ -32,7 +32,10 @@ describe('CustomerAuthCompletionService', () => {
   let service: CustomerAuthCompletionService;
   let refreshTokens: RefreshTokenService;
   let visitors: jest.Mocked<
-    Pick<VisitorRepository, 'findByReferralCode' | 'createAttribution'>
+    Pick<
+      VisitorRepository,
+      'findByReferralCode' | 'findByReferralCodeForUpdate' | 'createAttribution'
+    >
   >;
 
   beforeEach(() => {
@@ -60,6 +63,7 @@ describe('CustomerAuthCompletionService', () => {
     logger = { info: jest.fn() };
     visitors = {
       findByReferralCode: jest.fn(),
+      findByReferralCodeForUpdate: jest.fn(),
       createAttribution: jest.fn(),
     };
     prisma = {
@@ -318,5 +322,48 @@ describe('CustomerAuthCompletionService', () => {
     const result = await service.completeAuthentication(grantId);
     expect(result.isNewUser).toBe(false);
     expect(result.user.id).toBe(existing.id);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not query a transaction after User creation uniqueness failure', async () => {
+    const existing = user();
+    otp.consumeVerificationGrant.mockResolvedValue(grant());
+    users.findByPhone
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(existing);
+    const { Prisma } = await import('../../../generated/prisma/client');
+    users.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint', {
+        code: 'P2002',
+        clientVersion: 'test',
+      }),
+    );
+    sessions.createSession.mockResolvedValue({
+      id: randomUUID(),
+      userId: existing.id,
+      refreshTokenHash: 'z'.repeat(43),
+      tokenFamilyId: randomUUID(),
+      expiresAt: new Date(now.getTime() + 1_000),
+      revokedAt: null,
+      lastUsedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const transactionCallbacks: unknown[] = [];
+    prisma.$transaction.mockImplementation(
+      async (callback: (tx: unknown) => Promise<unknown>) => {
+        transactionCallbacks.push(callback);
+        return callback({ transactionNumber: transactionCallbacks.length });
+      },
+    );
+
+    await service.completeAuthentication(grantId);
+
+    expect(transactionCallbacks).toHaveLength(2);
+    expect(users.findByPhone).toHaveBeenCalledTimes(2);
+    expect(users.findByPhone.mock.calls[0]?.[1]).not.toBe(
+      users.findByPhone.mock.calls[1]?.[1],
+    );
   });
 });

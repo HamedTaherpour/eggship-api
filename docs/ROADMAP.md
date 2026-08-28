@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   107 |
-| DONE        |    66 |
+| DONE        |    67 |
 | IN_PROGRESS |     0 |
 | READY       |     2 |
 | BLOCKED     |     0 |
-| PLANNED     |    39 |
+| PLANNED     |    38 |
 
-- Current task: `REF-03` has been closed as delivered by REF-02 with focused contract verification. No task remains BLOCKED.
+- Current task: `REL-01` is closed. `REL-02` and `CNT-01` are READY. No task remains BLOCKED.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate.
 
 ## Status model
@@ -1069,7 +1069,7 @@ Explicitly out of scope: General debug dumps and an Admin UI.
 
 ### REL-01 — Real PostgreSQL and Redis test environments
 
-Status: READY | Depends on: FND-07, INF-01 | Primary: Codex | Review: Claude/Cursor, Human infrastructure review
+Status: DONE | Depends on: FND-07, INF-01 | Primary: Codex | Review: Claude/Cursor, Human infrastructure review
 
 Scope: Provision CI/staging-compatible disposable PostgreSQL and Redis integration targets with isolation, cleanup, secrets, and explicit opt-in local remote use.
 
@@ -1077,9 +1077,11 @@ Acceptance criteria: Tests prove real service contact and fail when unavailable;
 
 Explicitly out of scope: Production provisioning.
 
+Verified: FND-07 delivered the integration harness, fail-closed guards, capability-aware suites (`postgres` / `redis` / `all`), CI disposable service containers, and destructive-test gates. REL-01 closed with PostgreSQL runtime/test target-equivalence hardening, approved environment-model documentation, future remote TEST contract, and live local verification against `eggship_test` / Redis `6380`.
+
 ### REL-02 — Inventory and idempotency concurrency suites
 
-Status: PLANNED | Depends on: REL-01, INV-06, ORD-03, COM-03, DLU-02, SET-02 | Primary: Codex | Review: Claude/Cursor concurrency review
+Status: READY | Depends on: REL-01, INV-06, ORD-03, COM-03, DLU-02, SET-02 | Primary: Codex | Review: Claude/Cursor concurrency review
 
 Scope: Build repeatable real-PostgreSQL races for inventory invariants, deterministic locking, order idempotency, commerce-policy updates, discount usage, settlement commands, duplicate cancellation, and retry behavior.
 

@@ -162,9 +162,22 @@ Docker is **not** required for normal development.
 ```text
 NestJS API (local pnpm)
         │
-        ├── remote DEVELOPMENT PostgreSQL when needed
-        └── remote DEVELOPMENT Redis when needed (optional)
+        ├── DEVELOPMENT PostgreSQL (eggship) via DATABASE_URL
+        └── DEVELOPMENT Redis (127.0.0.1:6379) via REDIS_URL when needed
 ```
+
+### Local integration topology
+
+Integration tests use **separate** TEST resources that must not overlap development/runtime targets:
+
+```text
+pnpm test:integration*
+        │
+        ├── TEST PostgreSQL (eggship_test) via TEST_DATABASE_URL
+        └── TEST Redis (127.0.0.1:6380) via TEST_REDIS_URL when required
+```
+
+The harness rejects `TEST_DATABASE_URL` that targets the same PostgreSQL endpoint/database as `DATABASE_URL`, and rejects `TEST_REDIS_URL` that targets the same Redis endpoint/logical database as `REDIS_URL`. Loopback aliases (`localhost`, `127.0.0.1`, `::1`) are treated as equivalent for this check.
 
 ### PostgreSQL strategies
 
@@ -195,6 +208,7 @@ Reliable automated protections in this repository:
 - OpenAPI CLI/process bootstrap overwrites ambient env with non-routable targets.
 - Real infrastructure suites require `INTEGRATION_TESTS_ENABLED=true` and dedicated `TEST_*` URLs; they refuse to reuse `DATABASE_URL` / `REDIS_URL`.
 - When both Redis URLs are visible, integration setup rejects `TEST_REDIS_URL` targeting the same Redis endpoint/database as `REDIS_URL`. Integration setup never copies the runtime URL as its test target.
+- When both PostgreSQL URLs are visible, integration setup rejects `TEST_DATABASE_URL` targeting the same PostgreSQL endpoint/database as `DATABASE_URL`.
 - PostgreSQL integration setup explicitly uses `DATABASE_POOL_MAX=32` for the 20-way order-create stampede. This test-only budget does not change runtime defaults.
 
 Documented limitations (not guessed automatically):

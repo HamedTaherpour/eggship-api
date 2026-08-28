@@ -15,4 +15,4 @@ See [instructions/testing.md](../../instructions/testing.md) for taxonomy, safet
 
 Auth persistence suites under `postgres/` may truncate `User` / `AuthSession` between cases. That requires `INTEGRATION_ALLOW_DESTRUCTIVE=true` in addition to `INTEGRATION_TESTS_ENABLED=true` (set in CI for the ephemeral integration database).
 
-Combined PostgreSQL + Redis domain suites live under `domain/` and run only with `pnpm test:integration` (`--suite=all`).
+Combined PostgreSQL + Redis domain suites live under `domain/` and run only with `pnpm test:integration` (`--suite=all`). PostgreSQL-only suites (`pnpm test:integration:postgres`) do not require Redis isolation; Redis-only suites do not contact PostgreSQL.

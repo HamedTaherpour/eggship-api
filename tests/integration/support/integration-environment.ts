@@ -54,6 +54,18 @@ export function readIntegrationKeysFromEnvFile(
     return {};
   }
   const values = parseEnvFile(readFileSync(envPath, 'utf8'));
+  if (suite === 'all' || suite === 'postgres') {
+    assertDistinctDatabaseTargets({
+      DATABASE_URL: effectiveEnvValue(
+        env['DATABASE_URL'],
+        values['DATABASE_URL'],
+      ),
+      TEST_DATABASE_URL: effectiveEnvValue(
+        env['TEST_DATABASE_URL'],
+        values['TEST_DATABASE_URL'],
+      ),
+    });
+  }
   if (suite === 'all' || suite === 'redis') {
     assertDistinctRedisTargets({
       REDIS_URL: effectiveEnvValue(env['REDIS_URL'], values['REDIS_URL']),
@@ -105,6 +117,9 @@ export function resolveIntegrationEnvironment(options: {
   const allowDestructive = isExactTrue(env['INTEGRATION_ALLOW_DESTRUCTIVE']);
   const needsDatabase = options.suite === 'all' || options.suite === 'postgres';
   const needsRedis = options.suite === 'all' || options.suite === 'redis';
+  if (needsDatabase) {
+    assertDistinctDatabaseTargets(env);
+  }
   if (needsRedis) {
     assertDistinctRedisTargets(env);
   }
@@ -245,6 +260,28 @@ function assertNotUsingRuntimeInfrastructureUrls(
   }
 }
 
+export function assertDistinctDatabaseTargets(
+  env: NodeJS.ProcessEnv | Record<string, string>,
+): void {
+  const runtimeUrl = env['DATABASE_URL'];
+  const testUrl = env['TEST_DATABASE_URL'];
+  if (!hasNonEmpty(runtimeUrl) || !hasNonEmpty(testUrl)) {
+    return;
+  }
+  const runtimeTarget = postgresTargetIdentity(runtimeUrl);
+  const testTarget = postgresTargetIdentity(testUrl);
+  if (
+    runtimeTarget === undefined ||
+    testTarget === undefined ||
+    runtimeTarget !== testTarget
+  ) {
+    return;
+  }
+  throw new IntegrationEnvironmentError(
+    'TEST_DATABASE_URL must use a different PostgreSQL endpoint or database from DATABASE_URL.',
+  );
+}
+
 export function assertDistinctRedisTargets(
   env: NodeJS.ProcessEnv | Record<string, string>,
 ): void {
@@ -267,13 +304,27 @@ export function assertDistinctRedisTargets(
   );
 }
 
+function postgresTargetIdentity(value: string): string | undefined {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'postgresql:' && url.protocol !== 'postgres:') {
+      return undefined;
+    }
+    const hostname = normalizeLoopbackHostname(url.hostname);
+    const rawDatabase = url.pathname.replace(/^\/+|\/+$/gu, '') || 'postgres';
+    return `${hostname}:${url.port || '5432'}/${rawDatabase}`;
+  } catch {
+    return undefined;
+  }
+}
+
 function redisTargetIdentity(value: string): string | undefined {
   try {
     const url = new URL(value);
     if (url.protocol !== 'redis:' && url.protocol !== 'rediss:') {
       return undefined;
     }
-    const hostname = normalizeRedisHostname(url.hostname);
+    const hostname = normalizeLoopbackHostname(url.hostname);
     const rawDatabase = url.pathname.replace(/^\/+|\/+$/gu, '') || '0';
     const database = /^\d+$/u.test(rawDatabase)
       ? rawDatabase.replace(/^0+(?=\d)/u, '')
@@ -284,7 +335,7 @@ function redisTargetIdentity(value: string): string | undefined {
   }
 }
 
-function normalizeRedisHostname(hostname: string): string {
+function normalizeLoopbackHostname(hostname: string): string {
   const normalized = hostname.toLowerCase().replace(/^\[|\]$/gu, '');
   return normalized === 'localhost' ||
     normalized === '127.0.0.1' ||

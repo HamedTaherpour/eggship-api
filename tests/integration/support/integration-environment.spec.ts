@@ -1,5 +1,6 @@
 import {
   applyIntegrationEnvironment,
+  assertDistinctDatabaseTargets,
   assertDistinctRedisTargets,
   assertDestructiveOperationsAllowed,
   IntegrationEnvironmentError,
@@ -44,6 +45,24 @@ describe('integration environment guards', () => {
     ).toThrow(/TEST_REDIS_URL/u);
   });
 
+  it('rejects runtime and test PostgreSQL URLs that target the same database', () => {
+    expect(() =>
+      assertDistinctDatabaseTargets({
+        DATABASE_URL: 'postgresql://dev:secret@localhost:5432/eggship',
+        TEST_DATABASE_URL: 'postgresql://test:secret@127.0.0.1:5432/eggship',
+      }),
+    ).toThrow(
+      'TEST_DATABASE_URL must use a different PostgreSQL endpoint or database from DATABASE_URL.',
+    );
+    expect(() =>
+      assertDistinctDatabaseTargets({
+        DATABASE_URL: 'postgresql://dev:secret@127.0.0.1:5432/eggship',
+        TEST_DATABASE_URL:
+          'postgresql://test:secret@127.0.0.1:5432/eggship_test',
+      }),
+    ).not.toThrow();
+  });
+
   it('rejects runtime and test Redis URLs that target the same database', () => {
     expect(() =>
       assertDistinctRedisTargets({
@@ -61,12 +80,26 @@ describe('integration environment guards', () => {
     ).not.toThrow();
   });
 
+  it('rejects matching runtime and test PostgreSQL targets in a postgres suite', () => {
+    expect(() =>
+      resolveIntegrationEnvironment({
+        suite: 'postgres',
+        env: {
+          INTEGRATION_TESTS_ENABLED: 'true',
+          DATABASE_URL: 'postgresql://dev:dev@127.0.0.1:5432/eggship',
+          TEST_DATABASE_URL: 'postgresql://test:test@localhost:5432/eggship',
+        },
+      }),
+    ).toThrow(/different PostgreSQL endpoint or database/u);
+  });
+
   it('does not map or validate Redis targets for a PostgreSQL-only suite', () => {
     const resolved = resolveIntegrationEnvironment({
       suite: 'postgres',
       env: {
         INTEGRATION_TESTS_ENABLED: 'true',
         TEST_DATABASE_URL: 'postgresql://test:test@127.0.0.1:5432/eggship_it',
+        DATABASE_URL: 'postgresql://dev:dev@127.0.0.1:5432/eggship',
         REDIS_URL: 'redis://127.0.0.1:6379/0',
         TEST_REDIS_URL: 'redis://127.0.0.1:6379/0',
       },

@@ -57,6 +57,33 @@ Requirements:
 
 Missing configuration for an explicitly invoked integration command must fail clearly. Do not report a successful real-infrastructure suite when no service was contacted.
 
+### Approved environment model
+
+| Context                | PostgreSQL                                  | Redis                                   | Notes                                                              |
+| ---------------------- | ------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------ |
+| **Local development**  | `eggship` (via `DATABASE_URL`)              | `127.0.0.1:6379` (via `REDIS_URL`)      | Runtime/dev resources; never integration-test targets              |
+| **Local integration**  | `eggship_test` (via `TEST_DATABASE_URL`)    | `127.0.0.1:6380` (via `TEST_REDIS_URL`) | Dedicated TEST resources; isolated from development/runtime        |
+| **CI integration**     | Ephemeral GitHub Actions PostgreSQL service | Ephemeral GitHub Actions Redis service  | Disposable per workflow/job; TEST-only credentials                 |
+| **Future remote TEST** | Dedicated isolated PostgreSQL resource      | Dedicated isolated Redis resource       | Contract defined below; provisioning is a separate deployment task |
+| **Production**         | Never an integration-test target            | Never an integration-test target        | Explicit production-marked hosts are rejected                      |
+
+Integration suites must never silently fall back to development PostgreSQL, runtime Redis, staging, or production.
+
+### Capability-aware suites
+
+The runner and Jest config distinguish infrastructure requirements by suite:
+
+| Command                          | PostgreSQL                                 | Redis                       | Test paths                             |
+| -------------------------------- | ------------------------------------------ | --------------------------- | -------------------------------------- |
+| `pnpm test:integration:postgres` | Required (`TEST_DATABASE_URL`)             | Not required                | `tests/integration/postgres/**`        |
+| `pnpm test:integration:redis`    | Not contacted (synthetic placeholder only) | Required (`TEST_REDIS_URL`) | `tests/integration/redis/**`           |
+| `pnpm test:integration`          | Required                                   | Required                    | `postgres/**`, `redis/**`, `domain/**` |
+| `pnpm test:integration:storage`  | Not required                               | Not required                | `tests/integration/storage/**`         |
+
+PostgreSQL-only suites validate PostgreSQL TEST safety without requiring Redis isolation. Redis-only suites validate Redis TEST safety without contacting PostgreSQL. Combined `domain/**` suites require both safe targets because they exercise cross-infrastructure behavior (for example referral completion with OTP grants).
+
+When both runtime and TEST URLs are visible, the harness rejects target reuse: `TEST_DATABASE_URL` must differ from `DATABASE_URL` (endpoint or database name), and `TEST_REDIS_URL` must differ from `REDIS_URL` (endpoint or logical database index).
+
 ### Dedicated TEST resources
 
 | Variable                        | Purpose                                                      |
@@ -87,7 +114,24 @@ Integration failures may include safe host/database metadata. Never log password
 
 ### CI and remote execution
 
-Ordinary CI quality jobs remain infrastructure-free. Real integration runs in a separate GitHub Actions workflow with ephemeral PostgreSQL/Redis service containers and synthetic non-production credentials, or against remote dedicated TEST resources. Docker is not required on developer laptops; GitHub-hosted service containers are independent of that rule.
+Ordinary CI quality jobs remain infrastructure-free. Real integration runs in a separate GitHub Actions workflow (`.github/workflows/integration.yml`) with ephemeral PostgreSQL/Redis service containers and synthetic non-production credentials. Docker is not required on developer laptops; GitHub-hosted service containers are independent of that rule.
+
+#### Future remote TEST contract
+
+REL-01 defines the contract for a future dedicated remote TEST environment. Provisioning Liara or other remote resources is **not** required to mark REL-01 complete; actual provisioning belongs to the appropriate deployment/infrastructure roadmap task.
+
+When a remote TEST environment is provisioned, it must satisfy:
+
+- **Dedicated PostgreSQL** — separate database/resource, never shared with development, staging, or production
+- **Dedicated Redis** — separate instance or logical isolation, never shared with development, staging, or production
+- **TEST-only credentials** — stored in CI/provider secret management, never committed
+- **Destructive-test authorization** — `INTEGRATION_ALLOW_DESTRUCTIVE=true` only when operators explicitly approve destructive cleanup on that TEST target
+- **Identifiable environment marker** — hostnames/labels that are not production-marked and are documented for operators
+- **Rotation/revocation ownership** — named owner for credential rotation and emergency revocation
+- **Cleanup/reset policy** — documented whether TEST data is truncated between runs, migrated forward, or rebuilt from fixtures
+- **No production data by default** — production data must not be copied into TEST without a separately approved anonymization/sanitization policy (out of scope here)
+
+Remote TEST may be used for local opt-in integration runs (`TEST_DATABASE_URL` / `TEST_REDIS_URL` in a developer `.env`) or for CI when service containers are unavailable, provided all fail-closed guards remain enabled.
 
 ### Future concurrency scenarios
 

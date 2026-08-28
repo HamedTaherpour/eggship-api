@@ -16,6 +16,10 @@ export const ADMIN_ACCESS_TOKEN_COOKIE_NAME = 'eggship_admin_at';
 export const ADMIN_REFRESH_TOKEN_COOKIE_NAME = 'eggship_admin_rt';
 
 export const ADMIN_AUTH_COOKIE_PATH = '/api/v1/admin';
+export const CSRF_COOKIE_NAMES = {
+  customer: 'eggship_csrf',
+  admin: 'eggship_admin_csrf',
+} as const;
 
 export type AuthCookieNamespace = 'customer' | 'admin';
 

@@ -32,6 +32,7 @@ import { CustomerProfileService } from '../../users/application/customer-profile
 import { AccessTokenGuard } from './access-token.guard';
 import { getAuthenticatedPrincipal } from './authenticated-principal.util';
 import { AuthCookieWriter } from './auth-cookie.writer';
+import { CsrfService } from './csrf.service';
 import {
   CompleteAuthBodyDto,
   CompleteAuthResponseDto,
@@ -61,9 +62,29 @@ export class AuthController {
     private readonly profiles: CustomerProfileService,
     private readonly accessTokens: AccessTokenService,
     private readonly otp: OtpService,
+    private readonly csrf: CsrfService,
     config: ConfigService,
   ) {
     this.cookies = new AuthCookieWriter(config.getOrThrow<string>('NODE_ENV'));
+  }
+
+  @Get('csrf')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    operationId: 'Auth_csrf',
+    summary: 'Bootstrap the customer browser CSRF token',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'CSRF token cookie and frontend-safe token.',
+  })
+  getCsrf(@Res({ passthrough: true }) response: Response): {
+    data: { token: string };
+  } {
+    response.setHeader('Cache-Control', AUTH_CACHE_CONTROL);
+    const token = this.csrf.issue('customer');
+    this.cookies.setCsrfCookie(response, token);
+    return { data: { token } };
   }
 
   @Post('otp/request')
@@ -79,7 +100,7 @@ export class AuthController {
       'including development mode. No authentication cookie or session is issued.',
       'Phone and trusted request-source rate limits / cooldowns apply; 429 responses',
       'include `Retry-After` and `error.details.retryAfterSeconds` when applicable.',
-      'CSRF cookie semantics do not apply: this is a pre-authentication endpoint.',
+      'Browser POSTs still require the CSRF contract to prevent cross-site credential and abuse submission.',
     ].join(' '),
   })
   @ApiBody({ type: RequestOtpBodyDto })
@@ -150,7 +171,7 @@ export class AuthController {
       'Does not issue AuthSession, access, or refresh tokens.',
       'The grant id is the only client-visible handoff for AUTH-07+;',
       'canonical phone is not returned. Development OTP values are never echoed.',
-      'CSRF cookie semantics do not apply: this is a pre-authentication endpoint.',
+      'Browser POSTs still require the CSRF contract to prevent login CSRF.',
     ].join(' '),
   })
   @ApiBody({ type: VerifyOtpBodyDto })
@@ -285,6 +306,7 @@ export class AuthController {
         refreshTokenMaxAgeSeconds: result.refreshTokenMaxAgeSeconds,
       },
     );
+    this.cookies.setCsrfCookie(response, this.csrf.issue('customer'));
 
     return {
       data: {
@@ -371,7 +393,7 @@ export class AuthController {
       'issues a new short-lived access token cookie (`eggship_at`), and returns a minimal status body.',
       'Refresh tokens are never accepted from query strings or returned in JSON.',
       'CSRF protection for cookie-authenticated browser clients is required before production exposure;',
-      'this endpoint is designed so CSRF middleware can wrap it.',
+      'browser requests to this endpoint require the customer CSRF contract.',
     ].join(' '),
   })
   @ApiCookieAuth('refreshCookie')
@@ -438,7 +460,7 @@ export class AuthController {
       'Revokes the session bound to the current access token when present,',
       'clears `eggship_at` and `eggship_rt`, and is idempotent when already logged out.',
       'Short-lived access tokens may remain cryptographically valid until expiry;',
-      'refresh continuation is stopped. CSRF middleware is required for browser production use.',
+      'refresh continuation is stopped. Browser requests require the customer CSRF contract.',
     ].join(' '),
   })
   @ApiResponse({
@@ -463,6 +485,7 @@ export class AuthController {
       await this.lifecycle.logoutCurrent(principal);
     } finally {
       this.cookies.clearAuthCookies(response);
+      this.cookies.clearCsrfCookie(response);
     }
     return { data: { authenticated: false } };
   }
@@ -478,7 +501,7 @@ export class AuthController {
       'Revokes every active session for that subject, clears current auth cookies,',
       'and prevents further refresh on those sessions.',
       'Customer sessions only: an authenticated non-customer subject is rejected with 403.',
-      'Does not affect other users. CSRF middleware is required for browser production use.',
+      'Does not affect other users. Browser requests require the customer CSRF contract.',
     ].join(' '),
   })
   @ApiCookieAuth('accessCookie')
@@ -515,6 +538,7 @@ export class AuthController {
 
     await this.lifecycle.logoutAll(principal);
     this.cookies.clearAuthCookies(response);
+    this.cookies.clearCsrfCookie(response);
     return { data: { authenticated: false } };
   }
 

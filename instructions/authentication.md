@@ -110,7 +110,7 @@ The EggShip frontend uses **cookie-based authentication with CSRF protection**. 
 
 - Do **not** switch browser clients to LocalStorage (or SessionStorage) refresh-token storage.
 - Cookie-authenticated browser state-changing requests require CSRF protection ([security.md](security.md)).
-- CSRF middleware is **not** implemented. Customer and Admin `refresh`, `logout`, and `logout-all`, plus customer Order create (`POST /orders`), are designed so CSRF middleware can wrap them, but **cookie-authenticated browser mutation security is not production-complete until CSRF lands**. Admin cookie auth is production-blocked by the same issue; do not invent a separate Admin CSRF mechanism.
+- AUTH-10 implements the shared signed double-submit CSRF boundary for all unsafe browser methods. Customer and Admin bootstrap at `/auth/csrf` and `/admin/auth/csrf`; cookie-authenticated browser mutations require the matching namespace cookie and `X-CSRF-Token` header. Bearer-only native/tooling requests remain exempt.
 
 ### Token transport (AUTH-03 / AUTH-04)
 
@@ -210,7 +210,7 @@ CSRF required for cookie-authenticated state-changing browser requests
 
 Rationale: matches the existing EggShip frontend cookie + CSRF model; avoids LocalStorage refresh tokens; keeps tokens out of JavaScript.
 
-**Implementation note (AUTH-04):** `AccessTokenGuard` accepts `eggship_at` and/or Authorization Bearer (conflicting values rejected). Refresh uses only `eggship_rt`. Auth cookie helpers live at the HTTP boundary (`AuthCookieWriter`). CSRF middleware remains a production blocker for browser cookie mutations.
+**Implementation note (AUTH-04):** `AccessTokenGuard` accepts `eggship_at` and/or Authorization Bearer (conflicting values rejected). Refresh uses only `eggship_rt`. Auth cookie helpers live at the HTTP boundary (`AuthCookieWriter`); CSRF helpers remain at that boundary as a separate non-HttpOnly cookie.
 
 ### Cookie policy
 
@@ -698,7 +698,7 @@ Indexes: unique `phone`; unique `email` on `Admin`; unique `refreshTokenHash`; `
 
 These remain open for later Auth / frontend tasks; do not treat them as implemented:
 
-1. CSRF middleware implementation and tests (AUTH-10; production blocker for browser cookie mutations, including Admin cookie auth). The mechanism, header, cookie namespaces, origin policy, and error contract are locked by ADR 0019.
+1. Follow-up CSRF security review and production-origin deployment verification. AUTH-10 implements the mechanism, header, cookie namespaces, origin policy, error contract, and regression tests locked by ADR 0019.
 2. Final numeric TTL values after product/load confirmation.
 3. Breached-password corpus rejection and Admin password rotation/expiry.
 4. Automatic Admin session revocation when `ADM-01` disables an Admin or changes a security-sensitive role (required for ADM-01; not implemented in ADM-AUTH-01).

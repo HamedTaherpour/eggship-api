@@ -1,8 +1,16 @@
 import { ValidationPipe } from '@nestjs/common';
 import type { INestApplication } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ApiExceptionFilter } from './common/http/api-exception.filter';
+import type { EnvironmentVariables } from './config/environment.validation';
+import { CsrfGuard } from './modules/auth/api/csrf.guard';
 
 export function configureApplication(app: INestApplication): void {
+  const config = app.get(ConfigService);
+  const allowedOrigins = config.getOrThrow<
+    EnvironmentVariables['CSRF_ALLOWED_ORIGINS']
+  >('CSRF_ALLOWED_ORIGINS');
+  app.enableCors({ origin: allowedOrigins, credentials: true });
   app.setGlobalPrefix('api/v1');
   app.useGlobalPipes(
     new ValidationPipe({
@@ -12,4 +20,5 @@ export function configureApplication(app: INestApplication): void {
     }),
   );
   app.useGlobalFilters(app.get(ApiExceptionFilter));
+  app.useGlobalGuards(app.get(CsrfGuard));
 }

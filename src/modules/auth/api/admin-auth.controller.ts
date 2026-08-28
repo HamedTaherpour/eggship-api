@@ -36,6 +36,7 @@ import { AccessTokenGuard } from './access-token.guard';
 import { extractAccessTokenFromRequest } from './access-token.extraction';
 import { getAuthenticatedPrincipal } from './authenticated-principal.util';
 import { AuthCookieWriter } from './auth-cookie.writer';
+import { CsrfService } from './csrf.service';
 import { AuthSessionStatusResponseDto } from './dto/auth-session-status.dto';
 import {
   AdminLoginBodyDto,
@@ -55,12 +56,32 @@ export class AdminAuthController {
     private readonly login: AdminLoginService,
     private readonly lifecycle: AdminSessionLifecycleService,
     private readonly accessTokens: AccessTokenService,
+    private readonly csrf: CsrfService,
     config: ConfigService,
   ) {
     this.cookies = new AuthCookieWriter(
       config.getOrThrow<string>('NODE_ENV'),
       'admin',
     );
+  }
+
+  @Get('csrf')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    operationId: 'AdminAuth_csrf',
+    summary: 'Bootstrap the Admin browser CSRF token',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'CSRF token cookie and frontend-safe token.',
+  })
+  getCsrf(@Res({ passthrough: true }) response: Response): {
+    data: { token: string };
+  } {
+    response.setHeader('Cache-Control', AUTH_CACHE_CONTROL);
+    const token = this.csrf.issue('admin');
+    this.cookies.setCsrfCookie(response, token);
+    return { data: { token } };
   }
 
   @Post('login')
@@ -74,9 +95,8 @@ export class AdminAuthController {
       'and returns a safe Admin identity. Tokens are never returned in JSON.',
       'Unknown email, wrong password, and malformed identifiers share AUTH_INVALID_CREDENTIALS.',
       'An inactive Admin that presents the correct password is AUTH_ACCOUNT_DISABLED (post-verification).',
-      'Pre-authentication: authenticated-cookie CSRF does not apply to login.',
-      'After cookies are set, cookie-authenticated mutations still require CSRF',
-      '(shared production blocker with customer Auth).',
+      'Browser login POSTs require the CSRF contract to prevent login CSRF.',
+      'After cookies are set, cookie-authenticated mutations continue to require CSRF.',
     ].join(' '),
   })
   @ApiBody({ type: AdminLoginBodyDto })
@@ -149,6 +169,7 @@ export class AdminAuthController {
         refreshTokenMaxAgeSeconds: result.refreshTokenMaxAgeSeconds,
       },
     );
+    this.cookies.setCsrfCookie(response, this.csrf.issue('admin'));
 
     return {
       data: {
@@ -221,7 +242,7 @@ export class AdminAuthController {
     description: [
       `Reads the HttpOnly \`${ADMIN_REFRESH_TOKEN_COOKIE_NAME}\` cookie only.`,
       'A User refresh token cannot resolve as an Admin session (fail closed).',
-      'CSRF protection for cookie-authenticated browser clients is required before production exposure.',
+      'Cookie-authenticated browser refresh requires the namespace CSRF contract.',
     ].join(' '),
   })
   @ApiCookieAuth('adminRefreshCookie')
@@ -285,7 +306,7 @@ export class AdminAuthController {
     description: [
       'Revokes the AdminAuthSession bound to the current Admin access token when present.',
       'Clears Admin cookies only; User sessions are not affected.',
-      'Idempotent when already logged out. CSRF middleware is required for browser production use.',
+      'Idempotent when already logged out. Browser requests require the namespace CSRF contract.',
     ].join(' '),
   })
   @ApiResponse({
@@ -310,6 +331,7 @@ export class AdminAuthController {
       await this.lifecycle.logoutCurrent(principal);
     } finally {
       this.cookies.clearAuthCookies(response);
+      this.cookies.clearCsrfCookie(response);
     }
     return { data: { authenticated: false } };
   }
@@ -323,7 +345,7 @@ export class AdminAuthController {
     description: [
       'Requires a valid Admin access token (cookie or Bearer).',
       'Revokes every AdminAuthSession for that Admin only. User sessions are not affected.',
-      'A USER subject receives AUTH_FORBIDDEN (403). CSRF is required for browser production use.',
+      'A USER subject receives AUTH_FORBIDDEN (403). Browser requests require the namespace CSRF contract.',
     ].join(' '),
   })
   @ApiCookieAuth('adminAccessCookie')
@@ -361,6 +383,7 @@ export class AdminAuthController {
 
     await this.lifecycle.logoutAll(principal);
     this.cookies.clearAuthCookies(response);
+    this.cookies.clearCsrfCookie(response);
     return { data: { authenticated: false } };
   }
 

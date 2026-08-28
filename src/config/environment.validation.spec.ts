@@ -8,6 +8,8 @@ const validEnvironment = {
   GIT_SHA: 'local',
   JWT_ACCESS_SECRET: 'unit-test-jwt-access-secret-32chars!!',
   OTP_HASH_SECRET: 'unit-test-otp-hash-secret-32chars!!!!',
+  CSRF_SECRET: 'unit-test-csrf-secret-32chars!!!!!!',
+  CSRF_ALLOWED_ORIGINS: 'http://localhost:3000,http://127.0.0.1:3000',
 };
 
 describe('validateEnvironment', () => {
@@ -26,6 +28,8 @@ describe('validateEnvironment', () => {
       REFRESH_TOKEN_TTL_SECONDS: 2_592_000,
       OTP_PROVIDER: 'development',
       OTP_HASH_SECRET: 'unit-test-otp-hash-secret-32chars!!!!',
+      CSRF_SECRET: 'unit-test-csrf-secret-32chars!!!!!!',
+      CSRF_ALLOWED_ORIGINS: ['http://localhost:3000', 'http://127.0.0.1:3000'],
       OTP_TTL_SECONDS: 300,
       OTP_MAX_ATTEMPTS: 5,
       OTP_RESEND_COOLDOWN_SECONDS: 60,

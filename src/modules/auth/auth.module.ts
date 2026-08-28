@@ -5,6 +5,8 @@ import { PrismaModule } from '../../infrastructure/database/prisma/prisma.module
 import { AdminsModule } from '../admins/admins.module';
 import { UsersModule } from '../users/users.module';
 import { AccessTokenGuard } from './api/access-token.guard';
+import { CsrfGuard } from './api/csrf.guard';
+import { CsrfService } from './api/csrf.service';
 import { AdminAuthController } from './api/admin-auth.controller';
 import { AuthController } from './api/auth.controller';
 import { AdminLoginService } from './application/admin-login.service';
@@ -49,6 +51,8 @@ import { SecureOtpCodeIssuer } from './infrastructure/secure-otp-code-issuer';
     AccessTokenService,
     RefreshTokenService,
     AccessTokenGuard,
+    CsrfGuard,
+    CsrfService,
     SessionLifecycleService,
     AdminSessionLifecycleService,
     AdminLoginService,
@@ -121,6 +125,8 @@ import { SecureOtpCodeIssuer } from './infrastructure/secure-otp-code-issuer';
     AccessTokenService,
     RefreshTokenService,
     AccessTokenGuard,
+    CsrfGuard,
+    CsrfService,
     SessionLifecycleService,
     AdminSessionLifecycleService,
     AdminLoginService,

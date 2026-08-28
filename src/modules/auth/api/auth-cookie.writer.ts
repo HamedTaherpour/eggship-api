@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import {
+  CSRF_COOKIE_NAMES,
   isAdminHttpPath,
   resolveAuthCookieAttributes,
   resolveAuthCookieNames,
@@ -100,6 +101,34 @@ export class AuthCookieWriter {
   readRefreshToken(request: Request): string | undefined {
     return readCookieValue(request.headers.cookie, this.names.refresh);
   }
+
+  setCsrfCookie(response: Response, token: string): void {
+    appendSetCookie(
+      response,
+      serializeCookie(CSRF_COOKIE_NAMES[this.namespace], token, {
+        httpOnly: false,
+        secure: this.attributes.secure,
+        sameSite: this.attributes.sameSite,
+        path: this.attributes.path,
+        domain: undefined,
+        maxAgeSeconds: 2_592_000,
+      }),
+    );
+  }
+
+  clearCsrfCookie(response: Response): void {
+    appendSetCookie(
+      response,
+      serializeCookie(CSRF_COOKIE_NAMES[this.namespace], '', {
+        httpOnly: false,
+        secure: this.attributes.secure,
+        sameSite: this.attributes.sameSite,
+        path: this.attributes.path,
+        domain: undefined,
+        maxAgeSeconds: 0,
+      }),
+    );
+  }
 }
 
 export function readCookieValue(
@@ -146,7 +175,11 @@ export function resolveAccessCookieNameForRequest(request: Request): string {
   return resolveAuthCookieNames(namespace).access;
 }
 
-interface SerializeCookieInput extends AuthCookieAttributePolicy {
+interface SerializeCookieInput extends Omit<
+  AuthCookieAttributePolicy,
+  'httpOnly'
+> {
+  httpOnly: boolean;
   maxAgeSeconds: number;
 }
 

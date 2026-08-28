@@ -13,6 +13,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- CSRF browser mutation protection (AUTH-10): centralized default-on unsafe-method enforcement with stateless signed double-submit tokens, separate customer/Admin namespaces, strict configured Origin/Referer validation, Fetch Metadata defense-in-depth, Bearer-only native exemption, bootstrap endpoints, stable 403 errors, and no database/Redis state.
+
 - AUTH-09 CSRF architecture (ADR 0019): accepted a shared signed double-submit cookie contract with strict Origin/Referer validation and Fetch Metadata defense-in-depth for customer and Admin browser mutations; classified current routes, defined the bearer/native boundary and stable failures, and added AUTH-10 as the implementation gate. No runtime code or middleware was changed.
 
 - Admin Order operational HTTP (ORD-06): permissioned `GET /api/v1/admin/orders` and `GET /api/v1/admin/orders/:id`, plus explicit `confirm`, `cancel`, `ship`, and `deliver` commands using ORD-02 transition semantics; strict pagination/filter/sort allowlists, snapshot-safe Admin DTOs, stable operation IDs/OpenAPI, `ORDER_READ`/`ORDER_TRANSITION` enforcement, `Cache-Control: no-store`, and no schema migration. CSRF remains the shared AUTH-09 production blocker.

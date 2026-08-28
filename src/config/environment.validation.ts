@@ -55,6 +55,7 @@ export const DEFAULT_DATABASE_IDLE_TIMEOUT_MS = 30_000;
 
 const MIN_JWT_ACCESS_SECRET_LENGTH = 32;
 const MIN_OTP_HASH_SECRET_LENGTH = 32;
+const MIN_CSRF_SECRET_LENGTH = 32;
 const MAX_JWT_ACCESS_TTL_SECONDS = 3_600;
 const MAX_REFRESH_TOKEN_TTL_SECONDS = 7_776_000;
 const MAX_OTP_TTL_SECONDS = 900;
@@ -91,6 +92,8 @@ export interface EnvironmentVariables {
   REFRESH_TOKEN_TTL_SECONDS: number;
   OTP_PROVIDER: OtpProviderName;
   OTP_HASH_SECRET: string;
+  CSRF_SECRET: string;
+  CSRF_ALLOWED_ORIGINS: string[];
   OTP_TTL_SECONDS: number;
   OTP_MAX_ATTEMPTS: number;
   OTP_RESEND_COOLDOWN_SECONDS: number;
@@ -210,6 +213,15 @@ export function validateEnvironment(
     throw new Error('OTP_HASH_SECRET must be distinct from JWT_ACCESS_SECRET.');
   }
 
+  const csrfSecret = requiredString(values, 'CSRF_SECRET');
+  assertDedicatedSecretStrength(csrfSecret, 'CSRF_SECRET');
+  if (csrfSecret === accessSecret || csrfSecret === otpHashSecret) {
+    throw new Error(
+      'CSRF_SECRET must be distinct from other application secrets.',
+    );
+  }
+  const csrfAllowedOrigins = parseAllowedOrigins(values, nodeEnv);
+
   const otpTtl = parsePositiveIntSeconds(
     values,
     'OTP_TTL_SECONDS',
@@ -325,6 +337,8 @@ export function validateEnvironment(
     REFRESH_TOKEN_TTL_SECONDS: refreshTtl,
     OTP_PROVIDER: otpProvider,
     OTP_HASH_SECRET: otpHashSecret,
+    CSRF_SECRET: csrfSecret,
+    CSRF_ALLOWED_ORIGINS: csrfAllowedOrigins,
     OTP_TTL_SECONDS: otpTtl,
     OTP_MAX_ATTEMPTS: otpMaxAttempts,
     OTP_RESEND_COOLDOWN_SECONDS: otpCooldown,
@@ -525,6 +539,60 @@ function assertOtpHashSecretStrength(secret: string): void {
   if (/^(.)\1+$/u.test(secret)) {
     throw new Error('OTP_HASH_SECRET is too weak.');
   }
+}
+
+function assertDedicatedSecretStrength(secret: string, name: string): void {
+  if (secret.length < MIN_CSRF_SECRET_LENGTH) {
+    throw new Error(
+      `${name} must be at least ${MIN_CSRF_SECRET_LENGTH} characters.`,
+    );
+  }
+  if (
+    TRIVIAL_ACCESS_SECRETS.has(secret.toLowerCase()) ||
+    /^(.)\1+$/u.test(secret)
+  ) {
+    throw new Error(`${name} is too weak.`);
+  }
+}
+
+function parseAllowedOrigins(
+  values: Record<string, unknown>,
+  nodeEnv: NodeEnvironment,
+): string[] {
+  const raw = optionalString(values, 'CSRF_ALLOWED_ORIGINS');
+  if (raw === undefined) {
+    if (nodeEnv === 'production') {
+      throw new Error('CSRF_ALLOWED_ORIGINS is required in production.');
+    }
+    return ['http://localhost:3000', 'http://127.0.0.1:3000'];
+  }
+  const origins = raw
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (origins.length === 0) {
+    throw new Error('CSRF_ALLOWED_ORIGINS must contain at least one origin.');
+  }
+  for (const origin of origins) {
+    let parsed: URL;
+    try {
+      parsed = new URL(origin);
+    } catch {
+      throw new Error('CSRF_ALLOWED_ORIGINS must contain valid origins.');
+    }
+    if (
+      !['http:', 'https:'].includes(parsed.protocol) ||
+      parsed.origin !== origin ||
+      parsed.pathname !== '/' ||
+      parsed.search !== '' ||
+      parsed.hash !== ''
+    ) {
+      throw new Error(
+        'CSRF_ALLOWED_ORIGINS must contain canonical http(s) origins.',
+      );
+    }
+  }
+  return [...new Set(origins)];
 }
 
 function parsePositiveIntSeconds(

@@ -7,14 +7,14 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   106 |
-| DONE        |    55 |
+| DONE        |    56 |
 | IN_PROGRESS |     0 |
-| READY       |     6 |
+| READY       |     5 |
 | BLOCKED     |     0 |
 | PLANNED     |    45 |
 
-- Current task: none in progress. `ORD-04`, `ORD-05`, and `ORD-06` are DONE (customer/admin order reads, cancellation, and admin transitions). `AUTH-09` is DONE as the dedicated CSRF security architecture task; `AUTH-10` is READY for implementation. `REF-01` remains READY for referral attribution and abuse policy. No task remains BLOCKED.
-- Current milestone: `M1 — Foundation complete`. `AUTH-01`–`AUTH-09`, `ADM-00`, and `ADM-AUTH-01` are DONE. The `M2 — Identity complete` task list is closed for customer identity and Admin login runtime, but AUTH-10 CSRF enforcement remains a production blocker, so M2 must not be reported as production-ready.
+- Current task: none in progress. `AUTH-10`, `ORD-04`, `ORD-05`, and `ORD-06` are DONE. `REF-01` remains READY for referral attribution and abuse policy. No task remains BLOCKED.
+- Current milestone: `M2 — Identity complete`. `AUTH-01`–`AUTH-10`, `ADM-00`, and `ADM-AUTH-01` are DONE. Browser cookie mutations are protected by the shared CSRF boundary; unrelated production blockers remain tracked separately.
 
 ## Status model
 
@@ -279,11 +279,13 @@ Deliverables: [ADR 0019](adr/0019-csrf-browser-mutation-protection.md) and AUTH-
 
 ### AUTH-10 — CSRF enforcement for browser mutations
 
-Status: READY | Depends on: AUTH-09 | Primary: Codex after Human security approval | Review: Claude/Cursor security/E2E review, Human production-readiness approval
+Status: DONE | Depends on: AUTH-09 | Primary: Codex after Human security approval | Review: Claude/Cursor security/E2E review, Human production-readiness approval
 
 Scope: Implement the AUTH-09 shared signed double-submit CSRF architecture for customer and Admin browser flows: centralized default-on unsafe-method enforcement, token issuance/validation, dedicated typed secret and origin configuration, namespace/path-aware cookies, strict Origin/Referer policy, Fetch Metadata defense-in-depth, explicit route metadata, and browser contract/OpenAPI documentation.
 
 Acceptance criteria: Customer and Admin cookie-authenticated profile/order/auth-session and every current Admin mutation are protected; bearer-only non-browser requests are not forced through browser CSRF; login/OTP behavior matches ADR 0019; errors are stable and safe; no in-memory or Redis CSRF state is introduced; unit, E2E, cross-site, production-cookie, local-development, future-route fail-closed, and native/non-cookie regression tests pass. The production-readiness gate remains closed until this task and its security review are complete.
+
+Delivered: Stateless HMAC-SHA-256 signed double-submit tokens with 256-bit nonces, namespace/path-aware readable CSRF cookies, `GET /api/v1/auth/csrf` and `GET /api/v1/admin/auth/csrf` bootstrap endpoints, global default-on unsafe-method enforcement, strict configured Origin/Referer validation, Fetch Metadata defense-in-depth, Bearer-only exemption, stable 403 CSRF errors, OpenAPI/configuration updates, and logout/login cookie lifecycle handling. No schema migration.
 
 Explicitly out of scope: Mobile authentication design, LocalStorage refresh tokens, unrelated business features, and deployment cutover.
 

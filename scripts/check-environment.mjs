@@ -233,6 +233,8 @@ if (!existsSync(envPath)) {
     'GIT_SHA',
     'JWT_ACCESS_SECRET',
     'OTP_HASH_SECRET',
+    'CSRF_SECRET',
+    'CSRF_ALLOWED_ORIGINS',
   ];
   for (const key of required) {
     const value = values[key];

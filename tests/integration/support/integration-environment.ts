@@ -158,6 +158,11 @@ export function applyIntegrationEnvironment(
   env['OTP_PROVIDER'] = env['OTP_PROVIDER'] ?? 'development';
   env['OTP_HASH_SECRET'] =
     env['OTP_HASH_SECRET'] ?? 'integration-otp-hash-secret-32chars-min';
+  env['CSRF_SECRET'] =
+    env['CSRF_SECRET'] ?? 'integration-csrf-secret-32chars-min';
+  env['CSRF_ALLOWED_ORIGINS'] =
+    env['CSRF_ALLOWED_ORIGINS'] ??
+    'http://localhost:3000,http://127.0.0.1:3000';
   env['OTP_DEV_CODE'] = env['OTP_DEV_CODE'] ?? '111111';
   env['OTP_TTL_SECONDS'] = env['OTP_TTL_SECONDS'] ?? '300';
   env['OTP_MAX_ATTEMPTS'] = env['OTP_MAX_ATTEMPTS'] ?? '5';

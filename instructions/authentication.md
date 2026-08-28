@@ -496,7 +496,7 @@ OTP verified → verificationGrantId
 
 Business profile fields (store name, manager name, address, region, coordinates) are **not** collected at registration in AUTH-07. No in-repository legacy field inventory exists yet (`MIG-01` still PLANNED). Auth must not invent speculative profile columns. `profileComplete` is `true` for phone-only identity completeness and will be revised when evidenced business fields land.
 
-Region **reference** persistence and Admin/public list APIs exist as of CAT-02 (`instructions/catalog.md`). Customer profile `regionId` FK remains deferred until profile fields are evidenced; do not invent the FK here. Referral attribution is out of scope.
+Region **reference** persistence and Admin/public list APIs exist as of CAT-02 (`instructions/catalog.md`). Customer profile `regionId` FK remains deferred until profile fields are evidenced; do not invent the FK here. REF-01 defines referral attribution policy, but referral persistence and registration integration remain out of scope for AUTH-07 and belong to REF-02/REF-03.
 
 ### HTTP
 

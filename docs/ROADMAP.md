@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   107 |
-| DONE        |    63 |
+| DONE        |    64 |
 | IN_PROGRESS |     0 |
 | READY       |     3 |
 | BLOCKED     |     0 |
-| PLANNED     |    42 |
+| PLANNED     |    40 |
 
-- Current task: `ASY-03` is DONE after committed real-worker lifecycle verification. `REF-01` remains READY; no task remains BLOCKED.
+- Current task: `REF-01` is DONE with accepted referral attribution policy; `REF-02` is READY to begin persistence design and migration/privacy review. No task remains BLOCKED.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate.
 
 ## Status model
@@ -739,17 +739,19 @@ Delivered: Additive `OrderSettlement` migration with unique Order ownership, `OP
 
 ### REF-01 — Referral attribution and abuse policy
 
-Status: READY | Depends on: AUTH-07 | Primary: Human + ChatGPT architecture process | Review: Claude/Cursor security review, Human approval
+Status: DONE | Depends on: AUTH-07 | Primary: Human + ChatGPT architecture process | Review: Claude/Cursor security review, Human approval
 
 Scope: Distinguish attribution from rewards and approve ownership, attribution window/source, duplicate attribution, self-referral, reassignment, visitor-to-user conversion, and abuse policy.
 
 Acceptance criteria: Rules address visitor, user, and store codes/links independently of monetary rewards; unresolved reward policy remains explicitly deferred.
 
+Delivered: Accepted [ADR 0020](adr/0020-referral-attribution-and-abuse-policy.md) and durable policy in [instructions/referrals.md](../instructions/referrals.md): V1 Visitor acquisition attribution occurs only on successful new registration, with link/manual-code semantics, truthful invalid-code rejection, existing-customer exclusion, immutable history, inactive-Visitor preservation, PostgreSQL transaction authority, relational analytics boundary, reward separation, proportional abuse limits, future USER compatibility, and explicit unresolved code-generation/reuse/deletion decisions. No schema, migration, endpoint, click tracking, Admin screen, or reward implementation.
+
 Explicitly out of scope: Inventing reward amounts or assuming last/first-touch behavior.
 
 ### REF-02 — Referral and visitor persistence
 
-Status: PLANNED | Depends on: REF-01 | Primary: Codex | Review: Claude/Cursor, Human migration/privacy review
+Status: READY | Depends on: REF-01 | Primary: Codex | Review: Claude/Cursor, Human migration/privacy review
 
 Scope: Model visitor identities where justified, user/store referral codes and links, attribution records, ownership, provenance, and uniqueness/idempotency constraints.
 

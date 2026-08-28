@@ -14,3 +14,4 @@ Simple resource modules may use `controller`, `service`, `repository`, DTOs, and
 - Microservices require explicit approval. Do not prematurely add CQRS or event sourcing.
 - The service is stateless and designed for horizontal scaling. Important state belongs in durable services, not process memory or ephemeral local disk. Object bytes use `StorageProvider` (see [media.md](media.md)); they are not stored on local application disk.
 - Feature modules should access Prisma through their infrastructure/repository layer when domain complexity warrants that boundary.
+- Referral attribution is a bounded domain concern. Future referral services own referral invariants and expose application contracts to Auth; Auth must not reach into referral tables directly, and referral code transport/capture must not create click-tracking state.

@@ -7,9 +7,9 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   105 |
-| DONE        |    51 |
+| DONE        |    52 |
 | IN_PROGRESS |     0 |
-| READY       |     9 |
+| READY       |     8 |
 | BLOCKED     |     0 |
 | PLANNED     |    45 |
 
@@ -521,13 +521,15 @@ Delivered: `GET /api/v1/orders` (`Orders_list`) and `GET /api/v1/orders/:id` (`O
 
 ### ORD-05 — Customer cancellation and stock release
 
-Status: READY | Depends on: ORD-02, ORD-03, DLU-02 | Primary: Codex | Review: Claude/Cursor concurrency review
+Status: DONE | Depends on: ORD-02, ORD-03, DLU-02 | Primary: Codex | Review: Claude/Cursor concurrency review
 
 Scope: Implement authorized idempotent cancellation for approved states, release Inventory reservations through its application contract, and release lifetime discounted-quantity consumption per ADR 0017 in the same transaction.
 
 Acceptance criteria: Order transition, discount-usage release, and Inventory release are atomic; repeated/concurrent cancellation is safe; prohibited states return stable errors and audit evidence; shipped Orders do not restore discount entitlement.
 
 Explicitly out of scope: Returns and refunds.
+
+Delivered: `POST /api/v1/orders/:id/cancel` (`Orders_cancel`) for authenticated USER principals with owner-scoped cancellation, `PENDING_REVIEW → CANCELLED` conditional transition, idempotent cancelled replay, atomic DLU release followed by Inventory reservation release, customer-safe response/error mapping, `Cache-Control: no-store`, OpenAPI, and unit/e2e coverage. CSRF remains the shared AUTH-09 production blocker. No schema migration.
 
 ### ORD-06 — Admin order list, detail, and transitions
 

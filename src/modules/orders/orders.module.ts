@@ -15,7 +15,8 @@ import { OrderRepository } from './infrastructure/order.repository';
 /**
  * Order persistence, historical snapshots, creation (ORD-03 + COM-03 + DLU-02),
  * customer create HTTP (ORD-03A), customer read HTTP (ORD-04), and transitions
- * (ORD-02). Transition HTTP belongs to ORD-05/ORD-06. Inventory tables are
+ * (ORD-02), and customer cancellation HTTP (ORD-05). Admin transition HTTP
+ * belongs to ORD-06. Inventory tables are
  * mutated only through InventoryService contracts; pricing via OrderPricingService;
  * acceptance via CommercePolicyService.
  */

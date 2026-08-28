@@ -38,8 +38,10 @@ import { AccessTokenGuard } from '../../auth/api/access-token.guard';
 import { getAuthenticatedPrincipal } from '../../auth/api/authenticated-principal.util';
 import { OrderCreationService } from '../application/order-creation.service';
 import { OrderReadService } from '../application/order-read.service';
+import { OrderTransitionService } from '../application/order-transition.service';
 import { OrderActorType } from '../domain/order-actor';
 import { CreateOrderBodyDto } from './dto/create-order.dto';
+import { CancelOrderBodyDto } from './dto/cancel-order.dto';
 import { CustomerOrderListQueryDto } from './dto/customer-order-list-query.dto';
 import {
   CreateOrderResponseDto,
@@ -59,6 +61,7 @@ export class OrdersController {
   constructor(
     private readonly orderCreation: OrderCreationService,
     private readonly orderRead: OrderReadService,
+    private readonly orderTransitions: OrderTransitionService,
   ) {}
 
   @Get()
@@ -159,6 +162,76 @@ export class OrdersController {
     const ownerId = requireCustomerOwnerId(getAuthenticatedPrincipal(request));
     const order = await this.orderRead.getOwned(ownerId, id);
     return { data: toCustomerOrderDetailDto(order) };
+  }
+
+  @Post(':id/cancel')
+  @UseGuards(AccessTokenGuard)
+  @Header('Cache-Control', ORDER_CUSTOMER_CACHE_CONTROL)
+  @ApiOperation({
+    operationId: 'Orders_cancel',
+    summary: 'Cancel an own pending customer order',
+    description: [
+      'Authenticated USER subjects only. The owner is derived from the authenticated principal.',
+      'Only PENDING_REVIEW orders may be cancelled; an already CANCELLED order replays successfully.',
+      'Customer cancellation always stores a null cancellation reason and atomically releases lifetime discount usage and Inventory reservations.',
+      "Missing orders and another customer's order both return ORDER_NOT_FOUND. Customer-facing responses do not expose Inventory or discount internals.",
+      'Response uses Cache-Control: no-store. Cookie-authenticated browser clients remain subject to the shared AUTH-09 CSRF production blocker.',
+    ].join(' '),
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiCookieAuth('accessCookie')
+  @ApiBearerAuth('bearer')
+  @ApiBody({ type: CancelOrderBodyDto })
+  @ApiOkResponse({
+    description: 'Cancelled customer order, or an idempotent replay.',
+    type: CustomerOrderDetailResponseDto,
+    headers: {
+      'Cache-Control': {
+        description: 'Always no-store for authenticated customer data.',
+        schema: { type: 'string', example: 'no-store' },
+      },
+    },
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid order id or command body.',
+    type: ApiErrorResponseDto,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Missing or invalid access token (`AUTH_UNAUTHENTICATED`).',
+    type: ApiErrorResponseDto,
+  })
+  @ApiForbiddenResponse({
+    description: 'Wrong subject type (`AUTH_FORBIDDEN`).',
+    type: ApiErrorResponseDto,
+  })
+  @ApiNotFoundResponse({
+    description:
+      'Order not found or not owned by the caller (`ORDER_NOT_FOUND`).',
+    type: ApiErrorResponseDto,
+  })
+  @ApiConflictResponse({
+    description: 'Order is not cancellable (`ORDER_INVALID_TRANSITION`).',
+    type: ApiErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Unexpected failure (`INTERNAL_ERROR`).',
+    type: ApiErrorResponseDto,
+  })
+  async cancel(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: CancelOrderBodyDto,
+  ): Promise<CustomerOrderDetailResponseDto> {
+    void body;
+    response.setHeader('Cache-Control', ORDER_CUSTOMER_CACHE_CONTROL);
+    const ownerId = requireCustomerOwnerId(getAuthenticatedPrincipal(request));
+    const result = await this.orderTransitions.cancelPendingOrderByCustomer({
+      orderId: id,
+      actor: { type: OrderActorType.USER, id: ownerId },
+    });
+    return { data: toCustomerOrderDetailDto(result.order) };
   }
 
   @Post()

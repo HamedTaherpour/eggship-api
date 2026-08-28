@@ -5,6 +5,7 @@ import { OrderStatus } from '../domain/order-status';
 import type { OrderRecord } from '../domain/order';
 import type { OrderCreationService } from '../application/order-creation.service';
 import type { OrderReadService } from '../application/order-read.service';
+import type { OrderTransitionService } from '../application/order-transition.service';
 import { OrdersController } from './orders.controller';
 import type { CreateOrderBodyDto } from './dto/create-order.dto';
 import { AuthSubjectType } from '../../auth/domain/subject-type';
@@ -89,6 +90,9 @@ describe('OrdersController create (ORD-03A)', () => {
     controller = new OrdersController(
       { createOrder } as unknown as OrderCreationService,
       { listOwned, getOwned } as unknown as OrderReadService,
+      {
+        cancelPendingOrderByCustomer: jest.fn(),
+      } as unknown as OrderTransitionService,
     );
     statusCode = undefined;
     response = {
@@ -195,6 +199,9 @@ describe('OrdersController read (ORD-04)', () => {
     controller = new OrdersController(
       { createOrder } as unknown as OrderCreationService,
       { listOwned, getOwned } as unknown as OrderReadService,
+      {
+        cancelPendingOrderByCustomer: jest.fn(),
+      } as unknown as OrderTransitionService,
     );
   });
 
@@ -291,5 +298,87 @@ describe('OrdersController read (ORD-04)', () => {
     await expect(
       controller.get(requestWithPrincipal(userPrincipal), ORDER_ID),
     ).rejects.toBeInstanceOf(OrderNotFoundError);
+  });
+});
+
+describe('OrdersController cancel (ORD-05)', () => {
+  let controller: OrdersController;
+  let cancelPendingOrderByCustomer: jest.MockedFunction<
+    OrderTransitionService['cancelPendingOrderByCustomer']
+  >;
+  let response: Response;
+  let setHeader: jest.Mock;
+
+  const userPrincipal: AuthenticatedPrincipal = {
+    subjectId: USER_ID,
+    subjectType: AuthSubjectType.USER,
+    sessionId: '88888888-8888-4888-8888-888888888888',
+  };
+
+  beforeEach(() => {
+    cancelPendingOrderByCustomer = jest.fn();
+    controller = new OrdersController(
+      { createOrder: jest.fn() } as unknown as OrderCreationService,
+      {
+        listOwned: jest.fn(),
+        getOwned: jest.fn(),
+      } as unknown as OrderReadService,
+      { cancelPendingOrderByCustomer } as unknown as OrderTransitionService,
+    );
+    setHeader = jest.fn();
+    response = { setHeader } as unknown as Response;
+  });
+
+  it('binds the USER principal, rejects client fields, and returns a safe cancelled order', async () => {
+    const cancelled = orderRecord({
+      status: OrderStatus.CANCELLED,
+      cancelledAt: new Date('2026-08-22T10:01:00.000Z'),
+      cancelReason: null,
+    });
+    cancelPendingOrderByCustomer.mockResolvedValue({
+      order: cancelled,
+      replay: false,
+    });
+
+    const result = await controller.cancel(
+      requestWithPrincipal(userPrincipal),
+      response,
+      ORDER_ID,
+      {},
+    );
+
+    expect(cancelPendingOrderByCustomer).toHaveBeenCalledWith({
+      orderId: ORDER_ID,
+      actor: { type: OrderActorType.USER, id: USER_ID },
+    });
+    expect(setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+    expect(result.data.status).toBe(OrderStatus.CANCELLED);
+    expect(result.data.cancelledAt).toBe('2026-08-22T10:01:00.000Z');
+    expect(result.data).not.toHaveProperty('userId');
+    expect(result.data).not.toHaveProperty('cancelReason');
+  });
+
+  it('rejects Admin and unauthenticated principals before the transition command', async () => {
+    await expect(
+      controller.cancel(
+        requestWithPrincipal({
+          subjectId: ADMIN_ID,
+          subjectType: AuthSubjectType.ADMIN,
+          sessionId: userPrincipal.sessionId,
+        }),
+        response,
+        ORDER_ID,
+        {},
+      ),
+    ).rejects.toMatchObject({ code: 'AUTH_FORBIDDEN' });
+    await expect(
+      controller.cancel(
+        requestWithPrincipal(undefined),
+        response,
+        ORDER_ID,
+        {},
+      ),
+    ).rejects.toMatchObject({ code: 'AUTH_UNAUTHENTICATED' });
+    expect(cancelPendingOrderByCustomer).not.toHaveBeenCalled();
   });
 });

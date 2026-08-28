@@ -334,6 +334,23 @@ Do not add per-command status-error explosion. Pricing unavailability maps to `O
 
 Return inspection workflow persistence belongs to ORD-07 — do not model full return semantics on `Order` in ORD-01/ORD-02/ORD-03.
 
+## Customer cancellation HTTP (ORD-05)
+
+`POST /api/v1/orders/:id/cancel` is an explicit customer command. It accepts
+an empty JSON object only; ownership and actor identity come exclusively from
+the authenticated `USER` principal. Missing and other-owner Orders both map to
+`ORDER_NOT_FOUND`. A customer may cancel only `PENDING_REVIEW`; an already
+`CANCELLED` Order is an idempotent replay, while all other states map to
+`ORDER_INVALID_TRANSITION`.
+
+The command returns the customer-safe Order detail shape and `Cache-Control:
+no-store`. It never accepts or exposes a cancellation reason, Inventory data,
+discount usage data, or idempotency internals. The Orders-owned transaction
+conditionally transitions the Order, then releases DLU usage and Inventory
+reservations through their application contracts. Any failure rolls back the
+Order transition and all release records. Cookie-authenticated browser use is
+still subject to the shared AUTH-09 CSRF production blocker.
+
 ## Inventory boundary
 
 - `InventoryReservation.orderId` remains an **opaque UUID** with **no FK** to `Order`.
@@ -353,7 +370,7 @@ When profile/address support lands, Orders must snapshot address at creation —
 
 ## Module layout
 
-`src/modules/orders/` — domain types, money helpers, `OrderCreationService` (`createOrder`), `OrderReadService` (customer list/detail), `OrdersController` (`POST`/`GET /orders`, ORD-03A/ORD-04), `OrderTransitionService` (confirm/cancel/ship/deliver), `OrderRepository` (`createWithTrustedSnapshots`, `findById`, `findOwnedById`, `listOwned`, idempotency lookup/lock, closed conditional status updates). Transition HTTP in ORD-05/ORD-06. Orders imports Pricing + Inventory application contracts; Inventory must not import Orders.
+`src/modules/orders/` — domain types, money helpers, `OrderCreationService` (`createOrder`), `OrderReadService` (customer list/detail), `OrdersController` (`POST`/`GET /orders`, ORD-03A/ORD-04, customer cancel ORD-05), `OrderTransitionService` (confirm/cancel/ship/deliver), `OrderRepository` (`createWithTrustedSnapshots`, `findById`, `findOwnedById`, `listOwned`, idempotency lookup/lock, closed conditional status updates). Admin transition HTTP remains ORD-06. Orders imports Pricing + Inventory application contracts; Inventory must not import Orders.
 
 ## Related ADRs
 

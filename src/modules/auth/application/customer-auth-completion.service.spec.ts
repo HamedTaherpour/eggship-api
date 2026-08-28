@@ -169,6 +169,29 @@ describe('CustomerAuthCompletionService', () => {
     );
   });
 
+  it('ignores a supplied referral code for an existing user', async () => {
+    const existing = user();
+    otp.consumeVerificationGrant.mockResolvedValue(grant());
+    users.findByPhone.mockResolvedValue(existing);
+    sessions.createSession.mockResolvedValue({
+      id: randomUUID(),
+      userId: existing.id,
+      refreshTokenHash: 'x'.repeat(43),
+      tokenFamilyId: randomUUID(),
+      expiresAt: new Date(now.getTime() + 1_000),
+      revokedAt: null,
+      lastUsedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const result = await service.completeAuthentication(grantId, 'ABCDEF');
+
+    expect(result.isNewUser).toBe(false);
+    expect(visitors.findByReferralCodeForUpdate).not.toHaveBeenCalled();
+    expect(visitors.createAttribution).not.toHaveBeenCalled();
+  });
+
   it('registers a new user when the phone is unknown', async () => {
     const created = user();
     otp.consumeVerificationGrant.mockResolvedValue(grant());

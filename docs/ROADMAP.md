@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   107 |
-| DONE        |    65 |
+| DONE        |    66 |
 | IN_PROGRESS |     0 |
-| READY       |     3 |
+| READY       |     2 |
 | BLOCKED     |     0 |
 | PLANNED     |    39 |
 
-- Current task: `REF-02` live PostgreSQL verification is complete. `REF-03` is READY but has not started. No task remains BLOCKED.
+- Current task: `REF-03` has been closed as delivered by REF-02 with focused contract verification. No task remains BLOCKED.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate.
 
 ## Status model
@@ -759,19 +759,19 @@ Acceptance criteria: Referral is not coupled only to visitors; duplicate request
 
 Explicitly out of scope: Rewards, broad tracking, and fingerprinting without privacy approval.
 
-Implemented pending required review: Dedicated PostgreSQL-authoritative `Visitor` and immutable `ReferralAttribution` persistence with RESTRICT foreign keys, unique non-reusable canonical referral codes, bounded collision-safe generation, active-code validation, and atomic integration into new-user OTP completion. Existing-user authentication cannot acquire attribution; no Visitor Admin HTTP, rewards, click tracking, or aggregates were added.
+Delivered: Dedicated PostgreSQL-authoritative `Visitor` and immutable `ReferralAttribution` persistence with RESTRICT foreign keys, unique non-reusable canonical referral codes, bounded collision-safe generation, active-code validation, and atomic integration into new-user OTP completion. Existing-user authentication cannot acquire attribution; no Visitor Admin HTTP, rewards, click tracking, or aggregates were added.
 
-Verified live: PostgreSQL integration and concurrency proof passed against the dedicated `eggship_test` database, including registration attribution/rollback, Visitor lifecycle serialization, uniqueness races, code immutability/non-reuse, and Auth unique-conflict recovery. REF-03 remains unstarted.
+Verified live: PostgreSQL integration and concurrency proof passed against the dedicated `eggship_test` database, including registration attribution/rollback, Visitor lifecycle serialization, uniqueness races, code immutability/non-reuse, and Auth unique-conflict recovery. REF-03 uses this evidence and adds focused customer-contract verification.
 
-### REF-03 — Referral capture and attribution services
+### REF-03 — Referral capture and attribution verification
 
-Status: READY | Depends on: REF-02 | Primary: Codex | Review: Claude/Cursor security/concurrency review
+Status: DONE | Depends on: REF-02 | Primary: Codex | Review: Claude/Cursor security/concurrency review
 
-Scope: Implement bounded referral-link resolution, attribution capture, registration/store association, ownership enforcement, and duplicate/self-referral handling.
+Scope: Verify and close the referral capture contract already delivered by REF-02. Confirm the existing customer/store account (`User`) registration seam, immutable Visitor attribution, existing-user exclusion, safe errors/responses, OpenAPI documentation, and the absence of an unnecessary referral-link endpoint.
 
-Acceptance criteria: Attribution is idempotent and transactional; invalid/abusive input fails safely; logs and responses avoid unnecessary visitor/customer PII.
+Acceptance criteria: Focused Auth contract tests cover referral input and existing-user behavior; OpenAPI documents the optional `referralCode` without inventing a resolution endpoint; customer responses/logs disclose no unnecessary referral internals; REF-02 PostgreSQL transaction/concurrency evidence is reused rather than duplicated.
 
-Explicitly out of scope: Reward issuance and marketing automation.
+Explicitly out of scope: Reimplementing referral capture or persistence, schema/migrations, standalone referral-link resolution, rewards, marketing automation, click tracking, Admin Visitor APIs/reporting, User-to-user referrals, analytics aggregates, and richer Store profile semantics deferred to MIG-01.
 
 ### REF-04 — Visitor administration, referred-store views, and optional rewards
 
@@ -1356,7 +1356,7 @@ The following are not implementation assumptions:
 - Public exposure of exact inventory `available`, and any preferred-customer allocation/fairness policy under contention.
 - Product-discount lifetime caps are decided in [ADR 0017](adr/0017-discount-lifetime-quantity-limit.md) / DLU-01 (partial discount; PRODUCT LINE only; create consume / pre-ship release; no return restore) and implemented in DLU-02. V1 LINE-then-ORDER composition and single-winner-per-scope rules remain locked in PRC-03 / PRC-05 / [ADR 0015](adr/0015-line-then-order-discount-composition.md). Promo codes and promo-banner behavior remain unapproved.
 - Deferred settlement lifecycle is decided in [ADR 0018](adr/0018-deferred-settlement-lifecycle.md) / SET-01 (separate `OrderSettlement` module; `DELIVERED`-only creation; `OPEN`/`SETTLED` with derived overdue; one current receipt; receipt-required explicit settle; no V1 reopen; `RETURNED` leaves settlement untouched; full `Order.total`; `SUPER_ADMIN`-only grants). Remaining explicit decisions, not implementation assumptions: `WAREHOUSE`/`ORDER_OPS` settlement permission grants (MIG-01 evidence), settlement without receipt, correction/reopen workflow, return/refund/credit adjustments interacting with settlement, multiple receipts or PDF proof, customer-facing settlement surfaces, and due/overdue reminders. No gateway, card/bank fields, refunds, or accounting subsystem is approved.
-- Referral attribution window/source/reassignment, duplicate/self-referral treatment, visitor conversion, and whether rewards exist at all.
+- Future USER referral, visitor conversion, attribution correction/reassignment, reward policy, and any broader self-referral rule remain deferred. V1 Visitor attribution, duplicate handling, no-op existing-user behavior, no-reuse codes, and no speculative self-referral matching are settled in ADR 0020 / `instructions/referrals.md`.
 - Notification type/content rules, push provider/consent, delivery guarantees, and token lifecycle.
 - Media historical-reference behavior when Product/Blog/Category attach to Media (MED-01). Upload limits/types and the S3-compatible provider abstraction are decided in CAT-04 / ADR 0011; orphan cleanup remains DATA-02 (no retention periods invented). Live production-bucket verification remains pending credentials (DEP-02).
 - Tehran/business-day definitions and canceled/returned treatment for each analytics metric.

@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- REF-03 roadmap rebaseline: referral capture is recorded as delivered by REF-02, with focused existing-user privacy/OpenAPI verification and no new referral endpoint or infrastructure.
 - REF-02 Visitor persistence and immutable PostgreSQL registration attribution: canonical non-ambiguous referral codes with collision-safe generation, inactive Visitor handling, unique historical User attribution, and optional new-registration referral input. Visitor Admin HTTP, rewards, and tracking remain deferred.
 - REF-02 hardening: User uniqueness races now retry only after transaction rollback; registration and Visitor lifecycle commands serialize on a PostgreSQL Visitor row lock; activate/deactivate primitives preserve historical attribution and referral-code identity.
 

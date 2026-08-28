@@ -5,6 +5,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApplication } from '../src/app.setup';
+import { createOpenApiDocument } from '../src/common/openapi/openapi.document';
 import { PrismaService } from '../src/infrastructure/database/prisma/prisma.service';
 import {
   ACCESS_TOKEN_COOKIE_NAME,
@@ -416,7 +417,7 @@ describe('auth complete + current user (e2e)', () => {
       request(app.getHttpServer() as Server).post('/api/v1/auth/complete'),
       csrf,
     )
-      .send({ verificationGrantId: grantId })
+      .send({ verificationGrantId: grantId, referralCode: 'NOT-A-CODE' })
       .expect(200);
 
     expect(complete.headers['cache-control']).toBe('no-store');
@@ -506,6 +507,24 @@ describe('auth complete + current user (e2e)', () => {
     });
     expect(sessions.sessions.get(priorSessionId)?.revokedAt).toBeNull();
     expect(sessions.sessions.size).toBe(2);
+    expect(JSON.stringify(complete.body)).not.toMatch(/visitor|referral/iu);
+  });
+
+  it('documents the optional referral code without a referral-resolution endpoint', () => {
+    const document = createOpenApiDocument(app);
+    const complete = document.paths['/api/v1/auth/complete']?.post;
+    const requestBody = complete?.requestBody as
+      { content?: { 'application/json'?: { schema?: unknown } } } | undefined;
+    const bodySchema = requestBody?.content?.['application/json']?.schema as
+      { $ref?: string } | undefined;
+
+    expect(bodySchema?.$ref).toBe('#/components/schemas/CompleteAuthBodyDto');
+    expect(document.paths['/api/v1/referrals/resolve']).toBeUndefined();
+    const schemas = document.components?.schemas as
+      Record<string, { properties?: Record<string, unknown> }> | undefined;
+    expect(
+      schemas?.CompleteAuthBodyDto?.properties?.referralCode,
+    ).toBeDefined();
   });
 
   it('rejects invalid, used, and inactive-user completions', async () => {

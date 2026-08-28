@@ -67,6 +67,16 @@ or speculative self-referral matching. Visitor/customer identity separation
 means self-referral is not naturally defined for V1; future USER referral must
 decide it explicitly.
 
+## REF-02 clarification
+
+REF-02 settled and implemented the previously open V1 code details: codes use
+the canonical alphabet `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`, are 6–10
+characters, may be Admin-selected or system-generated, and are never reused,
+including after Visitor deactivation. Historical Visitor references use
+`ON DELETE RESTRICT`; deactivation is the lifecycle operation and preserves
+the code and attribution history. These clarifications do not change the
+registration-only attribution decision above.
+
 ## Consequences
 
 REF-02 may proceed with persistence design and migration review, but must settle

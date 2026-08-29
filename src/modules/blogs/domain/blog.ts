@@ -8,10 +8,33 @@ export interface BlogRecord {
   slug: string;
   title: string;
   body: string;
+  excerpt?: string | null;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+  author?: BlogAuthorRecord | null;
+  categories?: BlogTaxonomyRecord[];
+  tags?: BlogTaxonomyRecord[];
   isPublished: boolean;
   publishedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface BlogAuthorRecord {
+  id: string;
+  name: string;
+  slug: string;
+  bio: string | null;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+export interface BlogTaxonomyRecord {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  isActive?: boolean;
 }
 
 export interface CreateBlogInput {
@@ -20,6 +43,12 @@ export interface CreateBlogInput {
   body: string;
   isPublished?: boolean;
   publishedAt?: Date | null;
+  excerpt?: string | null;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+  authorId?: string | null;
+  categoryIds?: string[];
+  tagIds?: string[];
 }
 
 /** Explicit PATCH allowlist for Admin edits (CNT-02). */
@@ -27,6 +56,12 @@ export interface UpdateBlogInput {
   slug?: string;
   title?: string;
   body?: string;
+  excerpt?: string | null;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+  authorId?: string | null;
+  categoryIds?: string[];
+  tagIds?: string[];
 }
 
 export type BlogSortField = 'publishedAt' | 'title' | 'createdAt';

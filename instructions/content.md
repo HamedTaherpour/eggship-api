@@ -4,6 +4,21 @@ Durable boundaries for EggShip public blog content. Field-level HTTP contracts b
 
 Architecture decisions are accepted in [ADR 0021](../docs/adr/0021-blog-content-architecture.md). CNT-01 implements Blog persistence and public published list/detail. CNT-02 delivers Admin create/edit/publish/unpublish. CNT-03 recorded this architecture (no schema). CNT-04 implements the approved content-model expansion. Redis caching is not implemented.
 
+CNT-04 uses a dependency-free, fail-closed token scanner for the approved Markdown
+profile. It stores Markdown source and never renders HTML; `::aparat` is validated
+and `::media` is syntax-checked but not resolved or persisted until MED-01. TanStack
+Markdown remains a frontend renderer candidate and is not a Nest dependency.
+
+Blog write transactions use the lock order `Blog -> BlogAuthor -> BlogCategory -> BlogTag`.
+Taxonomy lifecycle mutations lock only their own row, so author/category deactivation
+cannot form a reverse lock cycle with publish or association replacement. Association
+existence and active-state checks run after those locks and before the Blog write.
+Because CNT-04 was already applied to the isolated test database when the author
+invariant was found, the invariant is delivered by a forward `NOT VALID` PostgreSQL
+CHECK migration: legacy published rows remain readable, while every new or updated
+row must satisfy `isPublished = false OR authorId IS NOT NULL`. MIG-01 owns any later
+historical backfill and validation of the legacy exception.
+
 ## Owned resources
 
 | Resource     | Module            | Public (current / future)                                                                         | Admin manage                      |

@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### CNT-04
+
+- Added Blog excerpt/SEO metadata, public Authors, Blog Category/Tag taxonomy,
+  explicit many-to-many joins, controlled Markdown/directive validation, and
+  permissioned Admin taxonomy APIs. Added PostgreSQL lock-order/concurrency
+  proof and kept inline Media staged for MED-01.
+
 ### Changed
 
 - Closed REL-02 with deterministic real-PostgreSQL concurrency coordination and durable inventory/order idempotency assertions.

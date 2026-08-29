@@ -26,7 +26,7 @@ function blog(overrides: Partial<BlogRecord> = {}): BlogRecord {
     id: PUBLISHED_ID,
     slug: 'cage-free-eggs',
     title: 'How we pack cage-free eggs',
-    body: '<p>Pack eggs in a cool crate.</p>',
+    body: 'Pack eggs in a cool crate.',
     isPublished: true,
     publishedAt: PUBLISHED_AT,
     createdAt: now,
@@ -183,13 +183,20 @@ describe('BlogService', () => {
       id: PUBLISHED_ID,
       slug: 'cage-free-eggs',
       title: 'How we pack cage-free eggs',
+      excerpt: null,
       publishedAt: '2026-08-21T12:00:00.000Z',
     });
     expect(toPublicBlogDetailDto(published)).toEqual({
       id: PUBLISHED_ID,
       slug: 'cage-free-eggs',
       title: 'How we pack cage-free eggs',
-      body: '<p>Pack eggs in a cool crate.</p>',
+      body: 'Pack eggs in a cool crate.',
+      excerpt: null,
+      seoTitle: null,
+      seoDescription: null,
+      author: null,
+      categories: [],
+      tags: [],
       publishedAt: '2026-08-21T12:00:00.000Z',
     });
     expect(toPublicBlogListItemDto(published)).not.toHaveProperty(
@@ -210,9 +217,7 @@ describe('BlogService', () => {
       createdAt: '2026-08-21T12:00:00.000Z',
       updatedAt: '2026-08-21T12:00:00.000Z',
     });
-    expect(toAdminBlogDetailDto(draft).body).toBe(
-      '<p>Pack eggs in a cool crate.</p>',
-    );
+    expect(toAdminBlogDetailDto(draft).body).toBe('Pack eggs in a cool crate.');
   });
 
   it('rejects unknown public and admin list query parameters', async () => {

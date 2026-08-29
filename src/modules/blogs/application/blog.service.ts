@@ -5,7 +5,7 @@ import {
   type PaginatedResponse,
 } from '../../../common/list';
 import { ApplicationLogger } from '../../../common/observability/application-logger.service';
-import type { BlogRecord } from '../domain/blog';
+import type { BlogRecord, UpdateBlogInput } from '../domain/blog';
 import { BlogNotFoundError } from '../domain/blog-errors';
 import { normalizeBlogSlug } from '../domain/blog-slug';
 import { BlogRepository } from '../infrastructure/blog.repository';
@@ -85,6 +85,12 @@ export class BlogService {
       title: body.title,
       body: body.body,
       isPublished: false,
+      excerpt: body.excerpt,
+      seoTitle: body.seoTitle,
+      seoDescription: body.seoDescription,
+      authorId: body.authorId,
+      categoryIds: body.categoryIds,
+      tagIds: body.tagIds,
     });
     this.logger.info(
       {
@@ -99,7 +105,7 @@ export class BlogService {
   }
 
   async update(id: string, body: UpdateBlogBodyDto): Promise<BlogRecord> {
-    const patch: { slug?: string; title?: string; body?: string } = {};
+    const patch: UpdateBlogInput = {};
     if (body.slug !== undefined) {
       patch.slug = body.slug;
     }
@@ -109,6 +115,12 @@ export class BlogService {
     if (body.body !== undefined) {
       patch.body = body.body;
     }
+    patch.excerpt = body.excerpt;
+    patch.seoTitle = body.seoTitle;
+    patch.seoDescription = body.seoDescription;
+    patch.authorId = body.authorId;
+    patch.categoryIds = body.categoryIds;
+    patch.tagIds = body.tagIds;
 
     const updated = await this.blogs.update(id, patch);
     if (updated === null) {

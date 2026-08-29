@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { INestApplicationContext } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
@@ -22,6 +23,7 @@ describe('Blog persistence (integration)', () => {
   let prisma: PrismaService;
   let blogs: BlogRepository;
   let blogService: BlogService;
+  let authorId: string;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -42,6 +44,14 @@ describe('Blog persistence (integration)', () => {
 
   beforeEach(async () => {
     await truncateBlogTable(prisma);
+    const author = await prisma.blogAuthor.create({
+      data: {
+        id: randomUUID(),
+        name: 'Test Author',
+        slug: `test-author-${randomUUID()}`,
+      },
+    });
+    authorId = author.id;
   });
 
   afterAll(async () => {
@@ -52,14 +62,15 @@ describe('Blog persistence (integration)', () => {
     const created = await blogs.create({
       slug: '  Cage-Free-Eggs  ',
       title: '  Packing notes  ',
-      body: '  <p>Keep crates cool.</p>  ',
+      body: '  Keep crates cool.  ',
       isPublished: true,
+      authorId,
     });
 
     expect(created).toMatchObject({
       slug: 'cage-free-eggs',
       title: 'Packing notes',
-      body: '<p>Keep crates cool.</p>',
+      body: 'Keep crates cool.',
       isPublished: true,
     });
     expect(created.publishedAt).toBeInstanceOf(Date);
@@ -82,6 +93,7 @@ describe('Blog persistence (integration)', () => {
         title: 'Other',
         body: 'Other body',
         isPublished: true,
+        authorId,
       }),
     ).rejects.toBeInstanceOf(BlogSlugConflictError);
 
@@ -116,6 +128,7 @@ describe('Blog persistence (integration)', () => {
           title: 'Title',
           body: 'Body',
           isPublished: true,
+          authorId,
           publishedAt: null,
         },
       }),
@@ -163,6 +176,7 @@ describe('Blog persistence (integration)', () => {
       title: 'Visible packing',
       body: 'Visible body',
       isPublished: true,
+      authorId,
       publishedAt: new Date('2026-08-20T00:00:00.000Z'),
     });
     await blogs.create({
@@ -196,6 +210,7 @@ describe('Blog persistence (integration)', () => {
       title: 'Visible packing',
       body: 'Visible body',
       isPublished: true,
+      authorId,
       publishedAt: new Date('2026-08-20T00:00:00.000Z'),
     });
     await blogs.create({
@@ -234,6 +249,7 @@ describe('Blog persistence (integration)', () => {
         title: 'Alpha',
         body: 'Alpha body',
         isPublished: true,
+        authorId,
         publishedAt,
       },
     });
@@ -244,6 +260,7 @@ describe('Blog persistence (integration)', () => {
         title: 'Beta',
         body: 'Beta body',
         isPublished: true,
+        authorId,
         publishedAt,
       },
     });

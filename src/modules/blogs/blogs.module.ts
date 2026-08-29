@@ -3,9 +3,14 @@ import { ObservabilityModule } from '../../common/observability/observability.mo
 import { PrismaModule } from '../../infrastructure/database/prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
 import { AdminBlogsController } from './api/admin-blogs.controller';
+import {
+  AdminBlogTaxonomyController,
+  PublicBlogTaxonomyController,
+} from './api/blog-taxonomy.controller';
 import { BlogsController } from './api/blogs.controller';
 import { BlogService } from './application/blog.service';
 import { BlogRepository } from './infrastructure/blog.repository';
+import { BlogTaxonomyService } from './application/blog-taxonomy.service';
 
 /**
  * Blog content resource (CNT-01 public read; CNT-02 Admin management).
@@ -15,8 +20,13 @@ import { BlogRepository } from './infrastructure/blog.repository';
  */
 @Module({
   imports: [PrismaModule, ObservabilityModule, forwardRef(() => AuthModule)],
-  controllers: [BlogsController, AdminBlogsController],
-  providers: [BlogRepository, BlogService],
+  controllers: [
+    BlogsController,
+    AdminBlogsController,
+    AdminBlogTaxonomyController,
+    PublicBlogTaxonomyController,
+  ],
+  providers: [BlogRepository, BlogService, BlogTaxonomyService],
   exports: [BlogService, BlogRepository],
 })
 export class BlogsModule {}

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { INestApplicationContext } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
@@ -22,6 +23,7 @@ describe('Blog admin persistence (integration)', () => {
   let prisma: PrismaService;
   let blogs: BlogRepository;
   let blogService: BlogService;
+  let authorId: string;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -42,6 +44,14 @@ describe('Blog admin persistence (integration)', () => {
 
   beforeEach(async () => {
     await truncateBlogTable(prisma);
+    const author = await prisma.blogAuthor.create({
+      data: {
+        id: randomUUID(),
+        name: 'Test Author',
+        slug: `test-author-${randomUUID()}`,
+      },
+    });
+    authorId = author.id;
   });
 
   afterAll(async () => {
@@ -52,7 +62,8 @@ describe('Blog admin persistence (integration)', () => {
     const created = await blogService.create({
       slug: 'admin-draft',
       title: 'Admin draft',
-      body: '<p>Draft body</p>',
+      body: 'Draft body',
+      authorId,
     });
     expect(created.isPublished).toBe(false);
     expect(created.publishedAt).toBeNull();

@@ -28,7 +28,7 @@ import {
   isBlogPubliclyVisible,
   resolveBlogPublication,
 } from '../src/modules/blogs/domain/blog-publication';
-import { normalizeBlogBody } from '../src/modules/blogs/domain/blog-body';
+import { validateBlogMarkdown } from '../src/modules/blogs/domain/blog-markdown';
 import { normalizeBlogSlug } from '../src/modules/blogs/domain/blog-slug';
 import { normalizeBlogTitle } from '../src/modules/blogs/domain/blog-title';
 import { BlogRepository } from '../src/modules/blogs/infrastructure/blog.repository';
@@ -110,7 +110,7 @@ class InMemoryBlogRepository {
       id: randomUUID(),
       slug,
       title: normalizeBlogTitle(input.title),
-      body: normalizeBlogBody(input.body),
+      body: validateBlogMarkdown(input.body),
       isPublished: publication.isPublished,
       publishedAt: publication.publishedAt,
       createdAt: now,
@@ -123,7 +123,7 @@ class InMemoryBlogRepository {
   update(id: string, input: UpdateBlogInput): Promise<BlogRecord | null> {
     const existing = this.rows.get(id);
     if (existing === undefined) {
-      return null;
+      return Promise.resolve(null);
     }
     const slug =
       input.slug !== undefined ? normalizeBlogSlug(input.slug) : existing.slug;
@@ -141,7 +141,7 @@ class InMemoryBlogRepository {
           : existing.title,
       body:
         input.body !== undefined
-          ? normalizeBlogBody(input.body)
+          ? validateBlogMarkdown(input.body)
           : existing.body,
       updatedAt: new Date(),
     };
@@ -152,7 +152,7 @@ class InMemoryBlogRepository {
   publish(id: string, now: Date): Promise<BlogRecord | null> {
     const existing = this.rows.get(id);
     if (existing === undefined) {
-      return null;
+      return Promise.resolve(null);
     }
     const publication = applyPublishTransition(existing, now);
     const updated: BlogRecord = {
@@ -167,7 +167,7 @@ class InMemoryBlogRepository {
   unpublish(id: string): Promise<BlogRecord | null> {
     const existing = this.rows.get(id);
     if (existing === undefined) {
-      return null;
+      return Promise.resolve(null);
     }
     const publication = applyUnpublishTransition(existing);
     const updated: BlogRecord = {
@@ -344,7 +344,7 @@ describe('Admin blog APIs (e2e)', () => {
       .send({
         slug: 'permission-draft',
         title: 'Permission draft',
-        body: '<p>Draft</p>',
+        body: 'Draft',
       })
       .expect(201);
   });
@@ -359,7 +359,7 @@ describe('Admin blog APIs (e2e)', () => {
       .send({
         slug: '  Packing-Notes  ',
         title: '  Packing notes  ',
-        body: '  <p>Cool crate.</p>  ',
+        body: '  Cool crate.  ',
       })
       .expect(201);
 
@@ -367,7 +367,7 @@ describe('Admin blog APIs (e2e)', () => {
     expect(createdBody.data).toMatchObject({
       slug: 'packing-notes',
       title: 'Packing notes',
-      body: '<p>Cool crate.</p>',
+      body: 'Cool crate.',
       isPublished: false,
       publishedAt: null,
     });
@@ -453,7 +453,7 @@ describe('Admin blog APIs (e2e)', () => {
       .send({
         slug: 'shared-slug',
         title: 'First',
-        body: '<p>One</p>',
+        body: 'One',
       })
       .expect(201);
 
@@ -463,7 +463,7 @@ describe('Admin blog APIs (e2e)', () => {
       .send({
         slug: 'shared-slug',
         title: 'Second',
-        body: '<p>Two</p>',
+        body: 'Two',
       })
       .expect(409);
     expect(asApiErrorBody(conflict.body).error.code).toBe('BLOG_SLUG_CONFLICT');
@@ -474,7 +474,7 @@ describe('Admin blog APIs (e2e)', () => {
       .send({
         slug: 'valid-slug',
         title: '   ',
-        body: '<p>Body</p>',
+        body: 'Body',
       })
       .expect(400);
 

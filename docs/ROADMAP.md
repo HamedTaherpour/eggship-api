@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   109 |
-| DONE        |    71 |
+| DONE        |    72 |
 | IN_PROGRESS |     0 |
-| READY       |     1 |
+| READY       |     0 |
 | BLOCKED     |     0 |
 | PLANNED     |    37 |
 
-- Current task: `CNT-03` (Blog content architecture) is closed. `CNT-04` is READY. No task remains BLOCKED.
+- Current task: `CNT-04` (Blog content model implementation) is closed. `MED-01` is the next downstream task and remains PLANNED; no task remains BLOCKED.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate.
 
 ## Status model
@@ -881,11 +881,13 @@ Explicitly out of scope: Prisma/schema/API/application/test changes, starting CN
 
 ### CNT-04 — Blog content model implementation
 
-Status: READY | Depends on: CNT-03, AUTH-08, CAT-04 | Primary: Codex | Review: Claude/Cursor security review, Human migration review
+Status: DONE | Depends on: CNT-03, AUTH-08, CAT-04 | Primary: Codex | Review: Claude/Cursor security review, Human migration review
 
 Scope: Implement the accepted Blog content model: Markdown source and controlled-directive validation, Aparat identifier contract, `BlogAuthor` plus `authorId`, `BlogCategory`/`BlogTag` many-to-many, editorial `excerpt`, optional `seoTitle`/`seoDescription`, Admin allowlist and taxonomy/author APIs, and public contract extensions. Coordinate Blog Media columns (`coverMediaId`, `avatarMediaId`) and inline Media-ID extraction with MED-01 in one preferred additive migration.
 
 Acceptance criteria: `body TEXT` remains Markdown source and is not converted to HTML by the API; unknown/raw-HTML authoring is fail-closed per ADR 0021; published posts require an active public Author; taxonomy slugs follow Blog kebab-case rules; `BlogTag` has no `isActive`; excerpt is editorial plain text (not auto-derived); SEO fallbacks match ADR 0021; OpenAPI, AUTH-08 `CONTENT_READ`/`CONTENT_MANAGE`, unit/e2e/PostgreSQL coverage, and changelog/docs stay aligned. Inline Media delete protection is not claimed unless MED-01's durable registry is in the same change.
+
+Delivered: Additive CNT-04 schema and APIs are implemented and verified. Blog Markdown/directive validation is fail-closed; BlogAuthor, BlogCategory, BlogTag, excerpt, SEO fields, and relationship joins are persisted with canonical validation and permissions. Published Blogs require an active Author at publish time; the forward `Blog_published_author_check` remains `NOT VALID` for legacy compatibility and MIG-01 owns later backfill/validation. Blog mutations use the documented `Blog -> BlogAuthor -> BlogCategory -> BlogTag` lock order, with deterministic real-PostgreSQL race coverage for publication/deactivation and author replacement/deactivation. Full unit, focused E2E, migration, OpenAPI, and static verification passed; the broader PostgreSQL suite retains one unrelated notification-ordering flake.
 
 Explicitly out of scope: Scheduled publishing, revision/history tables, Yoast-style SEO, comments, MDX, storing executable HTML/iframes, Product/catalog Category Media attachment, AuditLog persistence, and implementing the storefront/Admin Markdown UI.
 

@@ -1,6 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { createPaginatedResponseDto } from '../../../../common/list';
-import type { BlogRecord } from '../../domain/blog';
+import type {
+  BlogRecord,
+  BlogAuthorRecord,
+  BlogTaxonomyRecord,
+} from '../../domain/blog';
 
 /** Public storefront blog list item. Body is detail-only to avoid large pages. */
 export class PublicBlogListItemDto {
@@ -19,9 +23,10 @@ export class PublicBlogListItemDto {
     example: '2026-08-21T12:00:00.000Z',
   })
   publishedAt!: string;
+  @ApiProperty({ nullable: true }) excerpt!: string | null;
 }
 
-/** Public storefront blog detail. Body is stored markup; this API does not sanitize. */
+/** Public storefront blog detail. Body is stored Markdown source; this API does not render HTML. */
 export class PublicBlogDetailDto {
   @ApiProperty({ format: 'uuid' })
   id!: string;
@@ -34,8 +39,8 @@ export class PublicBlogDetailDto {
 
   @ApiProperty({
     description:
-      'Stored post body (HTML or Markdown). Rendering and XSS prevention belong to the client.',
-    example: '<p>Pack eggs in a cool crate.</p>',
+      'Stored post body is Markdown source; this API does not render it.',
+    example: 'Pack eggs in a cool crate.',
   })
   body!: string;
 
@@ -45,6 +50,13 @@ export class PublicBlogDetailDto {
     example: '2026-08-21T12:00:00.000Z',
   })
   publishedAt!: string;
+  @ApiProperty({ nullable: true }) excerpt!: string | null;
+  @ApiProperty({ nullable: true }) seoTitle!: string | null;
+  @ApiProperty({ nullable: true }) seoDescription!: string | null;
+  @ApiProperty({ nullable: true }) author!: BlogAuthorRecord | null;
+  @ApiProperty({ type: Object, isArray: true })
+  categories!: BlogTaxonomyRecord[];
+  @ApiProperty({ type: Object, isArray: true }) tags!: BlogTaxonomyRecord[];
 }
 
 export class PublicBlogResponseDto {
@@ -90,10 +102,17 @@ export class AdminBlogListItemDto {
 export class AdminBlogDetailDto extends AdminBlogListItemDto {
   @ApiProperty({
     description:
-      'Stored post body (HTML or Markdown). Rendering and XSS prevention belong to the client.',
-    example: '<p>Pack eggs in a cool crate.</p>',
+      'Stored post body is Markdown source; this API does not render it.',
+    example: 'Pack eggs in a cool crate.',
   })
   body!: string;
+  @ApiProperty({ nullable: true }) excerpt!: string | null;
+  @ApiProperty({ nullable: true }) seoTitle!: string | null;
+  @ApiProperty({ nullable: true }) seoDescription!: string | null;
+  @ApiProperty({ nullable: true }) author!: BlogAuthorRecord | null;
+  @ApiProperty({ type: Object, isArray: true })
+  categories!: BlogTaxonomyRecord[];
+  @ApiProperty({ type: Object, isArray: true }) tags!: BlogTaxonomyRecord[];
 }
 
 export class AdminBlogResponseDto {
@@ -114,6 +133,7 @@ export function toPublicBlogListItemDto(
     slug: record.slug,
     title: record.title,
     publishedAt: requirePublishedAt(record),
+    excerpt: record.excerpt ?? null,
   };
 }
 
@@ -124,6 +144,12 @@ export function toPublicBlogDetailDto(record: BlogRecord): PublicBlogDetailDto {
     title: record.title,
     body: record.body,
     publishedAt: requirePublishedAt(record),
+    excerpt: record.excerpt ?? null,
+    seoTitle: record.seoTitle ?? null,
+    seoDescription: record.seoDescription ?? null,
+    author: record.author ?? null,
+    categories: record.categories ?? [],
+    tags: record.tags ?? [],
   };
 }
 
@@ -154,5 +180,11 @@ export function toAdminBlogDetailDto(record: BlogRecord): AdminBlogDetailDto {
   return {
     ...toAdminBlogListItemDto(record),
     body: record.body,
+    excerpt: record.excerpt ?? null,
+    seoTitle: record.seoTitle ?? null,
+    seoDescription: record.seoDescription ?? null,
+    author: record.author ?? null,
+    categories: record.categories ?? [],
+    tags: record.tags ?? [],
   };
 }

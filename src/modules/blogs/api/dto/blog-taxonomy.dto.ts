@@ -1,0 +1,66 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsBoolean,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
+import { BLOG_TAXONOMY_NAME_MAX_LENGTH } from '../../domain/blog-field';
+export class BlogTaxonomyBodyDto {
+  @ApiProperty()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(BLOG_TAXONOMY_NAME_MAX_LENGTH)
+  name!: string;
+  @ApiProperty() @IsString() @MinLength(1) @MaxLength(120) slug!: string;
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  description?: string | null;
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  bio?: string | null;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() isActive?: boolean;
+}
+export class BlogTaxonomyPatchDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(BLOG_TAXONOMY_NAME_MAX_LENGTH)
+  name?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  slug?: string;
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  description?: string | null;
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  bio?: string | null;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() isActive?: boolean;
+}
+export class BlogTaxonomyDto {
+  @ApiProperty({ format: 'uuid' }) id!: string;
+  @ApiProperty() name!: string;
+  @ApiProperty() slug!: string;
+  @ApiPropertyOptional({ nullable: true }) description?: string | null;
+  @ApiPropertyOptional({ nullable: true }) bio?: string | null;
+  @ApiPropertyOptional() isActive?: boolean;
+  @ApiProperty() createdAt!: string;
+  @ApiProperty() updatedAt!: string;
+}
+export class BlogTaxonomyResponseDto {
+  @ApiProperty({ type: BlogTaxonomyDto }) data!: BlogTaxonomyDto;
+}

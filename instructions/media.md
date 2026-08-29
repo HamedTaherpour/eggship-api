@@ -2,16 +2,16 @@
 
 Durable policy for EggShip reusable Media. Field-level HTTP contracts belong in OpenAPI; this file records storage, upload, and lifecycle rules that must not drift.
 
-CAT-04 implements the Media domain. Product, Blog, and Category attachment is later work (MED-01) and must not assume a one-to-one relationship. CNT-01 Blog persistence has no Media FK.
+CAT-04 implements the Media domain. Product, Blog, and catalog Category attachment is later work (MED-01) and must not assume a one-to-one relationship. CNT-01/CNT-02 Blog persistence has no Media FK. Approved Blog Media direction (cover FK, author avatar FK, inline `::media` directives resolving Media IDs rather than stored CDN URLs) is recorded in [ADR 0021](../docs/adr/0021-blog-content-architecture.md) / [content.md](content.md); MED-01 implements those references.
 
 ## Ownership
 
-| Concern                          | Owner                                             |
-| -------------------------------- | ------------------------------------------------- |
-| Media metadata rows              | `src/modules/media`                               |
-| Object bytes                     | `StorageProvider` in `src/infrastructure/storage` |
-| Public URL derivation            | storage provider + `STORAGE_PUBLIC_BASE_URL`      |
-| Product/Blog/Category references | future owning modules; FK `ON DELETE RESTRICT`    |
+| Concern                                  | Owner                                                                               |
+| ---------------------------------------- | ----------------------------------------------------------------------------------- |
+| Media metadata rows                      | `src/modules/media`                                                                 |
+| Object bytes                             | `StorageProvider` in `src/infrastructure/storage`                                   |
+| Public URL derivation                    | storage provider + `STORAGE_PUBLIC_BASE_URL`                                        |
+| Product/Blog/catalog Category references | future owning modules (MED-01); FK `ON DELETE RESTRICT`; Blog direction in ADR 0021 |
 
 Media is not owned by Products. Other domains may store a media id. Approved deferred-settlement tracking will reference Media for externally received receipt/proof metadata; Settlement owns that relationship and must use `ON DELETE RESTRICT` ([settlement.md](settlement.md)).
 
@@ -87,7 +87,7 @@ Crashes can still leave an object without a row. That is an **orphan**; cleanup 
 
 If storage delete fails, the row is kept and the API returns `MEDIA_DELETE_FAILED` so the client can retry. If storage succeeds and the row is already gone (concurrent delete or a retry after the row was removed), the API returns **200** with the previously loaded metadata. If storage succeeds and the row delete then throws, the API returns `MEDIA_DELETE_FAILED`; retry is the recovery path (missing-key object delete is success at the S3-compatible adapter).
 
-No Product/Blog FKs exist yet; the deferred-settlement receipt reference (SET-02, [ADR 0018](../docs/adr/0018-deferred-settlement-lifecycle.md)) is the first approved attachment. `OrderSettlement.receiptMediaId` uses `ON DELETE RESTRICT`, and Media deletion checks this reference **before** storage object deletion. While referenced, deletion returns `MEDIA_REFERENCED` (409) and removes neither object nor row. Settlement proof cannot be detached by deleting the Media row.
+No Product/Blog FKs exist yet; the deferred-settlement receipt reference (SET-02, [ADR 0018](../docs/adr/0018-deferred-settlement-lifecycle.md)) is the first approved attachment. `OrderSettlement.receiptMediaId` uses `ON DELETE RESTRICT`, and Media deletion checks this reference **before** storage object deletion. While referenced, deletion returns `MEDIA_REFERENCED` (409) and removes neither object nor row. Settlement proof cannot be detached by deleting the Media row. Future Blog cover, author avatar, and inline-directive Media IDs must use the same Restrict / `MEDIA_REFERENCED` pattern ([ADR 0021](../docs/adr/0021-blog-content-architecture.md)).
 
 ## List and detail
 
@@ -127,8 +127,8 @@ Upload and delete are auditable Admin candidates for AUD-01. Do not write fake A
 
 ## Follow-ups
 
-- Product/Blog/Category attachment (not CAT-04; CNT-01 Blog has no Media FK)
+- Product/Blog/catalog Category attachment (not CAT-04; CNT-01/CNT-02 Blog has no Media FK). Blog cover (`Blog.coverMediaId`), `BlogAuthor.avatarMediaId`, and durable inline `::media` references are MED-01 under [ADR 0021](../docs/adr/0021-blog-content-architecture.md).
 - Orphan object reconciliation, failed-delete retry, unused-Media policy (DATA-02; no retention periods invented here)
 - Live production-bucket verification (DEP-02 / credentials)
-- Historical-reference rules when content starts pointing at Media (CNT/PRC)
-- Additional Product/Blog/Category attachment workflows; deferred-settlement receipt reference is implemented by SET-02 with one current image and `ON DELETE RESTRICT`
+- Historical-reference rules when content starts pointing at Media (MED-01)
+- Additional Product/Blog/catalog Category attachment workflows; deferred-settlement receipt reference is implemented by SET-02 with one current image and `ON DELETE RESTRICT`

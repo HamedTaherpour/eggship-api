@@ -6,14 +6,14 @@ This is the authoritative execution plan for completing the standalone EggShip A
 
 | Measure     | Count |
 | ----------- | ----: |
-| Total       |   107 |
-| DONE        |    69 |
+| Total       |   109 |
+| DONE        |    71 |
 | IN_PROGRESS |     0 |
 | READY       |     1 |
 | BLOCKED     |     0 |
 | PLANNED     |    37 |
 
-- Current task: `CNT-02` is closed. No task remains BLOCKED.
+- Current task: `CNT-03` (Blog content architecture) is closed. `CNT-04` is READY. No task remains BLOCKED.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate.
 
 ## Status model
@@ -867,6 +867,28 @@ Delivered: Permissioned Admin Blog APIs (`CONTENT_READ` / `CONTENT_MANAGE`): pag
 
 Explicitly out of scope: Inventing editorial workflow or scheduled publishing.
 
+### CNT-03 — Blog content architecture
+
+Status: DONE | Depends on: CNT-02 | Primary: Human + ChatGPT architecture process | Review: Claude/Cursor, Human approval
+
+Scope: Lock the approved V1 Blog content architecture before more schema: Markdown source contract, renderer/security profile, controlled Media and Aparat directives, cover/avatar Media direction, BlogCategory/BlogTag taxonomy, editorial excerpt, minimal SEO metadata, public BlogAuthor, provenance vs AuditLog, publication lifecycle, frontend/Admin renderer parity, MED-01 and MIG-01 boundaries, and implementation-task ownership.
+
+Acceptance criteria: Decisions are recorded in an ADR and durable content policy; existing CNT-01/CNT-02 publication semantics are preserved; Media FKs are not invented here; no Prisma, migration, or runtime implementation is performed.
+
+Delivered: Accepted [ADR 0021](adr/0021-blog-content-architecture.md) and updated [content policy](../instructions/content.md): `Blog.body` is Markdown source (not backend-rendered HTML); raw HTML/MDX/arbitrary embeds are out of contract; `::media` / `::aparat` directives; cover and author avatar as Media IDs; `BlogCategory` with `isActive` and many-to-many; `BlogTag` without `isActive`; editorial excerpt distinct from `seoDescription`; optional `seoTitle`/`seoDescription` with documented fallbacks; `BlogAuthor` separate from Admin; no actor columns on Blog (AUD-01); no scheduling or revisions; CNT-04 owns implementation; MED-01 owns durable Media references. `instructions/content.md` rewritten as UTF-8. No schema, migration, API, or test implementation.
+
+Explicitly out of scope: Prisma/schema/API/application/test changes, starting CNT-04 or MED-01, scheduled publishing, revision history, and frontend renderer implementation.
+
+### CNT-04 — Blog content model implementation
+
+Status: READY | Depends on: CNT-03, AUTH-08, CAT-04 | Primary: Codex | Review: Claude/Cursor security review, Human migration review
+
+Scope: Implement the accepted Blog content model: Markdown source and controlled-directive validation, Aparat identifier contract, `BlogAuthor` plus `authorId`, `BlogCategory`/`BlogTag` many-to-many, editorial `excerpt`, optional `seoTitle`/`seoDescription`, Admin allowlist and taxonomy/author APIs, and public contract extensions. Coordinate Blog Media columns (`coverMediaId`, `avatarMediaId`) and inline Media-ID extraction with MED-01 in one preferred additive migration.
+
+Acceptance criteria: `body TEXT` remains Markdown source and is not converted to HTML by the API; unknown/raw-HTML authoring is fail-closed per ADR 0021; published posts require an active public Author; taxonomy slugs follow Blog kebab-case rules; `BlogTag` has no `isActive`; excerpt is editorial plain text (not auto-derived); SEO fallbacks match ADR 0021; OpenAPI, AUTH-08 `CONTENT_READ`/`CONTENT_MANAGE`, unit/e2e/PostgreSQL coverage, and changelog/docs stay aligned. Inline Media delete protection is not claimed unless MED-01's durable registry is in the same change.
+
+Explicitly out of scope: Scheduled publishing, revision/history tables, Yoast-style SEO, comments, MDX, storing executable HTML/iframes, Product/catalog Category Media attachment, AuditLog persistence, and implementing the storefront/Admin Markdown UI.
+
 ### ADM-00 — Admin identity foundation
 
 Status: DONE | Depends on: AUTH-08 | Primary: Codex after Human security approval | Review: Claude/Cursor security review
@@ -921,11 +943,11 @@ Explicitly out of scope: Editing identity credentials and defining store busines
 
 Status: PLANNED | Depends on: CAT-04, AUTH-08 | Primary: Codex after Human architecture approval | Review: Claude/Cursor security review
 
-Scope: Remaining media workflows after CAT-04: Product/Blog/Category attachment and detachment, historical-reference rules, and controlled orphan cleanup. CAT-04 already delivered the storage port, validated single/multi upload, Admin list/detail/delete, and the in-memory plus S3-compatible adapters.
+Scope: Remaining media workflows after CAT-04: Product, Blog, and catalog Category attachment and detachment, historical-reference rules, and controlled orphan cleanup. For Blog, implement the ADR 0021 Media contract: `Blog.coverMediaId`, `BlogAuthor.avatarMediaId`, durable inline `::media` Media-ID registration extracted from Markdown AST on save, `ON DELETE RESTRICT` / `MEDIA_REFERENCED`, and coordination with DATA-02 orphans. CAT-04 already delivered the storage port, validated single/multi upload, Admin list/detail/delete, and the in-memory plus S3-compatible adapters. Prefer one additive migration with CNT-04 for Blog Media columns when both land together.
 
-Acceptance criteria: Attachment does not assume one-to-one Product↔Media; referenced historical media is not deleted; orphan cleanup ownership is explicit; live storage verification uses a dedicated TEST bucket.
+Acceptance criteria: Attachment does not assume one-to-one Product↔Media; referenced historical media is not deleted; Blog cover/avatar/inline directive IDs are Restrict-protected; orphan cleanup ownership is explicit; live storage verification uses a dedicated TEST bucket.
 
-Explicitly out of scope: Selecting unapproved transformations or deleting referenced historical media. Re-implementing CAT-04 upload/list/delete.
+Explicitly out of scope: Selecting unapproved transformations or deleting referenced historical media. Re-implementing CAT-04 upload/list/delete. Inventing Markdown grammar, Aparat, taxonomy, excerpt, SEO, or public Author (CNT-03/CNT-04). Product/catalog Category attachment architecture beyond Restrict remains a MED-01 architecture decision.
 
 ## Phase 9 — Transactional Async & Operational Features
 
@@ -1297,7 +1319,7 @@ Explicitly out of scope: Autonomous AI cutover and deleting legacy data/services
 | ------------------------------- | --------------------------------------------- |
 | Health                          | FND-01, DEP-03, DEP-04                        |
 | Catalog                         | CAT-01 through CAT-06                         |
-| Blog                            | CNT-01, CNT-02                                |
+| Blog                            | CNT-01, CNT-02, CNT-03, CNT-04                |
 | Auth / OTP                      | AUTH-01 through AUTH-08                       |
 | Orders                          | ORD-01 through ORD-08                         |
 | Admin Auth / Admin Admins       | AUTH-03, AUTH-08, ADM-00, ADM-AUTH-01, ADM-01 |
@@ -1312,7 +1334,7 @@ Explicitly out of scope: Autonomous AI cutover and deleting legacy data/services
 | Admin Analytics                 | ANL-01 through ANL-04                         |
 | Admin Stores / Customers        | ADM-02                                        |
 | Admin Visitors                  | REF-02 through REF-04                         |
-| Admin Blog                      | CNT-02                                        |
+| Admin Blog                      | CNT-02, CNT-04                                |
 | Refresh-token/session lifecycle | AUTH-02 through AUTH-04                       |
 | User/store referral links       | REF-01 through REF-04                         |
 | Durable notification inbox      | NOT-01 through NOT-05                         |
@@ -1366,8 +1388,8 @@ The following are not implementation assumptions:
 - Deferred settlement lifecycle is decided in [ADR 0018](adr/0018-deferred-settlement-lifecycle.md) / SET-01 (separate `OrderSettlement` module; `DELIVERED`-only creation; `OPEN`/`SETTLED` with derived overdue; one current receipt; receipt-required explicit settle; no V1 reopen; `RETURNED` leaves settlement untouched; full `Order.total`; `SUPER_ADMIN`-only grants). Remaining explicit decisions, not implementation assumptions: `WAREHOUSE`/`ORDER_OPS` settlement permission grants (MIG-01 evidence), settlement without receipt, correction/reopen workflow, return/refund/credit adjustments interacting with settlement, multiple receipts or PDF proof, customer-facing settlement surfaces, and due/overdue reminders. No gateway, card/bank fields, refunds, or accounting subsystem is approved.
 - Future USER referral, visitor conversion, attribution correction/reassignment, reward policy, and any broader self-referral rule remain deferred. V1 Visitor attribution, duplicate handling, no-op existing-user behavior, no-reuse codes, and no speculative self-referral matching are settled in ADR 0020 / `instructions/referrals.md`.
 - Notification type/content rules, push provider/consent, delivery guarantees, and token lifecycle.
-- Media historical-reference behavior when Product/Blog/Category attach to Media (MED-01). CNT-01 Blog has no Media FK. Upload limits/types and the S3-compatible provider abstraction are decided in CAT-04 / ADR 0011; orphan cleanup remains DATA-02 (no retention periods invented). Live production-bucket verification remains pending credentials (DEP-02).
-- Blog legacy parity gaps (MIG-01): author, tags/categories, SEO metadata, excerpt, comments, cover/gallery media, HTML vs Markdown distinction, slug redirects, and whether scheduled publishing is required. CNT-01 shipped `isPublished` + UTC `publishedAt` without a schedule gate.
+- Media historical-reference behavior when Product/catalog Category attach to Media (MED-01). Blog cover, author avatar, and inline `::media` direction is decided in ADR 0021; MED-01 still implements Restrict, durable inline registration, and Product/catalog Category attachment. CNT-01/CNT-02 Blog has no Media FK. Upload limits/types and the S3-compatible provider abstraction are decided in CAT-04 / ADR 0011; orphan cleanup remains DATA-02 (no retention periods invented). Live production-bucket verification remains pending credentials (DEP-02).
+- Blog V1 content architecture is accepted in [ADR 0021](adr/0021-blog-content-architecture.md) (Markdown source, directives, taxonomy, excerpt, minimal SEO, public Author, no scheduling/revisions). Remaining implementation choices for CNT-04: exact directive grammar; whether public taxonomy/author routes ship in the same task as Blog field expansion. MIG-01 may still discover legacy deltas (comments, gallery, slug redirects, HTML bodies, scheduled publish); record those against ADR 0021 rather than reverting it. CNT-01 shipped `isPublished` + UTC `publishedAt` without a schedule gate.
 - Tehran/business-day definitions and canceled/returned treatment for each analytics metric.
 - Retention periods for every data class and backup recovery objectives.
 - Legacy compatibility, migration transforms, rollout waves, parallel-validation feasibility, and final cutover strategy.

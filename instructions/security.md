@@ -16,6 +16,7 @@
 - AUTH-04 implements HttpOnly `eggship_at` / `eggship_rt` cookies, refresh rotation, reuse detection, and logout. ADM-AUTH-01 implements namespaced Admin cookies `eggship_admin_at` / `eggship_admin_rt` (`Path=/api/v1/admin`). AUTH-09 locks the CSRF architecture in [ADR 0019](../docs/adr/0019-csrf-browser-mutation-protection.md); AUTH-10 implements and verifies the default-on browser mutation guard. SameSite alone is not sufficient.
 - Auth refresh/logout, Admin auth, OTP request/verify, and customer Order-create responses use `Cache-Control: no-store`. Do not globally disable caching for unrelated public APIs.
 - Future file uploads must validate content, type, and size and must not trust client filenames or persist important files on ephemeral local disk. CAT-04 implements this for Admin Media; see [media.md](media.md).
+- Blog body is Markdown source with allowlisted directives, not trusted HTML. Storefront/Admin preview must not execute raw HTML, MDX, arbitrary iframes, or author-supplied scripts. See [content.md](content.md) and [ADR 0021](../docs/adr/0021-blog-content-architecture.md).
 - Development must never use production PostgreSQL or Redis credentials. Do not invent environment credentials or copy production secrets into local `.env`.
 - Never print complete `DATABASE_URL`, `REDIS_URL`, passwords, tokens, or other credentials in logs or setup scripts; use masked host metadata when a connection target must be identified.
 - Environment workflow details live in [environment.md](environment.md).

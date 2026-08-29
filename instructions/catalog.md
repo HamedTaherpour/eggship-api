@@ -10,7 +10,7 @@ Durable boundaries for EggShip catalog and geography reference data. Field-level
 | `Region`   | `src/modules/regions`    | `GET /api/v1/regions` (active full list)           | `GET/POST/PATCH /api/v1/admin/regions`                |
 | `Product`  | `src/modules/products`   | `GET /api/v1/products`, `GET /api/v1/products/:id` | `GET/POST/PATCH /api/v1/admin/products` (+ `GET :id`) |
 
-Categories and Regions remain **independent** reference modules. Product references Category via FK (`ON DELETE RESTRICT`). Inventory quantities are **not** Product fields ([inventory.md](inventory.md), INV-01B). Media is a reusable library (CAT-04); Product/Blog attachment is later work (MED-01) — public Product responses do not include media fields.
+Categories and Regions remain **independent** reference modules. Product references Category via FK (`ON DELETE RESTRICT`). Inventory quantities are **not** Product fields ([inventory.md](inventory.md), INV-01B). Media is a reusable library (CAT-04); Product/Blog/catalog Category attachment is later work (MED-01). Blog Media direction (cover, avatar, inline directives) is [ADR 0021](../docs/adr/0021-blog-content-architecture.md); public Product responses do not include media fields.
 
 ## Public catalog contract (CAT-06)
 

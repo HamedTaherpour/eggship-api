@@ -8,7 +8,7 @@ This file is the primary instruction entry point for every AI coding agent worki
 - [API contract](instructions/api-contract.md) for HTTP behavior and response shapes.
 - [List queries](instructions/list-queries.md) for pagination, search, sort allowlists, and list filter semantics.
 - [Catalog](instructions/catalog.md) for Category/Region reference ownership and lifecycle boundaries.
-- [Content](instructions/content.md) for Blog publication, slug, and public content boundaries.
+- [Content](instructions/content.md) for Blog publication, Markdown, taxonomy, Author, SEO, and public content boundaries ([ADR 0021](docs/adr/0021-blog-content-architecture.md)).
 - [Pricing](instructions/pricing.md) for current price vs PriceHistory ownership and change semantics.
 - [Media](instructions/media.md) for Media library storage, upload bounds, and deletion/orphan policy.
 - [Inventory](instructions/inventory.md) for stock quantities, ledger, reservation lifecycle, and Orders↔Inventory boundaries.

@@ -9,9 +9,9 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Total       |   109 |
 | DONE        |    73 |
 | IN_PROGRESS |     0 |
-| READY       |     0 |
+| READY       |     1 |
 | BLOCKED     |     0 |
-| PLANNED     |    36 |
+| PLANNED     |    35 |
 
 - Current task: `MED-01` (Media attachment and reference lifecycle) is **DONE**. Human Architecture Gate closed in [ADR 0022](adr/0022-media-attachment-and-reference-lifecycle.md); implementation and final verification are complete. No task remains BLOCKED.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate.
@@ -1069,13 +1069,15 @@ Explicitly out of scope: Premature analytics databases or unmeasured caching.
 
 ### AUD-01 — AuditLog model and safe event contract
 
-Status: PLANNED | Depends on: AUTH-02, FND-03 | Primary: Codex after Human security/privacy approval | Review: Claude/Cursor, Human migration review
+Status: READY | Depends on: AUTH-02, FND-03 | Primary: Codex | Review: Claude/Cursor, Human migration review
 
-Scope: Model append-oriented audit events with actor, action, entity identity, safe before/after fields when useful, request/correlation IDs, and timestamps.
+Architecture gate: **Closed** ([ADR 0023](adr/0023-auditlog-safe-event-contract.md)). Human security/privacy architecture gate passed; accepted ADR 0023 is the implementation contract. Remaining implementation checkpoints (metadata bounds, registries, indexes) are non-blocking for READY.
 
-Acceptance criteria: Sensitive fields are excluded/redacted by construction; action/entity vocabularies and actor-system semantics are stable; indexes support authorized review.
+Scope: Implement the accepted AuditLog model and safe event contract per ADR 0023: append-oriented audit events with actor, action, entity identity, action-specific typed metadata, request/correlation IDs, and timestamps.
 
-Explicitly out of scope: Logging every read, raw payload capture, and retention periods.
+Acceptance criteria: Sensitive fields are excluded/redacted by construction per ADR 0023; action/entity vocabularies and actor-system semantics are stable; indexes support authorized review; ADR 0023 implementation checkpoints are satisfied before DONE.
+
+Explicitly out of scope: Logging every read, raw payload capture, retention periods, legal hold, and lifecycle deletion (deferred to DATA-01/DATA-03).
 
 ### AUD-02 — Domain audit integration
 

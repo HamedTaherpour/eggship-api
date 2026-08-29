@@ -123,3 +123,13 @@ export function parseBlogDirective(line: string): BlogDirective {
     ...(attrs.has('caption') ? { caption: attrs.get('caption') } : {}),
   };
 }
+
+export function extractBlogMediaIds(raw: string): string[] {
+  const ids = new Set<string>();
+  for (const line of raw.trim().split(/\r?\n/u)) {
+    if (!line.trimStart().startsWith('::')) continue;
+    const directive = parseBlogDirective(line.trim());
+    if (directive.name === 'media') ids.add(directive.id);
+  }
+  return [...ids].sort();
+}

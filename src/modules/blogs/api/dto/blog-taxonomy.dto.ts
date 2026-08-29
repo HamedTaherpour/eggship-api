@@ -3,10 +3,12 @@ import {
   IsBoolean,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   MinLength,
 } from 'class-validator';
 import { BLOG_TAXONOMY_NAME_MAX_LENGTH } from '../../domain/blog-field';
+import type { MediaPresentation } from '../../../media/domain/media-presentation';
 export class BlogTaxonomyBodyDto {
   @ApiProperty()
   @IsString()
@@ -25,6 +27,10 @@ export class BlogTaxonomyBodyDto {
   @MaxLength(2000)
   bio?: string | null;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() isActive?: boolean;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @IsOptional()
+  @IsUUID('4')
+  avatarMediaId?: string | null;
 }
 export class BlogTaxonomyPatchDto {
   @ApiPropertyOptional()
@@ -50,6 +56,10 @@ export class BlogTaxonomyPatchDto {
   @MaxLength(2000)
   bio?: string | null;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() isActive?: boolean;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @IsOptional()
+  @IsUUID('4')
+  avatarMediaId?: string | null;
 }
 export class BlogTaxonomyDto {
   @ApiProperty({ format: 'uuid' }) id!: string;
@@ -58,6 +68,10 @@ export class BlogTaxonomyDto {
   @ApiPropertyOptional({ nullable: true }) description?: string | null;
   @ApiPropertyOptional({ nullable: true }) bio?: string | null;
   @ApiPropertyOptional() isActive?: boolean;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true }) avatarMediaId?:
+    string | null;
+  @ApiPropertyOptional({ type: Object, nullable: true })
+  avatar?: MediaPresentation | null;
   @ApiProperty() createdAt!: string;
   @ApiProperty() updatedAt!: string;
 }

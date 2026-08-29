@@ -63,4 +63,13 @@ export class CreateProductBodyDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'Optional supported image Media id.',
+  })
+  @IsOptional()
+  @IsUUID('4')
+  imageMediaId?: string | null;
 }

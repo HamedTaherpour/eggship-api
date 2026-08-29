@@ -20,6 +20,7 @@ type PrismaProduct = {
   name: string;
   price: number;
   categoryId: string;
+  imageMediaId: string | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -123,6 +124,9 @@ export class ProductRepository {
           name,
           price,
           categoryId: input.categoryId,
+          ...(input.imageMediaId !== undefined
+            ? { imageMediaId: input.imageMediaId }
+            : {}),
           isActive: input.isActive ?? true,
         },
       });
@@ -194,6 +198,12 @@ export class ProductRepository {
     if (input.isActive !== undefined) {
       data.isActive = input.isActive;
     }
+    if (input.imageMediaId !== undefined) {
+      data.imageMedia =
+        input.imageMediaId === null
+          ? { disconnect: true }
+          : { connect: { id: input.imageMediaId } };
+    }
 
     if (Object.keys(data).length === 0) {
       return this.findById(id);
@@ -251,6 +261,7 @@ function mapProduct(row: PrismaProduct): ProductRecord {
     name: row.name,
     price: row.price,
     categoryId: row.categoryId,
+    imageMediaId: row.imageMediaId,
     isActive: row.isActive,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

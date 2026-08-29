@@ -2,6 +2,7 @@
  * Product domain types (persistence-independent).
  * Current price is integer Toman; Inventory quantities are not Product fields.
  */
+import type { MediaPresentation } from '../../media/domain/media-presentation';
 
 export interface ProductRecord {
   id: string;
@@ -9,6 +10,8 @@ export interface ProductRecord {
   /** Current selling price in integer Toman. */
   price: number;
   categoryId: string;
+  imageMediaId?: string | null;
+  image?: MediaPresentation | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -19,12 +22,14 @@ export interface CreateProductInput {
   price: number;
   categoryId: string;
   isActive?: boolean;
+  imageMediaId?: string | null;
 }
 
 export interface UpdateProductInput {
   name?: string;
   categoryId?: string;
   isActive?: boolean;
+  imageMediaId?: string | null;
 }
 
 export type ProductSortField = 'name' | 'price' | 'createdAt' | 'updatedAt';

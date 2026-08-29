@@ -67,6 +67,7 @@ function record(overrides: Partial<SettlementRecord> = {}): SettlementRecord {
 describe('SettlementService', () => {
   let repository: {
     lockOrder: jest.Mock;
+    lockForUpdate: jest.Mock;
     findByOrderId: jest.Mock;
     findById: jest.Mock;
     create: jest.Mock;
@@ -82,6 +83,7 @@ describe('SettlementService', () => {
   beforeEach(() => {
     repository = {
       lockOrder: jest.fn(),
+      lockForUpdate: jest.fn(),
       findByOrderId: jest.fn(),
       findById: jest.fn(),
       create: jest.fn(),
@@ -207,6 +209,7 @@ describe('SettlementService', () => {
       receiptAttachedByAdminId: open.createdByAdminId,
     });
     repository.findById.mockResolvedValue(open);
+    repository.lockForUpdate.mockResolvedValue(open);
     media.getReceiptReference.mockResolvedValue({ id: mediaId });
     repository.attachReceipt.mockResolvedValue({
       record: attached,
@@ -229,6 +232,7 @@ describe('SettlementService', () => {
 
   it('does not attach nonexistent Media or edit a settled receipt', async () => {
     repository.findById.mockResolvedValue(record());
+    repository.lockForUpdate.mockResolvedValue(record());
     media.getReceiptReference.mockRejectedValue(new MediaNotFoundError());
     await expect(
       service.attachReceipt(
@@ -239,6 +243,9 @@ describe('SettlementService', () => {
     ).rejects.toBeInstanceOf(MediaNotFoundError);
 
     repository.findById.mockResolvedValue(
+      record({ status: SettlementStatus.SETTLED }),
+    );
+    repository.lockForUpdate.mockResolvedValue(
       record({ status: SettlementStatus.SETTLED }),
     );
     await expect(

@@ -286,19 +286,21 @@ model Category {
 /// records independently. No SKU/description until
 /// MIG-01 evidences them. Prefer `isActive = false` over hard delete.
 model Product {
-  id         String   @id @default(uuid()) @db.Uuid
+  id           String   @id @default(uuid()) @db.Uuid
   /// Display name / storefront title. Stored trimmed; not unique (MIG-01).
-  name       String   @db.VarChar(100)
+  name         String   @db.VarChar(100)
   /// Current selling price in integer Toman (not Rial). JSON number; PG int4.
   /// Price history is PRC-01; Orders must snapshot this value (ORD-01).
-  price      Int
-  categoryId String   @db.Uuid
+  price        Int
+  categoryId   String   @db.Uuid
+  imageMediaId String?  @db.Uuid
   /// Public APIs return only active products whose Category is also active.
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
 
   category              Category               @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  imageMedia            Media?                 @relation(fields: [imageMediaId], references: [id], onDelete: Restrict)
   inventory             Inventory?
   inventoryReservations InventoryReservation[]
   inventoryLedger       InventoryLedger[]
@@ -310,6 +312,7 @@ model Product {
   @@index([categoryId, isActive])
   /// Public/admin list by recency when filtered by active.
   @@index([isActive, createdAt])
+  @@index([imageMediaId])
 }
 
 /// Immutable audit row for each actual Product price change (PRC-01).
@@ -454,6 +457,10 @@ model Media {
   updatedAt        DateTime @updatedAt @db.Timestamptz(3)
 
   settlementReceipts OrderSettlement[]
+  productImages      Product[]
+  blogCovers         Blog[]
+  authorAvatars      BlogAuthor[]
+  blogInlineUsages   BlogInlineMedia[]
 
   /// Admin library recency and mime filter.
   @@index([createdAt])
@@ -474,6 +481,7 @@ model Blog {
   seoTitle       String?   @db.VarChar(200)
   seoDescription String?   @db.VarChar(320)
   authorId       String?   @db.Uuid
+  coverMediaId   String?   @db.Uuid
   /// Public APIs return only published rows. Drafts never leak via list/detail.
   isPublished    Boolean   @default(false)
   /// UTC timestamptz of publication when published. Not a future-schedule gate.
@@ -481,13 +489,16 @@ model Blog {
   createdAt      DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt      DateTime  @updatedAt @db.Timestamptz(3)
 
-  author     BlogAuthor?          @relation(fields: [authorId], references: [id], onDelete: Restrict)
-  categories BlogCategoryOnBlog[]
-  tags       BlogTagOnBlog[]
+  author      BlogAuthor?          @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  coverMedia  Media?               @relation(fields: [coverMediaId], references: [id], onDelete: Restrict)
+  categories  BlogCategoryOnBlog[]
+  tags        BlogTagOnBlog[]
+  inlineMedia BlogInlineMedia[]
 
   /// Public list: published rows ordered by publishedAt with id tie-break.
   @@index([isPublished, publishedAt, id])
   @@index([authorId])
+  @@index([coverMediaId])
 }
 
 /// Content-owned editorial taxonomy. This is not catalog Category.
@@ -519,17 +530,31 @@ model BlogTag {
 }
 
 model BlogAuthor {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String   @db.VarChar(160)
-  slug      String   @unique @db.VarChar(120)
-  bio       String?  @db.VarChar(2000)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String   @db.VarChar(160)
+  slug          String   @unique @db.VarChar(120)
+  bio           String?  @db.VarChar(2000)
+  avatarMediaId String?  @db.Uuid
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
 
-  blogs Blog[]
+  blogs       Blog[]
+  avatarMedia Media? @relation(fields: [avatarMediaId], references: [id], onDelete: Restrict)
 
   @@index([isActive, name, id])
+  @@index([avatarMediaId])
+}
+
+model BlogInlineMedia {
+  blogId  String @db.Uuid
+  mediaId String @db.Uuid
+
+  blog  Blog  @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  media Media @relation(fields: [mediaId], references: [id], onDelete: Restrict)
+
+  @@id([blogId, mediaId])
+  @@index([mediaId, blogId])
 }
 
 model BlogCategoryOnBlog {

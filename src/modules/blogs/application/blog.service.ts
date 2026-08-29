@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import {
   resolvePageRequest,
   toPaginatedResponse,
@@ -9,6 +9,7 @@ import type { BlogRecord, UpdateBlogInput } from '../domain/blog';
 import { BlogNotFoundError } from '../domain/blog-errors';
 import { normalizeBlogSlug } from '../domain/blog-slug';
 import { BlogRepository } from '../infrastructure/blog.repository';
+import { MediaService } from '../../media/application/media.service';
 import {
   resolvePublicBlogSort,
   type PublicBlogListQueryDto,
@@ -25,6 +26,7 @@ export class BlogService {
   constructor(
     private readonly blogs: BlogRepository,
     private readonly logger: ApplicationLogger,
+    @Optional() private readonly media?: MediaService,
   ) {}
 
   /**
@@ -43,7 +45,11 @@ export class BlogService {
       sortBy: sort.sortBy,
       sortOrder: sort.sortOrder,
     });
-    return toPaginatedResponse(page.items, pageRequest, page.total);
+    return toPaginatedResponse(
+      await this.withMediaPresentations(page.items, false),
+      pageRequest,
+      page.total,
+    );
   }
 
   async getPublicBySlug(slug: string): Promise<BlogRecord> {
@@ -52,7 +58,7 @@ export class BlogService {
     if (found === null) {
       throw new BlogNotFoundError();
     }
-    return found;
+    return (await this.withMediaPresentations([found], true))[0]!;
   }
 
   async listAdmin(
@@ -68,7 +74,11 @@ export class BlogService {
       sortOrder: sort.sortOrder,
       isPublished: query.isPublished,
     });
-    return toPaginatedResponse(page.items, pageRequest, page.total);
+    return toPaginatedResponse(
+      await this.withMediaPresentations(page.items, false),
+      pageRequest,
+      page.total,
+    );
   }
 
   async getAdminById(id: string): Promise<BlogRecord> {
@@ -76,7 +86,7 @@ export class BlogService {
     if (found === null) {
       throw new BlogNotFoundError();
     }
-    return found;
+    return (await this.withMediaPresentations([found], true))[0]!;
   }
 
   async create(body: CreateBlogBodyDto): Promise<BlogRecord> {
@@ -91,6 +101,7 @@ export class BlogService {
       authorId: body.authorId,
       categoryIds: body.categoryIds,
       tagIds: body.tagIds,
+      coverMediaId: body.coverMediaId,
     });
     this.logger.info(
       {
@@ -101,7 +112,7 @@ export class BlogService {
       },
       'Blog created',
     );
-    return created;
+    return (await this.withMediaPresentations([created], true))[0]!;
   }
 
   async update(id: string, body: UpdateBlogBodyDto): Promise<BlogRecord> {
@@ -121,6 +132,7 @@ export class BlogService {
     patch.authorId = body.authorId;
     patch.categoryIds = body.categoryIds;
     patch.tagIds = body.tagIds;
+    patch.coverMediaId = body.coverMediaId;
 
     const updated = await this.blogs.update(id, patch);
     if (updated === null) {
@@ -136,7 +148,7 @@ export class BlogService {
       },
       'Blog updated',
     );
-    return updated;
+    return (await this.withMediaPresentations([updated], true))[0]!;
   }
 
   async publish(id: string, now = new Date()): Promise<BlogRecord> {
@@ -172,6 +184,43 @@ export class BlogService {
       },
       'Blog unpublished',
     );
-    return updated;
+    return (await this.withMediaPresentations([updated], true))[0]!;
+  }
+
+  private async withMediaPresentations(
+    records: BlogRecord[],
+    includeInline: boolean,
+  ): Promise<BlogRecord[]> {
+    if (this.media === undefined) return records;
+    const ids = records.flatMap((record) => [
+      record.coverMediaId,
+      record.author?.avatarMediaId,
+      ...(includeInline ? (record.inlineMediaIds ?? []) : []),
+    ]);
+    const presentations = await this.media.presentations(ids);
+    return records.map((record) => ({
+      ...record,
+      cover: record.coverMediaId
+        ? (presentations.get(record.coverMediaId) ?? null)
+        : null,
+      author: record.author
+        ? {
+            ...record.author,
+            avatar: record.author.avatarMediaId
+              ? (presentations.get(record.author.avatarMediaId) ?? null)
+              : null,
+          }
+        : null,
+      ...(includeInline
+        ? {
+            inlineMedia: (record.inlineMediaIds ?? [])
+              .map((id) => presentations.get(id))
+              .filter(
+                (media): media is NonNullable<typeof media> =>
+                  media !== undefined,
+              ),
+          }
+        : {}),
+    }));
   }
 }

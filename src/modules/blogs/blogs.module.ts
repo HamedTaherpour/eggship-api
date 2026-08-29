@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { ObservabilityModule } from '../../common/observability/observability.module';
 import { PrismaModule } from '../../infrastructure/database/prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
+import { MediaModule } from '../media/media.module';
 import { AdminBlogsController } from './api/admin-blogs.controller';
 import {
   AdminBlogTaxonomyController,
@@ -19,7 +20,12 @@ import { BlogTaxonomyService } from './application/blog-taxonomy.service';
  * AuthModule is imported only so Admin routes can resolve AccessTokenGuard.
  */
 @Module({
-  imports: [PrismaModule, ObservabilityModule, forwardRef(() => AuthModule)],
+  imports: [
+    PrismaModule,
+    ObservabilityModule,
+    forwardRef(() => AuthModule),
+    forwardRef(() => MediaModule),
+  ],
   controllers: [
     BlogsController,
     AdminBlogsController,

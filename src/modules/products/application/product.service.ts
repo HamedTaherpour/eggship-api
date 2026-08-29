@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import {
   resolvePageRequest,
   toPaginatedResponse,
@@ -9,6 +9,7 @@ import { TransactionRunner } from '../../../infrastructure/database/transaction'
 import { CategoryService } from '../../categories/application/category.service';
 import { InventoryService } from '../../inventory/application/inventory.service';
 import { PricingService } from '../../pricing/application/pricing.service';
+import { MediaService } from '../../media/application/media.service';
 import type { AuthenticatedPrincipal } from '../../auth/domain/authenticated-principal';
 import type { ProductRecord } from '../domain/product';
 import {
@@ -32,6 +33,7 @@ export class ProductService {
     private readonly pricing: PricingService,
     private readonly transactions: TransactionRunner,
     private readonly logger: ApplicationLogger,
+    @Optional() private readonly media?: MediaService,
   ) {}
 
   /**
@@ -53,7 +55,11 @@ export class ProductService {
       isActive: true,
       requireActiveCategory: true,
     });
-    return toPaginatedResponse(page.items, pageRequest, page.total);
+    return toPaginatedResponse(
+      await this.withMediaPresentations(page.items),
+      pageRequest,
+      page.total,
+    );
   }
 
   async getPublicById(id: string): Promise<ProductRecord> {
@@ -61,7 +67,7 @@ export class ProductService {
     if (found === null) {
       throw new ProductNotFoundError();
     }
-    return found;
+    return (await this.withMediaPresentations([found]))[0]!;
   }
 
   async listAdmin(
@@ -78,7 +84,11 @@ export class ProductService {
       categoryId: query.categoryId,
       isActive: query.isActive,
     });
-    return toPaginatedResponse(page.items, pageRequest, page.total);
+    return toPaginatedResponse(
+      await this.withMediaPresentations(page.items),
+      pageRequest,
+      page.total,
+    );
   }
 
   async getAdminById(id: string): Promise<ProductRecord> {
@@ -86,19 +96,27 @@ export class ProductService {
     if (found === null) {
       throw new ProductNotFoundError();
     }
-    return found;
+    return (await this.withMediaPresentations([found]))[0]!;
   }
 
   async create(body: CreateProductBodyDto): Promise<ProductRecord> {
     await this.requireExistingCategory(body.categoryId);
 
     const created = await this.transactions.run(async (tx) => {
+      if (body.imageMediaId !== undefined && body.imageMediaId !== null) {
+        if (this.media === undefined)
+          throw new Error('Media module is not configured.');
+        await this.media.getImageReference(body.imageMediaId, tx);
+      }
       const product = await this.products.create(
         {
           name: body.name,
           price: body.price,
           categoryId: body.categoryId,
           isActive: body.isActive,
+          ...(body.imageMediaId !== undefined
+            ? { imageMediaId: body.imageMediaId }
+            : {}),
         },
         tx,
       );
@@ -115,7 +133,7 @@ export class ProductService {
       },
       'Product created',
     );
-    return created;
+    return (await this.withMediaPresentations([created]))[0]!;
   }
 
   async update(
@@ -131,6 +149,7 @@ export class ProductService {
       name?: string;
       categoryId?: string;
       isActive?: boolean;
+      imageMediaId?: string | null;
     } = {};
     if (body.name !== undefined) {
       patch.name = body.name;
@@ -141,6 +160,7 @@ export class ProductService {
     if (body.isActive !== undefined) {
       patch.isActive = body.isActive;
     }
+    if (body.imageMediaId !== undefined) patch.imageMediaId = body.imageMediaId;
 
     const hasPriceChange = body.price !== undefined;
     const hasOtherChanges = Object.keys(patch).length > 0;
@@ -158,6 +178,15 @@ export class ProductService {
       : undefined;
 
     const updated = await this.transactions.run(async (tx) => {
+      if (body.imageMediaId !== undefined) {
+        const lockedProduct = await this.products.findByIdForUpdate(id, tx);
+        if (lockedProduct === null) throw new ProductNotFoundError();
+        if (body.imageMediaId !== null) {
+          if (this.media === undefined)
+            throw new Error('Media module is not configured.');
+          await this.media.getImageReference(body.imageMediaId, tx);
+        }
+      }
       let product: ProductRecord | null = null;
 
       if (hasPriceChange) {
@@ -202,7 +231,7 @@ export class ProductService {
       },
       body.isActive === false ? 'Product deactivated' : 'Product updated',
     );
-    return updated;
+    return (await this.withMediaPresentations([updated]))[0]!;
   }
 
   private async requireExistingCategory(categoryId: string): Promise<void> {
@@ -212,5 +241,20 @@ export class ProductService {
         'Category does not exist for this product.',
       );
     }
+  }
+
+  private async withMediaPresentations(
+    records: ProductRecord[],
+  ): Promise<ProductRecord[]> {
+    if (this.media === undefined) return records;
+    const presentations = await this.media.presentations(
+      records.map((record) => record.imageMediaId),
+    );
+    return records.map((record) => ({
+      ...record,
+      image: record.imageMediaId
+        ? (presentations.get(record.imageMediaId) ?? null)
+        : null,
+    }));
   }
 }

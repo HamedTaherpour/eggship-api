@@ -35,6 +35,7 @@ import {
 } from '../src/modules/media/domain/media-test-fixtures';
 import { HARD_MEDIA_MAX_FILES_PER_BATCH } from '../src/modules/media/domain/media-upload-limits';
 import { MediaRepository } from '../src/modules/media/infrastructure/media.repository';
+import { TransactionRunner } from '../src/infrastructure/database/transaction';
 
 class ConfigurableAdminRoleResolver implements AdminRoleResolver {
   private lookup: AdminAuthorizationLookup = { status: 'unavailable' };
@@ -63,17 +64,44 @@ class ConfigurableAdminRoleResolver implements AdminRoleResolver {
 
 class InMemoryMediaRepository {
   private readonly rows = new Map<string, MediaRecord>();
+  private readonly usageRows = new Map<
+    string,
+    Array<{ type: string; id: string }>
+  >();
 
   clear(): void {
     this.rows.clear();
+    this.usageRows.clear();
   }
 
   seed(record: MediaRecord): void {
     this.rows.set(record.id, record);
   }
 
+  seedUsages(id: string, usages: Array<{ type: string; id: string }>): void {
+    this.usageRows.set(id, usages);
+  }
+
   findById(id: string): Promise<MediaRecord | null> {
     return Promise.resolve(this.rows.get(id) ?? null);
+  }
+
+  findByIdForReference(id: string): Promise<MediaRecord | null> {
+    return this.findById(id);
+  }
+
+  isReferenced(id: string): Promise<boolean> {
+    return Promise.resolve((this.usageRows.get(id)?.length ?? 0) > 0);
+  }
+
+  usages(id: string): Promise<Array<{ type: string; id: string }>> {
+    return Promise.resolve(
+      [...(this.usageRows.get(id) ?? [])].sort(
+        (left, right) =>
+          left.type.localeCompare(right.type) ||
+          left.id.localeCompare(right.id),
+      ),
+    );
   }
 
   isReferencedBySettlement(): Promise<boolean> {
@@ -141,6 +169,7 @@ class InMemoryMediaRepository {
       return Promise.resolve(null);
     }
     this.rows.delete(id);
+    this.usageRows.delete(id);
     return Promise.resolve(existing);
   }
 }
@@ -189,6 +218,20 @@ describe('Admin Media Library APIs (e2e)', () => {
       })
       .overrideProvider(MediaRepository)
       .useValue(media)
+      .overrideProvider(TransactionRunner)
+      .useValue({
+        run: async <T>(fn: (tx: object) => Promise<T>): Promise<T> => fn({}),
+        runIn: async <T>(
+          _existing: object | undefined,
+          fn: (tx: object) => Promise<T>,
+        ): Promise<T> => fn({}),
+        runSnapshotRead: async <T>(
+          fn: (tx: object) => Promise<T>,
+        ): Promise<T> => fn({}),
+        runRepeatableRead: async <T>(
+          fn: (tx: object) => Promise<T>,
+        ): Promise<T> => fn({}),
+      })
       .overrideProvider(STORAGE_PROVIDER)
       .useValue(storage)
       .overrideProvider(ADMIN_ROLE_RESOLVER)
@@ -525,6 +568,81 @@ describe('Admin Media Library APIs (e2e)', () => {
       .get(`/api/v1/admin/media/${id}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(404);
+  });
+
+  it('inspects deterministic deduplicated usages and protects referenced Media through HTTP', async () => {
+    const token = adminToken();
+    const uploaded = await request(server())
+      .post('/api/v1/admin/media/upload')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('files', pngFixture(), 'shared.png')
+      .expect(200);
+    const id = (
+      uploaded.body as { data: { items: Array<{ media?: { id: string } }> } }
+    ).data.items[0]?.media?.id;
+    expect(id).toBeDefined();
+    media.seedUsages(id!, [
+      { type: 'PRODUCT_IMAGE', id: 'product-id' },
+      { type: 'BLOG_COVER', id: 'blog-id' },
+      { type: 'BLOG_INLINE', id: 'blog-id' },
+      { type: 'BLOG_AUTHOR_AVATAR', id: 'author-id' },
+      { type: 'SETTLEMENT_RECEIPT', id: 'settlement-id' },
+    ]);
+
+    const usages = await request(server())
+      .get(`/api/v1/admin/media/${id}/usages`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(usages.body).toEqual({
+      data: [
+        { type: 'BLOG_AUTHOR_AVATAR', id: 'author-id' },
+        { type: 'BLOG_COVER', id: 'blog-id' },
+        { type: 'BLOG_INLINE', id: 'blog-id' },
+        { type: 'PRODUCT_IMAGE', id: 'product-id' },
+        { type: 'SETTLEMENT_RECEIPT', id: 'settlement-id' },
+      ],
+    });
+    expect(JSON.stringify(usages.body)).not.toContain('storageKey');
+
+    const referencedDelete = await request(server())
+      .delete(`/api/v1/admin/media/${id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(409);
+    expect(asApiErrorBody(referencedDelete.body).error.code).toBe(
+      'MEDIA_REFERENCED',
+    );
+    expect(storage.countForTest()).toBe(1);
+
+    media.seedUsages(id!, []);
+    await request(server())
+      .get(`/api/v1/admin/media/${id}/usages`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200)
+      .expect({ data: [] });
+    await request(server())
+      .delete(`/api/v1/admin/media/${id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+  });
+
+  it('does not expose usage inspection to unauthorized callers or missing Media ids', async () => {
+    const token = adminToken();
+    const id = randomUUID();
+    await request(server())
+      .get(`/api/v1/admin/media/${id}/usages`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404);
+
+    const warehouse = adminToken(AdminRole.WAREHOUSE);
+    await request(server())
+      .get(`/api/v1/admin/media/${id}/usages`)
+      .set('Authorization', `Bearer ${warehouse}`)
+      .expect(404);
+    const orderOps = adminToken(AdminRole.ORDER_OPS);
+    await request(server())
+      .get(`/api/v1/admin/media/${id}/usages`)
+      .set('Authorization', `Bearer ${orderOps}`)
+      .expect(403);
   });
 
   it('documents Admin Media operations in OpenAPI', () => {

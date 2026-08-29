@@ -25,6 +25,7 @@ Business migrations live here and are applied with `prisma migrate deploy`.
 | `20260828200000_referral_code_invariants`       | REF-02 canonical code checks and database immutability guard      |
 | `20260828220000_blog_content`                   | CNT-01 Blog persistence for public published list/detail          |
 | `20260828230000_blog_content_text_invariants`   | CNT-01 Blog text trim/length CHECK alignment                      |
+| `20260829110000_med01_media_references`         | MED-01 Product/Blog/Author Media references and inline registry   |
 
 Integration suites apply migrations with `prisma migrate deploy` against `TEST_DATABASE_URL`. Do not use `prisma db push` as the canonical path.
 

@@ -138,7 +138,8 @@ export class SettlementService {
     actorId: string,
   ): Promise<SettlementRecord> {
     const result = await this.transactions.run(async (tx) => {
-      const before = await this.requireCurrent(id, tx);
+      const before = await this.settlements.lockForUpdate(id, tx);
+      if (before === null) throw new SettlementNotFoundError();
       if (before.status !== SettlementStatus.OPEN) {
         throw new SettlementInvalidTransitionError();
       }

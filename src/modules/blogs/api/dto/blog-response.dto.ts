@@ -5,6 +5,7 @@ import type {
   BlogAuthorRecord,
   BlogTaxonomyRecord,
 } from '../../domain/blog';
+import type { MediaPresentation } from '../../../media/domain/media-presentation';
 
 /** Public storefront blog list item. Body is detail-only to avoid large pages. */
 export class PublicBlogListItemDto {
@@ -24,6 +25,10 @@ export class PublicBlogListItemDto {
   })
   publishedAt!: string;
   @ApiProperty({ nullable: true }) excerpt!: string | null;
+  @ApiProperty({ format: 'uuid', nullable: true, required: false })
+  coverMediaId?: string | null;
+  @ApiProperty({ type: Object, nullable: true })
+  cover!: MediaPresentation | null;
 }
 
 /** Public storefront blog detail. Body is stored Markdown source; this API does not render HTML. */
@@ -57,6 +62,12 @@ export class PublicBlogDetailDto {
   @ApiProperty({ type: Object, isArray: true })
   categories!: BlogTaxonomyRecord[];
   @ApiProperty({ type: Object, isArray: true }) tags!: BlogTaxonomyRecord[];
+  @ApiProperty({ format: 'uuid', nullable: true, required: false })
+  coverMediaId?: string | null;
+  @ApiProperty({ type: Object, nullable: true })
+  cover!: MediaPresentation | null;
+  @ApiProperty({ type: Object, isArray: true })
+  inlineMedia!: MediaPresentation[];
 }
 
 export class PublicBlogResponseDto {
@@ -96,6 +107,10 @@ export class AdminBlogListItemDto {
 
   @ApiProperty({ example: '2026-08-21T12:00:00.000Z' })
   updatedAt!: string;
+  @ApiProperty({ format: 'uuid', nullable: true, required: false })
+  coverMediaId?: string | null;
+  @ApiProperty({ type: Object, nullable: true })
+  cover!: MediaPresentation | null;
 }
 
 /** Admin detail: full editable fields including body. */
@@ -113,6 +128,8 @@ export class AdminBlogDetailDto extends AdminBlogListItemDto {
   @ApiProperty({ type: Object, isArray: true })
   categories!: BlogTaxonomyRecord[];
   @ApiProperty({ type: Object, isArray: true }) tags!: BlogTaxonomyRecord[];
+  @ApiProperty({ type: Object, isArray: true })
+  inlineMedia!: MediaPresentation[];
 }
 
 export class AdminBlogResponseDto {
@@ -134,6 +151,8 @@ export function toPublicBlogListItemDto(
     title: record.title,
     publishedAt: requirePublishedAt(record),
     excerpt: record.excerpt ?? null,
+    ...(record.coverMediaId ? { coverMediaId: record.coverMediaId } : {}),
+    cover: record.cover ?? null,
   };
 }
 
@@ -150,6 +169,9 @@ export function toPublicBlogDetailDto(record: BlogRecord): PublicBlogDetailDto {
     author: record.author ?? null,
     categories: record.categories ?? [],
     tags: record.tags ?? [],
+    ...(record.coverMediaId ? { coverMediaId: record.coverMediaId } : {}),
+    cover: record.cover ?? null,
+    inlineMedia: record.inlineMedia ?? [],
   };
 }
 
@@ -173,6 +195,8 @@ export function toAdminBlogListItemDto(
     publishedAt: record.publishedAt?.toISOString() ?? null,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
+    ...(record.coverMediaId ? { coverMediaId: record.coverMediaId } : {}),
+    cover: record.cover ?? null,
   };
 }
 
@@ -186,5 +210,8 @@ export function toAdminBlogDetailDto(record: BlogRecord): AdminBlogDetailDto {
     author: record.author ?? null,
     categories: record.categories ?? [],
     tags: record.tags ?? [],
+    ...(record.coverMediaId ? { coverMediaId: record.coverMediaId } : {}),
+    cover: record.cover ?? null,
+    inlineMedia: record.inlineMedia ?? [],
   };
 }

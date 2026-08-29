@@ -25,7 +25,14 @@ import {
 import { normalizeBlogSlug } from '../domain/blog-slug';
 import { normalizeBlogTitle } from '../domain/blog-title';
 import { normalizeOptionalBlogText } from '../domain/blog-field';
-import { validateBlogMarkdown } from '../domain/blog-markdown';
+import {
+  extractBlogMediaIds,
+  validateBlogMarkdown,
+} from '../domain/blog-markdown';
+import {
+  MediaNotFoundError,
+  MediaUnsupportedTypeError,
+} from '../../media/domain/media-errors';
 
 type PrismaBlog = {
   id: string;
@@ -36,11 +43,13 @@ type PrismaBlog = {
   excerpt: string | null;
   seoTitle: string | null;
   seoDescription: string | null;
+  coverMediaId: string | null;
   author: {
     id: string;
     name: string;
     slug: string;
     bio: string | null;
+    avatarMediaId: string | null;
     isActive: boolean;
     createdAt: Date;
     updatedAt: Date;
@@ -57,6 +66,7 @@ type PrismaBlog = {
   tags: {
     tag: { id: string; name: string; slug: string; description: string | null };
   }[];
+  inlineMedia: { mediaId: string }[];
   isPublished: boolean;
   publishedAt: Date | null;
   createdAt: Date;
@@ -124,6 +134,7 @@ export class BlogRepository {
     });
     const categoryIds = [...new Set(input.categoryIds ?? [])];
     const tagIds = [...new Set(input.tagIds ?? [])];
+    const inlineMediaIds = extractBlogMediaIds(body);
 
     try {
       const created = await this.prisma.$transaction(async (tx) => {
@@ -133,7 +144,8 @@ export class BlogRepository {
           categoryIds,
           tagIds,
         );
-        return tx.blog.create({
+        await this.validateMedia(tx, input.coverMediaId, inlineMediaIds);
+        const created = await tx.blog.create({
           data: {
             slug,
             title,
@@ -154,6 +166,14 @@ export class BlogRepository {
             ...(input.authorId
               ? { author: { connect: { id: input.authorId } } }
               : {}),
+            ...(input.coverMediaId !== undefined
+              ? {
+                  coverMedia:
+                    input.coverMediaId === null
+                      ? { disconnect: true }
+                      : { connect: { id: input.coverMediaId } },
+                }
+              : {}),
             ...(input.categoryIds
               ? {
                   categories: {
@@ -173,6 +193,17 @@ export class BlogRepository {
                 }
               : {}),
           },
+          include: blogInclude,
+        });
+        if (inlineMediaIds.length > 0)
+          await tx.blogInlineMedia.createMany({
+            data: inlineMediaIds.map((mediaId) => ({
+              blogId: created.id,
+              mediaId,
+            })),
+          });
+        return tx.blog.findUniqueOrThrow({
+          where: { id: created.id },
           include: blogInclude,
         });
       });
@@ -207,6 +238,11 @@ export class BlogRepository {
           categoryIds,
           tagIds,
         );
+        const inlineMediaIds =
+          input.body === undefined
+            ? undefined
+            : extractBlogMediaIds(validateBlogMarkdown(input.body));
+        await this.validateMedia(tx, input.coverMediaId, inlineMediaIds ?? []);
         if (existing.isPublished && input.authorId === null)
           throw new BlogAuthorNotFoundError();
 
@@ -239,6 +275,11 @@ export class BlogRepository {
             input.authorId === null
               ? { disconnect: true }
               : { connect: { id: input.authorId } };
+        if (input.coverMediaId !== undefined)
+          data.coverMedia =
+            input.coverMediaId === null
+              ? { disconnect: true }
+              : { connect: { id: input.coverMediaId } };
         if (categoryIds !== undefined)
           data.categories = {
             deleteMany: {},
@@ -254,12 +295,24 @@ export class BlogRepository {
             })),
           };
         if (Object.keys(data).length === 0) return mapBlog(existing);
-        const updated = await tx.blog.update({
+        await tx.blog.update({
           where: { id },
           data,
           include: blogInclude,
         });
-        return mapBlog(updated);
+        if (inlineMediaIds !== undefined) {
+          await tx.blogInlineMedia.deleteMany({ where: { blogId: id } });
+          if (inlineMediaIds.length > 0)
+            await tx.blogInlineMedia.createMany({
+              data: inlineMediaIds.map((mediaId) => ({ blogId: id, mediaId })),
+            });
+        }
+        return mapBlog(
+          await tx.blog.findUniqueOrThrow({
+            where: { id },
+            include: blogInclude,
+          }),
+        );
       });
     } catch (error: unknown) {
       if (isUniqueConstraintError(error)) {
@@ -375,6 +428,30 @@ export class BlogRepository {
       if (count !== new Set(tagIds).size) throw new BlogTagNotFoundError();
     }
   }
+
+  private async validateMedia(
+    tx: Prisma.TransactionClient,
+    coverMediaId: string | null | undefined,
+    inlineMediaIds: string[],
+  ): Promise<void> {
+    const ids = [
+      ...new Set(
+        [coverMediaId, ...inlineMediaIds].filter(
+          (id): id is string => id !== undefined && id !== null,
+        ),
+      ),
+    ].sort();
+    for (const id of ids) {
+      const rows = await tx.$queryRaw<
+        Array<{ mimeType: string }>
+      >`SELECT "mimeType" FROM "Media" WHERE "id" = ${id}::uuid FOR UPDATE`;
+      if (rows.length === 0) throw new MediaNotFoundError();
+      if (
+        !['image/jpeg', 'image/png', 'image/webp'].includes(rows[0]!.mimeType)
+      )
+        throw new MediaUnsupportedTypeError();
+    }
+  }
 }
 
 function buildWhere(
@@ -414,12 +491,14 @@ function mapBlog(row: PrismaBlog): BlogRecord {
     slug: row.slug,
     title: row.title,
     body: row.body,
+    coverMediaId: row.coverMediaId,
     excerpt: row.excerpt ?? null,
     seoTitle: row.seoTitle ?? null,
     seoDescription: row.seoDescription ?? null,
     author: row.author ?? null,
     categories: row.categories?.map(({ category }) => category) ?? [],
     tags: row.tags?.map(({ tag }) => tag) ?? [],
+    inlineMediaIds: row.inlineMedia?.map(({ mediaId }) => mediaId).sort() ?? [],
     isPublished: row.isPublished,
     publishedAt: row.publishedAt,
     createdAt: row.createdAt,
@@ -434,6 +513,10 @@ const blogInclude = {
     orderBy: { category: { name: 'asc' as const } },
   },
   tags: { include: { tag: true }, orderBy: { tag: { name: 'asc' as const } } },
+  inlineMedia: {
+    select: { mediaId: true },
+    orderBy: { mediaId: 'asc' as const },
+  },
 } as const;
 
 function isUniqueConstraintError(error: unknown): boolean {

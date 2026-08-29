@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   109 |
-| DONE        |    72 |
+| DONE        |    73 |
 | IN_PROGRESS |     0 |
-| READY       |     1 |
+| READY       |     0 |
 | BLOCKED     |     0 |
 | PLANNED     |    36 |
 
-- Current task: `MED-01` (Media attachment and reference lifecycle) is **READY**. Human Architecture Gate closed in [ADR 0022](adr/0022-media-attachment-and-reference-lifecycle.md); implementation not started. No task remains BLOCKED.
+- Current task: `MED-01` (Media attachment and reference lifecycle) is **DONE**. Human Architecture Gate closed in [ADR 0022](adr/0022-media-attachment-and-reference-lifecycle.md); implementation and final verification are complete. No task remains BLOCKED.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate.
 
 ## Status model
@@ -943,7 +943,7 @@ Explicitly out of scope: Editing identity credentials and defining store busines
 
 ### MED-01 — File storage, uploads, and remaining media workflows
 
-Status: READY | Depends on: CAT-04, AUTH-08, CNT-04 | Primary: Codex | Review: Claude/Cursor security review
+Status: DONE | Depends on: CAT-04, AUTH-08, CNT-04 | Primary: Codex | Review: Claude/Cursor security review
 
 Architecture gate: **Closed** ([ADR 0022](adr/0022-media-attachment-and-reference-lifecycle.md)). Human-approved V1 Media attachment architecture is recorded; implementation may start. Do not treat this gate closure as implementation DONE.
 
@@ -962,6 +962,8 @@ Acceptance criteria:
 - Live storage verification uses a dedicated TEST bucket when exercised; production-bucket proof remains DEP-02.
 
 Explicitly out of scope: Re-implementing CAT-04 upload/list/delete; Sharp/thumbnails/transcode pipelines; folders/collections/DAM tagging/versioning; private Media ACL/signed downloads; Aparat-as-Media; Category images; Product gallery; immediate orphan deletion or invented retention periods; Markdown/Aparat/taxonomy/excerpt/SEO/Author invention (CNT-03/CNT-04); distributed transactions or BullMQ for basic Media CRUD.
+
+Delivered: Product image, Blog cover, BlogAuthor avatar, and durable inline Media references with atomic replacement/rollback proof; reference-aware usage inspection and delete protection; deterministic PostgreSQL attach-wins/delete-wins ordering proof; restrictive FK and no-dangling-state verification; focused E2E/regression/static/build gates. The broad PostgreSQL run passed 283/284 tests with only the known unrelated notification-ordering flake. Order persistence passed independently and was classified as unrelated to MED-01.
 
 ## Phase 9 — Transactional Async & Operational Features
 

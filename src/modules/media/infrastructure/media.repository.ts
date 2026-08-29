@@ -45,6 +45,14 @@ export class MediaRepository {
     return found === null ? null : mapMedia(found);
   }
 
+  async findByIds(ids: readonly string[]): Promise<MediaRecord[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.prisma.media.findMany({
+      where: { id: { in: [...ids] } },
+    });
+    return rows.map(mapMedia);
+  }
+
   async findByIdForReference(
     id: string,
     tx: TransactionContext,
@@ -54,9 +62,23 @@ export class MediaRepository {
              "width", "height", "createdAt", "updatedAt"
       FROM "Media"
       WHERE "id" = ${id}::uuid
-      FOR KEY SHARE
+      FOR UPDATE
     `);
     return rows[0] === undefined ? null : mapMedia(rows[0]);
+  }
+
+  async isReferenced(id: string, tx?: TransactionContext): Promise<boolean> {
+    const db = this.db(tx);
+    const found = await db.$queryRaw<Array<{ referenced: boolean }>>(Prisma.sql`
+      SELECT EXISTS (
+        SELECT 1 FROM "Product" WHERE "imageMediaId" = ${id}::uuid
+        UNION ALL SELECT 1 FROM "Blog" WHERE "coverMediaId" = ${id}::uuid
+        UNION ALL SELECT 1 FROM "BlogAuthor" WHERE "avatarMediaId" = ${id}::uuid
+        UNION ALL SELECT 1 FROM "BlogInlineMedia" WHERE "mediaId" = ${id}::uuid
+        UNION ALL SELECT 1 FROM "OrderSettlement" WHERE "receiptMediaId" = ${id}::uuid
+      ) AS referenced
+    `);
+    return rowsBoolean(found[0]?.referenced);
   }
 
   async isReferencedBySettlement(id: string): Promise<boolean> {
@@ -65,6 +87,23 @@ export class MediaRepository {
       select: { id: true },
     });
     return found !== null;
+  }
+
+  async usages(
+    id: string,
+    tx?: TransactionContext,
+  ): Promise<Array<{ type: string; id: string }>> {
+    const rows = await this.db(tx).$queryRaw<
+      Array<{ type: string; id: string }>
+    >(Prisma.sql`
+      SELECT 'PRODUCT_IMAGE' AS type, "id" FROM "Product" WHERE "imageMediaId" = ${id}::uuid
+      UNION ALL SELECT 'BLOG_COVER', "id" FROM "Blog" WHERE "coverMediaId" = ${id}::uuid
+      UNION ALL SELECT 'BLOG_AUTHOR_AVATAR', "id" FROM "BlogAuthor" WHERE "avatarMediaId" = ${id}::uuid
+      UNION ALL SELECT 'BLOG_INLINE', "blogId" FROM "BlogInlineMedia" WHERE "mediaId" = ${id}::uuid
+      UNION ALL SELECT 'SETTLEMENT_RECEIPT', "id" FROM "OrderSettlement" WHERE "receiptMediaId" = ${id}::uuid
+      ORDER BY type, id
+    `);
+    return rows;
   }
 
   async list(query: MediaListQuery): Promise<PageResult<MediaRecord>> {
@@ -102,9 +141,12 @@ export class MediaRepository {
     return mapMedia(created);
   }
 
-  async deleteById(id: string): Promise<MediaRecord | null> {
+  async deleteById(
+    id: string,
+    tx?: TransactionContext,
+  ): Promise<MediaRecord | null> {
     try {
-      const deleted = await this.prisma.media.delete({ where: { id } });
+      const deleted = await this.db(tx).media.delete({ where: { id } });
       return mapMedia(deleted);
     } catch (error: unknown) {
       if (isRecordNotFoundError(error)) {
@@ -117,6 +159,10 @@ export class MediaRepository {
   private db(tx?: TransactionContext): PrismaConnection {
     return resolvePrismaConnection(this.prisma, tx);
   }
+}
+
+function rowsBoolean(value: boolean | undefined): boolean {
+  return value === true;
 }
 
 function buildWhere(query: MediaListQuery): Prisma.MediaWhereInput {

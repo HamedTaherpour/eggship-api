@@ -72,6 +72,16 @@ export class SettlementRepository {
     return row === null ? null : mapSettlement(row, new Date());
   }
 
+  async lockForUpdate(
+    id: string,
+    tx: TransactionContext,
+  ): Promise<SettlementRecord | null> {
+    await this.db(tx).$queryRaw(Prisma.sql`
+      SELECT "id" FROM "OrderSettlement" WHERE "id" = ${id}::uuid FOR UPDATE
+    `);
+    return this.findById(id, tx);
+  }
+
   async list(
     query: SettlementListQuery,
   ): Promise<PageResult<SettlementRecord>> {

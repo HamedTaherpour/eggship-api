@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import {
   resolvePageRequest,
   toPaginatedResponse,
@@ -9,7 +9,6 @@ import { ApplicationLogger } from '../../../common/observability/application-log
 import type { StorageProvider } from '../../../infrastructure/storage/storage-provider';
 import { StorageProviderError } from '../../../infrastructure/storage/storage-provider';
 import { STORAGE_PROVIDER } from '../../../infrastructure/storage/storage.tokens';
-import type { TransactionContext } from '../../../infrastructure/database/transaction';
 import type { MediaUploadLimits } from '../domain/media-upload-limits';
 import { mapWithBoundedConcurrency } from '../domain/bounded-concurrency';
 import { validateInboundMediaFile } from '../domain/file-validation';
@@ -20,6 +19,8 @@ import type {
   MediaUploadBatchResult,
   MediaUploadItemResult,
 } from '../domain/media';
+import type { MediaPresentation } from '../domain/media-presentation';
+import { toMediaPresentation } from '../domain/media-presentation';
 import {
   MediaDeleteFailedError,
   MediaBatchTooLargeError,
@@ -38,6 +39,10 @@ import { MediaRepository } from '../infrastructure/media.repository';
 import type { AdminMediaListQueryDto } from '../api/dto/admin-media-list-query.dto';
 import { resolveAdminMediaSort } from '../api/dto/admin-media-list-query.dto';
 import { isAcceptedMediaMimeType } from '../domain/accepted-media-types';
+import {
+  TransactionRunner,
+  type TransactionContext,
+} from '../../../infrastructure/database/transaction';
 
 export const MEDIA_UPLOAD_LIMITS = Symbol('MEDIA_UPLOAD_LIMITS');
 
@@ -50,6 +55,7 @@ export class MediaService {
     @Inject(MEDIA_UPLOAD_LIMITS)
     private readonly limits: MediaUploadLimits,
     private readonly logger: ApplicationLogger,
+    @Optional() private readonly transactions?: TransactionRunner,
   ) {}
 
   async listAdmin(
@@ -85,8 +91,42 @@ export class MediaService {
     return found;
   }
 
+  async getImageReference(
+    id: string,
+    tx: TransactionContext,
+  ): Promise<MediaRecord> {
+    const found = await this.media.findByIdForReference(id, tx);
+    if (found === null) throw new MediaNotFoundError();
+    if (!isAcceptedMediaMimeType(found.mimeType))
+      throw new MediaUnsupportedTypeError();
+    return found;
+  }
+
+  async usages(id: string): Promise<Array<{ type: string; id: string }>> {
+    if ((await this.media.findById(id)) === null)
+      throw new MediaNotFoundError();
+    return this.media.usages(id);
+  }
+
   publicUrl(record: MediaRecord): string {
     return this.storage.getPublicUrl(record.storageKey);
+  }
+
+  async presentations(
+    ids: readonly (string | null | undefined)[],
+  ): Promise<Map<string, MediaPresentation>> {
+    const uniqueIds = [
+      ...new Set(
+        ids.filter((id): id is string => id !== null && id !== undefined),
+      ),
+    ];
+    const records = await this.media.findByIds(uniqueIds);
+    return new Map(
+      records.map((record) => [
+        record.id,
+        toMediaPresentation(record, this.publicUrl(record)),
+      ]),
+    );
   }
 
   async uploadBatch(
@@ -122,6 +162,11 @@ export class MediaService {
   }
 
   async deleteAdmin(id: string): Promise<MediaRecord> {
+    if (this.transactions !== undefined) {
+      return this.transactions.run((tx) =>
+        this.deleteAdminInTransaction(id, tx),
+      );
+    }
     const existing = await this.media.findById(id);
     if (existing === null) {
       throw new MediaNotFoundError();
@@ -157,6 +202,31 @@ export class MediaService {
       'Media deleted',
     );
     return deleted;
+  }
+
+  private async deleteAdminInTransaction(
+    id: string,
+    tx: TransactionContext,
+  ): Promise<MediaRecord> {
+    const existing = await this.media.findByIdForReference(id, tx);
+    if (existing === null) throw new MediaNotFoundError();
+    if (await this.media.isReferenced(id, tx)) throw new MediaReferencedError();
+    try {
+      await this.storage.delete(existing.storageKey);
+    } catch (error: unknown) {
+      this.logger.error(
+        { module: 'media', operation: 'media.delete.failed', mediaId: id },
+        'Media object deletion failed',
+        toError(error),
+      );
+      throw new MediaDeleteFailedError();
+    }
+    try {
+      const deleted = await this.media.deleteById(id, tx);
+      return deleted ?? existing;
+    } catch {
+      throw new MediaDeleteFailedError();
+    }
   }
 
   private async deleteRowAfterObjectRemoved(

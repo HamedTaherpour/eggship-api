@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- MED-01 Media relationships: optional Product image, Blog cover, BlogAuthor avatar, durable canonical-parser-backed inline registry, reference-aware usage inspection, restrictive delete protection, and PostgreSQL Media-row locking. Upload/storage limits and orphan semantics remain CAT-04/DATA-02 owned.
+- MED-01 final verification: added real-PostgreSQL replacement atomicity coverage and coordinated attach-wins/delete-wins proofs for Media consumers, confirming rollback, retention, stable reference protection, and no dangling state. Independent order-persistence verification passed; the broad suite retains only the known unrelated notification-ordering flake.
+
 - Media attachment architecture (MED-01 Human Architecture Gate / ADR 0022): image-only JPEG/PNG/WebP library consumers locked to Product optional single image, Blog cover, BlogAuthor avatar, and durable inline `::media` registry; catalog Category has no image; shared Media Library with valid unreferenced rows; Media UUID identity (no URL-as-FK); CAT-04 upload bounds preserved; no Sharp/thumbnail pipeline; `ON DELETE RESTRICT` / `MEDIA_REFERENCED` across all consumers including Settlement receipts; replace-without-delete; orphan cleanup deferred to DATA-02; Admin usage inspection assigned to MED-01; concurrency/locking and storage/DB failure boundaries documented. MED-01 moved PLANNED → READY. No schema, API, or runtime change.
 
 ### CNT-04

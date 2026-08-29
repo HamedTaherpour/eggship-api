@@ -70,4 +70,13 @@ export class UpdateProductBodyDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'Replace or remove the product image Media reference.',
+  })
+  @IsOptional()
+  @IsUUID('4')
+  imageMediaId?: string | null;
 }

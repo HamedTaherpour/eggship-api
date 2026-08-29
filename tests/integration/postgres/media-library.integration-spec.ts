@@ -130,13 +130,13 @@ describe('Media library persistence (integration)', () => {
     expect(await prisma.media.count()).toBe(1);
   });
 
-  it('does not invent a Product media FK', async () => {
+  it('exposes the MED-01 Product media FK without changing CAT-04 Media ownership', async () => {
     const columns = await prisma.$queryRaw<Array<{ column_name: string }>>`
       SELECT column_name
       FROM information_schema.columns
       WHERE table_name = 'Product'
     `;
-    expect(columns.map((row) => row.column_name)).not.toContain('imageMediaId');
+    expect(columns.map((row) => row.column_name)).toContain('imageMediaId');
     expect(columns.map((row) => row.column_name)).not.toContain('mediaId');
     expect(randomUUID().length).toBeGreaterThan(0);
   });

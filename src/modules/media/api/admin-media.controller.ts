@@ -190,6 +190,20 @@ export class AdminMediaController {
     return { data: toAdminMediaDto(record, this.media.publicUrl(record)) };
   }
 
+  @Get(':id/usages')
+  @RequirePermissions(Permission.MEDIA_READ)
+  @ApiOperation({
+    operationId: 'AdminMedia_usages',
+    summary: 'Inspect durable Media references (Admin)',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiOkResponse({ description: 'Stable, deterministic Media usage records.' })
+  async usages(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<{ data: Array<{ type: string; id: string }> }> {
+    return { data: await this.media.usages(id) };
+  }
+
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(Permission.MEDIA_MANAGE)

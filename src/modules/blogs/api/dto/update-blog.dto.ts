@@ -98,4 +98,8 @@ export class UpdateBlogBodyDto {
   @IsOptional()
   @IsUUID('4', { each: true })
   tagIds?: string[];
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @IsOptional()
+  @IsUUID('4')
+  coverMediaId?: string | null;
 }

@@ -4,6 +4,7 @@ import { AuthModule } from '../auth/auth.module';
 import { CategoriesModule } from '../categories/categories.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { PricingModule } from '../pricing/pricing.module';
+import { MediaModule } from '../media/media.module';
 import { AdminProductsController } from './api/admin-products.controller';
 import { ProductsController } from './api/products.controller';
 import { ProductService } from './application/product.service';
@@ -23,6 +24,7 @@ import { ProductRepository } from './infrastructure/product.repository';
     CategoriesModule,
     InventoryModule,
     forwardRef(() => PricingModule),
+    forwardRef(() => MediaModule),
     forwardRef(() => AuthModule),
   ],
   controllers: [ProductsController, AdminProductsController],

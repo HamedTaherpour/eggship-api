@@ -267,6 +267,14 @@ describe('Public blog APIs (e2e)', () => {
       slug: 'visible-post',
       title: 'Visible',
       body: '<p>Visible body</p>',
+      excerpt: null,
+      seoTitle: null,
+      seoDescription: null,
+      author: null,
+      categories: [],
+      tags: [],
+      cover: null,
+      inlineMedia: [],
       publishedAt: published.publishedAt!.toISOString(),
     });
 

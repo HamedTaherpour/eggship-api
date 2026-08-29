@@ -2,12 +2,17 @@
  * Blog domain types (persistence-independent).
  * Public APIs expose published posts only. Media attachment is MED-01.
  */
+import type { MediaPresentation } from '../../media/domain/media-presentation';
 
 export interface BlogRecord {
   id: string;
   slug: string;
   title: string;
   body: string;
+  coverMediaId?: string | null;
+  cover?: MediaPresentation | null;
+  inlineMedia?: MediaPresentation[];
+  inlineMediaIds?: string[];
   excerpt?: string | null;
   seoTitle?: string | null;
   seoDescription?: string | null;
@@ -25,6 +30,8 @@ export interface BlogAuthorRecord {
   name: string;
   slug: string;
   bio: string | null;
+  avatarMediaId: string | null;
+  avatar?: MediaPresentation | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -47,6 +54,7 @@ export interface CreateBlogInput {
   seoTitle?: string | null;
   seoDescription?: string | null;
   authorId?: string | null;
+  coverMediaId?: string | null;
   categoryIds?: string[];
   tagIds?: string[];
 }
@@ -60,6 +68,7 @@ export interface UpdateBlogInput {
   seoTitle?: string | null;
   seoDescription?: string | null;
   authorId?: string | null;
+  coverMediaId?: string | null;
   categoryIds?: string[];
   tagIds?: string[];
 }

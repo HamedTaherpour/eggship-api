@@ -184,6 +184,7 @@ describe('BlogService', () => {
       slug: 'cage-free-eggs',
       title: 'How we pack cage-free eggs',
       excerpt: null,
+      cover: null,
       publishedAt: '2026-08-21T12:00:00.000Z',
     });
     expect(toPublicBlogDetailDto(published)).toEqual({
@@ -197,6 +198,8 @@ describe('BlogService', () => {
       author: null,
       categories: [],
       tags: [],
+      cover: null,
+      inlineMedia: [],
       publishedAt: '2026-08-21T12:00:00.000Z',
     });
     expect(toPublicBlogListItemDto(published)).not.toHaveProperty(
@@ -216,6 +219,7 @@ describe('BlogService', () => {
       publishedAt: null,
       createdAt: '2026-08-21T12:00:00.000Z',
       updatedAt: '2026-08-21T12:00:00.000Z',
+      cover: null,
     });
     expect(toAdminBlogDetailDto(draft).body).toBe('Pack eggs in a cool crate.');
   });

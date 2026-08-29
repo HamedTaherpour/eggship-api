@@ -166,6 +166,7 @@ describe('ProductService', () => {
       name: 'Cage-free eggs (30)',
       price: 625000,
       categoryId: CATEGORY_ID,
+      image: null,
     });
   });
 

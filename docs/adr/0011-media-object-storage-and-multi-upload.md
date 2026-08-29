@@ -25,5 +25,5 @@ The API deploys on Liara and must stay stateless: application disk is not canoni
 - Frontend retry is per failed file; successful Media ids remain valid.
 - Object storage and PostgreSQL can diverge (orphans or a missing object after a crash). DATA-02 owns cleanup; CAT-04 does not add a worker or invent retention.
 - Changing CDN/`STORAGE_PUBLIC_BASE_URL` does not require rewriting Media rows because URLs are derived.
-- Future Product/Blog FKs must Restrict against deleting in-use Media; CAT-04 does not add those FKs.
+- Future Product/Blog FKs must Restrict against deleting in-use Media; CAT-04 does not add those FKs. Attachment architecture is accepted in [ADR 0022](0022-media-attachment-and-reference-lifecycle.md) (MED-01).
 - Live credentialed bucket verification remains opt-in and is not required to complete CAT-04.

@@ -10,7 +10,7 @@ Durable boundaries for EggShip catalog and geography reference data. Field-level
 | `Region`   | `src/modules/regions`    | `GET /api/v1/regions` (active full list)           | `GET/POST/PATCH /api/v1/admin/regions`                |
 | `Product`  | `src/modules/products`   | `GET /api/v1/products`, `GET /api/v1/products/:id` | `GET/POST/PATCH /api/v1/admin/products` (+ `GET :id`) |
 
-Categories and Regions remain **independent** reference modules. Product references Category via FK (`ON DELETE RESTRICT`). Inventory quantities are **not** Product fields ([inventory.md](inventory.md), INV-01B). Media is a reusable library (CAT-04); Product/Blog/catalog Category attachment is later work (MED-01). Blog Media direction (cover, avatar, inline directives) is [ADR 0021](../docs/adr/0021-blog-content-architecture.md); public Product responses do not include media fields.
+Categories and Regions remain **independent** reference modules. Product references Category via FK (`ON DELETE RESTRICT`). Inventory quantities are **not** Product fields ([inventory.md](inventory.md), INV-01B). Media is a reusable library (CAT-04); Product image attachment is MED-01 / [ADR 0022](../docs/adr/0022-media-attachment-and-reference-lifecycle.md) (`Product.imageMediaId` — exactly one optional image; no gallery). Catalog Category has **no** V1 image. Blog Media direction (cover, avatar, inline directives) is [ADR 0021](../docs/adr/0021-blog-content-architecture.md) / ADR 0022. Public Product responses do not include media fields until MED-01 adds derived URL/id as approved.
 
 ## Public catalog contract (CAT-06)
 

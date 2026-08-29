@@ -67,7 +67,7 @@ A later ORD-07 `DELIVERED → RETURNED` transition does not settle, reopen, dele
 ## Media rules
 
 - `receiptMediaId` uses `ON DELETE RESTRICT`. Referenced receipt Media cannot be deleted while attached; deletion answers the referenced-media conflict contract.
-- Media deletion must check settlement references **before** storage object deletion so a restricted row never loses its object bytes. Neither object nor row is removed while referenced.
+- Media deletion must check **all** durable Media references **before** storage object deletion so a restricted row never loses its object bytes: Settlement receipt plus MED-01 consumers (Product image, Blog cover, BlogAuthor avatar, Blog inline registry) per [ADR 0022](../docs/adr/0022-media-attachment-and-reference-lifecycle.md). Neither object nor row is removed while referenced; the conflict is `MEDIA_REFERENCED`.
 - Settlement never stores binary bytes, `storageKey`, or a host-specific URL; URLs remain derived through Media infrastructure.
 
 ## Admin list and authorization

@@ -6,18 +6,20 @@ Architecture decisions are accepted in [ADR 0021](../docs/adr/0021-blog-content-
 
 CNT-04 uses a dependency-free, fail-closed token scanner for the approved Markdown
 profile. It stores Markdown source and never renders HTML; `::aparat` is validated
-and `::media` is syntax-checked but not resolved or persisted until MED-01. TanStack
+and `::media` is syntax-checked but not resolved or persisted until MED-01
+([ADR 0022](../docs/adr/0022-media-attachment-and-reference-lifecycle.md)). TanStack
 Markdown remains a frontend renderer candidate and is not a Nest dependency.
 
-Blog write transactions use the lock order `Blog -> BlogAuthor -> BlogCategory -> BlogTag`.
-Taxonomy lifecycle mutations lock only their own row, so author/category deactivation
-cannot form a reverse lock cycle with publish or association replacement. Association
-existence and active-state checks run after those locks and before the Blog write.
-Because CNT-04 was already applied to the isolated test database when the author
-invariant was found, the invariant is delivered by a forward `NOT VALID` PostgreSQL
-CHECK migration: legacy published rows remain readable, while every new or updated
-row must satisfy `isPublished = false OR authorId IS NOT NULL`. MIG-01 owns any later
-historical backfill and validation of the legacy exception.
+Blog write transactions use the lock order `Blog -> BlogAuthor -> BlogCategory -> BlogTag`
+(CNT-04). MED-01 / ADR 0022 extends Media-touching Blog writes with sorted Media locks:
+`Blog -> BlogAuthor -> BlogCategory -> BlogTag -> Media`. Taxonomy lifecycle mutations lock
+only their own row, so author/category deactivation cannot form a reverse lock cycle with
+publish or association replacement. Association existence and active-state checks run after
+those locks and before the Blog write. Because CNT-04 was already applied to the isolated
+test database when the author invariant was found, the invariant is delivered by a forward
+`NOT VALID` PostgreSQL CHECK migration: legacy published rows remain readable, while every
+new or updated row must satisfy `isPublished = false OR authorId IS NOT NULL`. MIG-01 owns
+any later historical backfill and validation of the legacy exception.
 
 ## Owned resources
 
@@ -119,13 +121,13 @@ Blog articles support images inside the body via the Media directive. Do **not**
 
 Resolution: Media ID -> Media module -> derived public URL ([media.md](media.md)).
 
-Until MED-01 registers those IDs durably, delete restriction cannot see inline references. CNT-04 must not claim inline Media is deletion-safe without that registry.
+MED-01 (ADR 0022) owns the durable `(blogId, mediaId)` registry discovered with the CNT-04 token/directive model on save (not regex-as-authority). Until that registry ships, delete restriction cannot see inline references. Alt/caption remain in the Markdown directive; do not store them as global Media metadata. Missing Media IDs fail the Blog save with `MEDIA_NOT_FOUND` (no silent strip).
 
 ## Cover Media
 
-One cover image: Blog.coverMediaId -> Media. Not an arbitrary URL. MED-01 defines Restrict, MEDIA_REFERENCED on delete, historical integrity, and orphan coordination (DATA-02). Cover may be used as the social/OG image in the frontend unless a later SEO task adds an override.
+One cover image: Blog.coverMediaId -> Media. Not an arbitrary URL. MED-01 / ADR 0022 define Restrict, `MEDIA_REFERENCED` on delete, replace-without-delete, and orphan coordination (DATA-02). Cover may be used as the social/OG image in the frontend unless a later SEO task adds an override.
 
-Current CNT-01/CNT-02 Admin DTOs must not expose media fields. CNT-04/MED-01 add them when the FK exists.
+CNT-04 shipped without Media FKs. MED-01 adds cover (and Author avatar / inline registry) in one additive migration.
 
 ## Aparat embeds
 
@@ -162,7 +164,7 @@ Fallbacks: page title seoTitle ?? title; meta description seoDescription ?? exce
 
 BlogAuthor: id, name, slug, optional plain-text bio, optional avatarMediaId, isActive, timestamps.
 
-Blog.authorId -> BlogAuthor. Not an Admin FK. Published posts require an **active** author. Drafts may omit authorId until publish. Deactivation hides the author from public author indexes and blocks new assignment; existing published posts stay public and read the live author row (not a snapshot). Avatar lifecycle is MED-01.
+Blog.authorId -> BlogAuthor. Not an Admin FK. Published posts require an **active** author. Drafts may omit authorId until publish. Deactivation hides the author from public author indexes and blocks new assignment; existing published posts stay public and read the live author row (not a snapshot). Avatar lifecycle is MED-01 / ADR 0022 (`ON DELETE RESTRICT`; deactivation does not delete avatar Media).
 
 ## Editorial provenance
 
@@ -215,7 +217,9 @@ Admin Editor preview and storefront Blog renderer must share the same Markdown p
 
 ## Media boundary
 
-CNT-01/CNT-02 have **no** Blog to Media relationship. CAT-04 owns Media metadata. MED-01 owns Product/Blog/catalog Category attachment, historical-reference rules, durable inline-directive Media registration, delete restriction, and orphan cleanup coordination with DATA-02.
+CNT-04 has **no** Blog→Media FKs yet. CAT-04 owns Media metadata/upload. MED-01 / [ADR 0022](../docs/adr/0022-media-attachment-and-reference-lifecycle.md) owns Blog cover, Author avatar, durable inline-directive registration, Product image, reference-aware delete, and usage inspection. Catalog Category has **no** V1 image. Orphan retention/cleanup is DATA-02.
+
+Aparat remains an external controlled embed and does not create Media.
 
 Do not invent a polymorphic attachment table in a content task that would replace Media rows. Do not persist host-specific URLs on Blog.
 
@@ -234,13 +238,13 @@ Public list reads use BlogRepository.listPublished; unrestricted listing is a se
 | Core Blog persistence, public list/detail                          | CNT-01 (DONE)            |
 | Admin create/edit/publish/unpublish                                | CNT-02 (DONE)            |
 | This architecture                                                  | CNT-03 (DONE) / ADR 0021 |
-| Markdown contract, directives, taxonomy, excerpt, SEO, Author APIs | CNT-04 (READY)           |
-| Cover/avatar/inline Media FKs and lifecycle                        | MED-01                   |
+| Markdown contract, directives, taxonomy, excerpt, SEO, Author APIs | CNT-04 (DONE)            |
+| Cover/avatar/inline Media FKs, registry, lifecycle                 | MED-01 (READY; ADR 0022) |
 | Audit events                                                       | AUD-01 / AUD-02          |
 | Legacy field inventory and HTML conversion                         | MIG-01 / MIG-02          |
 | Comments, revisions, scheduling, Yoast SEO                         | Not approved             |
 
-Prefer one additive migration for excerpt, SEO fields, authorId, coverMediaId, categories, and tags when CNT-04 and the Blog slice of MED-01 land together. Do not change body TEXT.
+CNT-04 already shipped excerpt/SEO/author/taxonomy without Media FKs. MED-01 adds cover/avatar/inline registry in one additive Media migration. Do not change body TEXT.
 
 ## Legacy evidence / MIG-01 deltas
 

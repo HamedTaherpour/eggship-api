@@ -10,7 +10,7 @@ This file is the primary instruction entry point for every AI coding agent worki
 - [Catalog](instructions/catalog.md) for Category/Region reference ownership and lifecycle boundaries.
 - [Content](instructions/content.md) for Blog publication, Markdown, taxonomy, Author, SEO, and public content boundaries ([ADR 0021](docs/adr/0021-blog-content-architecture.md)).
 - [Pricing](instructions/pricing.md) for current price vs PriceHistory ownership and change semantics.
-- [Media](instructions/media.md) for Media library storage, upload bounds, and deletion/orphan policy.
+- [Media](instructions/media.md) for Media library storage, upload bounds, attachment/reference lifecycle, and deletion/orphan policy ([ADR 0011](docs/adr/0011-media-object-storage-and-multi-upload.md), [ADR 0022](docs/adr/0022-media-attachment-and-reference-lifecycle.md)).
 - [Inventory](instructions/inventory.md) for stock quantities, ledger, reservation lifecycle, and Orders↔Inventory boundaries.
 - [Orders](instructions/orders.md) for order snapshots, ownership, money, and Inventory orchestration boundaries.
 - [Commerce policy](instructions/commerce-policy.md) for ordering hours, minimum cart quantity, and Order-acceptance settings.

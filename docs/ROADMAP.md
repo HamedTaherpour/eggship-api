@@ -9,11 +9,11 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Total       |   109 |
 | DONE        |    72 |
 | IN_PROGRESS |     0 |
-| READY       |     0 |
+| READY       |     1 |
 | BLOCKED     |     0 |
-| PLANNED     |    37 |
+| PLANNED     |    36 |
 
-- Current task: `CNT-04` (Blog content model implementation) is closed. `MED-01` is the next downstream task and remains PLANNED; no task remains BLOCKED.
+- Current task: `MED-01` (Media attachment and reference lifecycle) is **READY**. Human Architecture Gate closed in [ADR 0022](adr/0022-media-attachment-and-reference-lifecycle.md); implementation not started. No task remains BLOCKED.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate.
 
 ## Status model
@@ -943,13 +943,25 @@ Explicitly out of scope: Editing identity credentials and defining store busines
 
 ### MED-01 — File storage, uploads, and remaining media workflows
 
-Status: PLANNED | Depends on: CAT-04, AUTH-08 | Primary: Codex after Human architecture approval | Review: Claude/Cursor security review
+Status: READY | Depends on: CAT-04, AUTH-08, CNT-04 | Primary: Codex | Review: Claude/Cursor security review
 
-Scope: Remaining media workflows after CAT-04: Product, Blog, and catalog Category attachment and detachment, historical-reference rules, and controlled orphan cleanup. For Blog, implement the ADR 0021 Media contract: `Blog.coverMediaId`, `BlogAuthor.avatarMediaId`, durable inline `::media` Media-ID registration extracted from Markdown AST on save, `ON DELETE RESTRICT` / `MEDIA_REFERENCED`, and coordination with DATA-02 orphans. CAT-04 already delivered the storage port, validated single/multi upload, Admin list/detail/delete, and the in-memory plus S3-compatible adapters. Prefer one additive migration with CNT-04 for Blog Media columns when both land together.
+Architecture gate: **Closed** ([ADR 0022](adr/0022-media-attachment-and-reference-lifecycle.md)). Human-approved V1 Media attachment architecture is recorded; implementation may start. Do not treat this gate closure as implementation DONE.
 
-Acceptance criteria: Attachment does not assume one-to-one Product↔Media; referenced historical media is not deleted; Blog cover/avatar/inline directive IDs are Restrict-protected; orphan cleanup ownership is explicit; live storage verification uses a dedicated TEST bucket.
+Scope: Implement ADR 0022 on the CAT-04 foundation: Product optional single image (`imageMediaId`), Blog cover (`coverMediaId`), BlogAuthor avatar (`avatarMediaId`), durable inline `::media` registry extracted with the CNT-04 token/directive model, reference validation (`MEDIA_NOT_FOUND`), reference-aware delete (`MEDIA_REFERENCED` across Product/Blog/Author/inline/Settlement), replace-without-delete, Admin usage inspection, OpenAPI, and tests. Preserve CAT-04 upload/storage/list/search and image-only JPEG/PNG/WebP bounds. Coordinate orphan ownership with DATA-02 (no immediate orphan deletion; no retention durations invented). Prefer one coherent additive migration (CNT-04 already shipped without Media FKs).
 
-Explicitly out of scope: Selecting unapproved transformations or deleting referenced historical media. Re-implementing CAT-04 upload/list/delete. Inventing Markdown grammar, Aparat, taxonomy, excerpt, SEO, or public Author (CNT-03/CNT-04). Product/catalog Category attachment architecture beyond Restrict remains a MED-01 architecture decision.
+Acceptance criteria:
+
+- Nullable `Product.imageMediaId`, `Blog.coverMediaId`, and `BlogAuthor.avatarMediaId` FKs use `ON DELETE RESTRICT`; catalog Category has no image.
+- Product supports exactly one optional Media image (no gallery); replace changes the reference only and does not delete Media.
+- Blog save/update discovers distinct inline Media IDs via the approved parser/token model (not regex-as-authority), persists a durable `(blogId, mediaId)` registry without duplicating body, and fails with `MEDIA_NOT_FOUND` on missing/unusable Media (no silent strip).
+- `DELETE` Media checks all durable references (Product image, Blog cover, BlogAuthor avatar, inline registry, Settlement receipt) under Media `FOR UPDATE` and returns 409 `MEDIA_REFERENCED` when any exist; no auto-detach and no consumer cascade-delete.
+- Unreferenced Media remains valid; MED-01 does not implement orphan cleanup (DATA-02).
+- Admin usage inspection shows where a Media id is referenced.
+- Public URLs remain derived; consumers store Media IDs only; CAT-04 upload limits/types and storage failure ordering are preserved.
+- Concurrent attach vs delete cannot leave dangling relationships (PostgreSQL locks/FKs; no Redis locks).
+- Live storage verification uses a dedicated TEST bucket when exercised; production-bucket proof remains DEP-02.
+
+Explicitly out of scope: Re-implementing CAT-04 upload/list/delete; Sharp/thumbnails/transcode pipelines; folders/collections/DAM tagging/versioning; private Media ACL/signed downloads; Aparat-as-Media; Category images; Product gallery; immediate orphan deletion or invented retention periods; Markdown/Aparat/taxonomy/excerpt/SEO/Author invention (CNT-03/CNT-04); distributed transactions or BullMQ for basic Media CRUD.
 
 ## Phase 9 — Transactional Async & Operational Features
 
@@ -1321,7 +1333,7 @@ Explicitly out of scope: Autonomous AI cutover and deleting legacy data/services
 | ------------------------------- | --------------------------------------------- |
 | Health                          | FND-01, DEP-03, DEP-04                        |
 | Catalog                         | CAT-01 through CAT-06                         |
-| Blog                            | CNT-01, CNT-02, CNT-03, CNT-04                |
+| Blog                            | CNT-01, CNT-02, CNT-03, CNT-04, MED-01        |
 | Auth / OTP                      | AUTH-01 through AUTH-08                       |
 | Orders                          | ORD-01 through ORD-08                         |
 | Admin Auth / Admin Admins       | AUTH-03, AUTH-08, ADM-00, ADM-AUTH-01, ADM-01 |
@@ -1381,7 +1393,7 @@ The following are not implementation assumptions:
 - Trusted reverse-proxy / Nest Express `trust proxy` configuration so OTP IP rate limits see the real client behind Liara; live Kavenegar credential smoke test when account access exists (deploy).
 - Customer/store business profile fields required at registration vs later completion (store name, manager name, address, region, coordinates): no in-repo legacy inventory yet (`MIG-01`); AUTH-07 shipped Pattern A phone-only identity with empty profile update allowlist. Region **reference** rows exist (CAT-02); profile `regionId` FK remains deferred.
 - Category/Region legacy parity gaps (MIG-01): name uniqueness, public slug, sortOrder, category hierarchy/parent, shipping-related Region fields, and whether hard delete is ever allowed after Product/profile FKs land.
-- Product legacy parity gaps (MIG-01): SKU/code uniqueness, description, unit/package semantics, media/image attachment once CAT-04 exists, whether zero-price products should be allowed, and whether product name uniqueness is ever required.
+- Product legacy parity gaps (MIG-01): SKU/code uniqueness, description, unit/package semantics, whether zero-price products should be allowed, and whether product name uniqueness is ever required. Product image attachment is decided in ADR 0022 (exactly one optional `imageMediaId`; no gallery); MED-01 implements it.
 - Order transition runtime (ORD-02), customer create/read HTTP (`ORD-03A`/`ORD-04`), customer cancellation HTTP (`ORD-05`), and Admin Orders HTTP (`ORD-06`) are DONE. V1 state machine, actors, concurrency, and Inventory orchestration rules are settled in ADR 0014 / [instructions/orders.md](../instructions/orders.md). Shipping/address snapshot fields, dispatch board, return HTTP beyond ORD-07 scope, and payment/refund semantics remain deferred. Deferred settlement is separately planned in SET-01/SET-02 and must not become Order state.
 - Whether a future `PACKED`/`PICKED` state should move the physical `onHand` decrement earlier than `SHIPPED`.
 - Whether partial fulfillment or split shipment is ever allowed after V1.
@@ -1390,8 +1402,7 @@ The following are not implementation assumptions:
 - Deferred settlement lifecycle is decided in [ADR 0018](adr/0018-deferred-settlement-lifecycle.md) / SET-01 (separate `OrderSettlement` module; `DELIVERED`-only creation; `OPEN`/`SETTLED` with derived overdue; one current receipt; receipt-required explicit settle; no V1 reopen; `RETURNED` leaves settlement untouched; full `Order.total`; `SUPER_ADMIN`-only grants). Remaining explicit decisions, not implementation assumptions: `WAREHOUSE`/`ORDER_OPS` settlement permission grants (MIG-01 evidence), settlement without receipt, correction/reopen workflow, return/refund/credit adjustments interacting with settlement, multiple receipts or PDF proof, customer-facing settlement surfaces, and due/overdue reminders. No gateway, card/bank fields, refunds, or accounting subsystem is approved.
 - Future USER referral, visitor conversion, attribution correction/reassignment, reward policy, and any broader self-referral rule remain deferred. V1 Visitor attribution, duplicate handling, no-op existing-user behavior, no-reuse codes, and no speculative self-referral matching are settled in ADR 0020 / `instructions/referrals.md`.
 - Notification type/content rules, push provider/consent, delivery guarantees, and token lifecycle.
-- Media historical-reference behavior when Product/catalog Category attach to Media (MED-01). Blog cover, author avatar, and inline `::media` direction is decided in ADR 0021; MED-01 still implements Restrict, durable inline registration, and Product/catalog Category attachment. CNT-01/CNT-02 Blog has no Media FK. Upload limits/types and the S3-compatible provider abstraction are decided in CAT-04 / ADR 0011; orphan cleanup remains DATA-02 (no retention periods invented). Live production-bucket verification remains pending credentials (DEP-02).
-- Blog V1 content architecture is accepted in [ADR 0021](adr/0021-blog-content-architecture.md) (Markdown source, directives, taxonomy, excerpt, minimal SEO, public Author, no scheduling/revisions). Remaining implementation choices for CNT-04: exact directive grammar; whether public taxonomy/author routes ship in the same task as Blog field expansion. MIG-01 may still discover legacy deltas (comments, gallery, slug redirects, HTML bodies, scheduled publish); record those against ADR 0021 rather than reverting it. CNT-01 shipped `isPublished` + UTC `publishedAt` without a schedule gate.
+- Media attachment and reference lifecycle is decided in [ADR 0022](adr/0022-media-attachment-and-reference-lifecycle.md) (Human Architecture Gate closed; MED-01 READY): image-only JPEG/PNG/WebP; Product exactly one optional image; Blog cover + Author avatar + durable inline registry; catalog Category has no image; shared library with valid unreferenced Media; `ON DELETE RESTRICT` / `MEDIA_REFERENCED`; replace-without-delete; usage inspection in MED-01; orphan cleanup deferred to DATA-02 with conservative grace (no retention invented); CAT-04 storage/upload bounds preserved. Remaining: MED-01 implementation, DATA-02 orphan policy/durations, DEP-02 live production-bucket verification. Blog Markdown/taxonomy remain ADR 0021 / CNT-04 (DONE).
 - Tehran/business-day definitions and canceled/returned treatment for each analytics metric.
 - Retention periods for every data class and backup recovery objectives.
 - Legacy compatibility, migration transforms, rollout waves, parallel-validation feasibility, and final cutover strategy.

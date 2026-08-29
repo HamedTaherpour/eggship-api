@@ -133,9 +133,9 @@ Admin editor preview and storefront Blog renderer must share the same Markdown p
 ### 15. MED-01 boundary
 
 - Media bytes, metadata, upload/delete library: CAT-04 / ADR 0011
-- Blog.coverMediaId, BlogAuthor.avatarMediaId FKs, Restrict, MEDIA_REFERENCED: MED-01 (content may persist the columns in a coordinated migration)
-- Durable inline Media IDs extracted from media directives: MED-01
-- Product and catalog Category attachments: MED-01
+- Blog.coverMediaId, BlogAuthor.avatarMediaId FKs, Restrict, MEDIA_REFERENCED, durable inline registry: MED-01 ([ADR 0022](0022-media-attachment-and-reference-lifecycle.md))
+- Product.imageMediaId (exactly one optional image): MED-01 / ADR 0022
+- Catalog Category images: **not approved** in V1 (ADR 0022)
 - Orphan object retention periods: DATA-02
 - Markdown grammar, Aparat, taxonomy, excerpt, SEO, Author APIs: CNT-04
 
@@ -146,12 +146,12 @@ These requirements are approved product architecture. MIG-01 must not drop them 
 ### 17. Implementation ownership
 
 - CNT-03 (this ADR + durable instructions/content.md): architecture only.
-- CNT-04: content model implementation (schema/APIs for excerpt, SEO, Author, categories, tags, Markdown/directive contract).
-- MED-01: Blog/Product/catalog Category Media references and lifecycle.
+- CNT-04: content model implementation (schema/APIs for excerpt, SEO, Author, categories, tags, Markdown/directive contract) — DONE without Media FKs.
+- MED-01: Blog/Product Media references and lifecycle per ADR 0022 (Human Architecture Gate closed).
 - AUD-01 / AUD-02: mutation event trail.
 - MIG-01 / MIG-02: legacy inventory and any HTML-to-Markdown data conversion.
 
-Prefer **one additive migration** for excerpt, seoTitle, seoDescription, authorId, coverMediaId, categories, and tags when CNT-04 and the Blog slice of MED-01 land together. A CNT-04-first additive migration without Media FKs is allowed if MED-01 is not ready; a second additive Media migration then follows. Do not emit a sequence of one-column migrations.
+CNT-04 shipped an additive migration without Media FKs. MED-01 owns one coherent additive Media migration for coverMediaId, avatarMediaId, Product.imageMediaId, and the inline registry. Do not emit a sequence of one-column migrations.
 
 ### Alternatives considered
 

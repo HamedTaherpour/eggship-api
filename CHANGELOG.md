@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- DATA-01 data classification and retention decision register: current data inventory, approved A–G lifecycle principles, explicit unresolved durations, lifecycle invariants, and roadmap ownership. No cleanup implementation or retention duration was added.
 - AUD-01 AuditLog foundation: additive append-only PostgreSQL model, closed action/entity registries, action-specific metadata validation with bounded safe JSON, context-derived request/correlation linkage, transaction-aware writer, and focused unit/PostgreSQL coverage. Domain event integration remains AUD-02; read and lifecycle APIs remain AUD-03/DATA-01/DATA-03.
 - MED-01 Media relationships: optional Product image, Blog cover, BlogAuthor avatar, durable canonical-parser-backed inline registry, reference-aware usage inspection, restrictive delete protection, and PostgreSQL Media-row locking. Upload/storage limits and orphan semantics remain CAT-04/DATA-02 owned.
 - MED-01 final verification: added real-PostgreSQL replacement atomicity coverage and coordinated attach-wins/delete-wins proofs for Media consumers, confirming rollback, retention, stable reference protection, and no dangling state. Independent order-persistence verification passed; the broad suite retains only the known unrelated notification-ordering flake.

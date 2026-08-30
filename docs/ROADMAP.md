@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   109 |
-| DONE        |    74 |
+| DONE        |    75 |
 | IN_PROGRESS |     0 |
 | READY       |     0 |
 | BLOCKED     |     0 |
-| PLANNED     |    35 |
+| PLANNED     |    34 |
 
-- Current task: `AUD-01` (AuditLog model and safe event contract) is **DONE**. Human Architecture Gate closed in [ADR 0023](adr/0023-auditlog-safe-event-contract.md); implementation and independent review are complete. Domain integration remains AUD-02; read and lifecycle APIs remain AUD-03/DATA-01/DATA-03. No task remains BLOCKED.
+- Current task: `DATA-01` (Data classification and retention decision register) is **DONE**. Human legal/privacy/operations sign-off closed the canonical register in [data-lifecycle.md](data-lifecycle.md); independent final review passed with no BLOCKER, HIGH, or MEDIUM findings. Domain audit integration remains AUD-02; read APIs remain AUD-03; lifecycle enforcement remains DATA-02/DATA-03. No task remains BLOCKED.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate.
 
 ## Status model
@@ -1181,13 +1181,17 @@ Explicitly out of scope: Chaos tooling or external monitoring vendors without ap
 
 ### DATA-01 — Data classification and retention decision register
 
-Status: PLANNED | Depends on: AUD-01, NOT-01, REF-02, COM-02, DLU-02, SET-02 | Primary: Human + ChatGPT architecture process | Review: Human legal/privacy/operations approval
+Status: DONE | Depends on: AUD-01, NOT-01, REF-02, COM-02, DLU-02, SET-02 | Primary: Human + ChatGPT architecture process | Review: Human legal/privacy/operations approval
 
 Scope: Classify AuditLog, application logs, inventory ledger, price history, orders/business records, commerce-policy audit evidence, discount-usage records, settlement/receipt references, push installations/tokens, visitor/referral raw data, media, temporary auth state, and backups.
 
 Acceptance criteria: Legal, privacy, volume, cost, recovery, access, deletion, and hold requirements are recorded per class; missing retention periods remain unresolved rather than guessed.
 
 Explicitly out of scope: Inventing durations or deleting data.
+
+Register: [data-lifecycle.md](data-lifecycle.md) is the canonical decision register (classification inventory, sensitivity/lifecycle vocabulary, approved A–G principles, existing expiry mechanisms, invariants, consolidated unresolved register, roadmap ownership, and review triggers).
+
+Delivered: Data classification inventory, sensitivity/lifecycle vocabulary, approved A–G lifecycle principles, existing expiry mechanisms, invariants, consolidated unresolved register, roadmap ownership boundaries, and review triggers in [data-lifecycle.md](data-lifecycle.md). Human legal/privacy/operations sign-off closed the register; independent final review passed with no BLOCKER, HIGH, or MEDIUM findings. No retention durations were approved; no cleanup implementation was added. Push-token detailed lifecycle remains NOT-04; enforcement remains DATA-02 after policy exists.
 
 ### DATA-02 — Temporary-state and orphan-cleanup policy
 
@@ -1410,7 +1414,7 @@ The following are not implementation assumptions:
 - Notification type/content rules, push provider/consent, delivery guarantees, and token lifecycle.
 - Media attachment and reference lifecycle is decided in [ADR 0022](adr/0022-media-attachment-and-reference-lifecycle.md) (Human Architecture Gate closed; MED-01 READY): image-only JPEG/PNG/WebP; Product exactly one optional image; Blog cover + Author avatar + durable inline registry; catalog Category has no image; shared library with valid unreferenced Media; `ON DELETE RESTRICT` / `MEDIA_REFERENCED`; replace-without-delete; usage inspection in MED-01; orphan cleanup deferred to DATA-02 with conservative grace (no retention invented); CAT-04 storage/upload bounds preserved. Remaining: MED-01 implementation, DATA-02 orphan policy/durations, DEP-02 live production-bucket verification. Blog Markdown/taxonomy remain ADR 0021 / CNT-04 (DONE).
 - Tehran/business-day definitions and canceled/returned treatment for each analytics metric.
-- Retention periods for every data class and backup recovery objectives.
+- Retention periods for every data class and backup recovery objectives (classification and approved lifecycle principles in [data-lifecycle.md](data-lifecycle.md); durations remain **UNRESOLVED** pending legal/accounting/operations approval and DATA-02/DATA-03/DEP-05 work).
 - Legacy compatibility, migration transforms, rollout waves, parallel-validation feasibility, and final cutover strategy.
 
 ## Roadmap maintenance policy

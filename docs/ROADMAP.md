@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   109 |
-| DONE        |    73 |
+| DONE        |    74 |
 | IN_PROGRESS |     0 |
-| READY       |     1 |
+| READY       |     0 |
 | BLOCKED     |     0 |
 | PLANNED     |    35 |
 
-- Current task: `MED-01` (Media attachment and reference lifecycle) is **DONE**. Human Architecture Gate closed in [ADR 0022](adr/0022-media-attachment-and-reference-lifecycle.md); implementation and final verification are complete. No task remains BLOCKED.
+- Current task: `AUD-01` (AuditLog model and safe event contract) is **DONE**. Human Architecture Gate closed in [ADR 0023](adr/0023-auditlog-safe-event-contract.md); implementation and independent review are complete. Domain integration remains AUD-02; read and lifecycle APIs remain AUD-03/DATA-01/DATA-03. No task remains BLOCKED.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate.
 
 ## Status model
@@ -1069,15 +1069,17 @@ Explicitly out of scope: Premature analytics databases or unmeasured caching.
 
 ### AUD-01 — AuditLog model and safe event contract
 
-Status: READY | Depends on: AUTH-02, FND-03 | Primary: Codex | Review: Claude/Cursor, Human migration review
+Status: DONE | Depends on: AUTH-02, FND-03 | Primary: Codex | Review: Claude/Cursor, Human migration review
 
-Architecture gate: **Closed** ([ADR 0023](adr/0023-auditlog-safe-event-contract.md)). Human security/privacy architecture gate passed; accepted ADR 0023 is the implementation contract. Remaining implementation checkpoints (metadata bounds, registries, indexes) are non-blocking for READY.
+Architecture gate: **Closed** ([ADR 0023](adr/0023-auditlog-safe-event-contract.md)). Human security/privacy architecture gate passed; accepted ADR 0023 is the authoritative implementation contract. ADR 0023 implementation checkpoints are satisfied.
 
 Scope: Implement the accepted AuditLog model and safe event contract per ADR 0023: append-oriented audit events with actor, action, entity identity, action-specific typed metadata, request/correlation IDs, and timestamps.
 
 Acceptance criteria: Sensitive fields are excluded/redacted by construction per ADR 0023; action/entity vocabularies and actor-system semantics are stable; indexes support authorized review; ADR 0023 implementation checkpoints are satisfied before DONE.
 
 Explicitly out of scope: Logging every read, raw payload capture, retention periods, legal hold, and lifecycle deletion (deferred to DATA-01/DATA-03).
+
+Delivered: Additive append-only `AuditLog` PostgreSQL model and migration; closed action/entity registries and action-specific metadata validation with bounded safe JSON per ADR 0023; context-derived `requestId`/`correlationId` linkage; transaction-aware `AuditLogService.append()` writer with INSERT-only repository boundary; [audit-log.md](audit-log.md) implementation contract; unit and PostgreSQL integration coverage. Domain event integration remains AUD-02; read APIs remain AUD-03; retention and lifecycle deletion remain DATA-01/DATA-03.
 
 ### AUD-02 — Domain audit integration
 

@@ -885,6 +885,28 @@ model OutboxEvent {
   @@index([publishedAt, id])
 }
 
+/// Immutable, append-only audit fact. Actor and entity identifiers are
+/// historical scalar values deliberately kept free of ownership FKs.
+model AuditLog {
+  id            String   @id @default(uuid()) @db.Uuid
+  occurredAt    DateTime @default(now()) @db.Timestamptz(3)
+  actorType     String   @db.VarChar(16)
+  actorId       String?  @db.Uuid
+  action        String   @db.VarChar(100)
+  entityType    String   @db.VarChar(32)
+  entityId      String?  @db.Uuid
+  requestId     String?  @db.VarChar(128)
+  correlationId String?  @db.VarChar(128)
+  metadata      Json?
+
+  @@index([occurredAt, id])
+  @@index([actorType, actorId, occurredAt, id])
+  @@index([entityType, entityId, occurredAt, id])
+  @@index([action, occurredAt, id])
+  @@index([requestId, occurredAt, id])
+  @@index([correlationId, occurredAt, id])
+}
+
 enum OutboxEventState {
   PENDING
   CLAIMED

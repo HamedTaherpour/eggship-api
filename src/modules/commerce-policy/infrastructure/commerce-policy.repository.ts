@@ -24,6 +24,7 @@ import {
 export interface PolicyMutationResult {
   settings: CommerceSettingsRecord;
   changed: boolean;
+  overrideId?: string;
 }
 
 export interface OverrideMutationResult extends PolicyMutationResult {
@@ -121,9 +122,10 @@ export class CommercePolicyRepository {
   async initialize(
     input: CommerceSettingsInput,
     actorId: string,
+    tx?: TransactionContext,
   ): Promise<CommerceSettingsRecord> {
     try {
-      const created = await this.prisma.commerceSettings.create({
+      const created = await this.db(tx).commerceSettings.create({
         data: {
           id: COMMERCE_SETTINGS_SINGLETON_ID,
           ...input,
@@ -135,7 +137,7 @@ export class CommercePolicyRepository {
       return mapSettings(created);
     } catch (error: unknown) {
       if (isUniqueConstraintError(error)) {
-        const current = await this.getSettings();
+        const current = await this.getSettings(tx);
         throw new CommercePolicyRevisionConflictError(
           current?.revision ?? null,
         );
@@ -148,8 +150,9 @@ export class CommercePolicyRepository {
     input: CommerceSettingsInput,
     expectedRevision: number,
     actorId: string,
+    tx?: TransactionContext,
   ): Promise<PolicyMutationResult> {
-    return this.prisma.$transaction(async (client) => {
+    return this.runIn(tx, async (client) => {
       await lockSettings(client);
       const current = await client.commerceSettings.findUnique({
         where: { id: COMMERCE_SETTINGS_SINGLETON_ID },
@@ -173,7 +176,10 @@ export class CommercePolicyRepository {
       const updated = await client.commerceSettings.findUniqueOrThrow({
         where: { id: COMMERCE_SETTINGS_SINGLETON_ID },
       });
-      return { settings: mapSettings(updated), changed: true };
+      return {
+        settings: mapSettings(updated),
+        changed: true,
+      };
     });
   }
 
@@ -182,8 +188,9 @@ export class CommercePolicyRepository {
     input: CommerceOverrideInput,
     expectedRevision: number,
     actorId: string,
+    tx?: TransactionContext,
   ): Promise<OverrideMutationResult> {
-    return this.prisma.$transaction(async (client) => {
+    return this.runIn(tx, async (client) => {
       await lockSettings(client);
       const settings = await client.commerceSettings.findUnique({
         where: { id: COMMERCE_SETTINGS_SINGLETON_ID },
@@ -241,8 +248,9 @@ export class CommercePolicyRepository {
     localDate: string,
     expectedRevision: number,
     actorId: string,
+    tx?: TransactionContext,
   ): Promise<PolicyMutationResult> {
-    return this.prisma.$transaction(async (client) => {
+    return this.runIn(tx, async (client) => {
       await lockSettings(client);
       const settings = await client.commerceSettings.findUnique({
         where: { id: COMMERCE_SETTINGS_SINGLETON_ID },
@@ -267,8 +275,20 @@ export class CommercePolicyRepository {
       const updated = await client.commerceSettings.findUniqueOrThrow({
         where: { id: COMMERCE_SETTINGS_SINGLETON_ID },
       });
-      return { settings: mapSettings(updated), changed: true };
+      return {
+        settings: mapSettings(updated),
+        changed: true,
+        overrideId: existing.id,
+      };
     });
+  }
+
+  private async runIn<T>(
+    tx: TransactionContext | undefined,
+    work: (client: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    if (tx !== undefined) return work(resolvePrismaConnection(this.prisma, tx));
+    return this.prisma.$transaction(work);
   }
 }
 

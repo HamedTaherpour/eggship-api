@@ -130,8 +130,12 @@ export class AdminProductsController {
   @ApiForbiddenResponse({ type: ApiErrorResponseDto })
   async create(
     @Body() body: CreateProductBodyDto,
+    @Req() request: Request,
   ): Promise<AdminProductResponseDto> {
-    const created = await this.products.create(body);
+    const created = await this.products.create(
+      body,
+      getAuthenticatedPrincipal(request),
+    );
     return { data: toAdminProductDto(created) };
   }
 

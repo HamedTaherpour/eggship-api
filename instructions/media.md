@@ -180,7 +180,12 @@ Uploading the same bytes twice creates two Media records. No content hash or per
 
 Log aggregate batch counts (`media.batch.completed`) and delete outcomes. Log unexpected per-file storage/persistence failures at error with stable codes (no bytes, no raw filenames, no provider internals). Do not log file bytes or raw client filenames.
 
-Upload and delete are auditable Admin candidates for AUD-01. Do not write fake AuditLog rows.
+Media deletion is integrated with AUD-02 as `media.deleted`: the authenticated
+Admin actor, Media entity UUID, and null metadata are appended in the same
+PostgreSQL transaction as the durable Media-row deletion. The event proves the
+database transition only; it does not prove distributed atomicity or that
+object bytes are definitely gone. Upload is not audited, and failed or
+referenced delete attempts remain operational logs only.
 
 ## Image dimensions
 

@@ -1,8 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { ApplicationError } from '../../../common/errors/application-error';
 import { ApplicationLogger } from '../../../common/observability/application-logger.service';
 import { TransactionRunner } from '../../../infrastructure/database/transaction';
 import type { TransactionContext } from '../../../infrastructure/database/transaction';
+import { AuditLogService } from '../../audit/application/audit-log.service';
+import {
+  AuditAction,
+  AuditEntityType,
+  type AuditEvent,
+} from '../../audit/domain/audit-event';
 import { InventoryService } from '../../inventory/application/inventory.service';
 import {
   InventoryReservationConflictError,
@@ -62,6 +68,7 @@ export class OrderTransitionService {
     private readonly inventory: InventoryService,
     private readonly logger: ApplicationLogger,
     private readonly orderStatusNotifications: OrderStatusNotificationService,
+    @Optional() private readonly audit?: AuditLogService,
   ) {}
 
   async confirmOrder(
@@ -93,6 +100,7 @@ export class OrderTransitionService {
         actor,
         'order.confirmed',
         OrderStatus.PENDING_REVIEW,
+        ctx,
       );
     });
   }
@@ -130,6 +138,7 @@ export class OrderTransitionService {
         actor,
         'order.cancelled',
         OrderStatus.PENDING_REVIEW,
+        ctx,
       );
     });
   }
@@ -196,7 +205,13 @@ export class OrderTransitionService {
         ctx,
       );
       await this.orderStatusNotifications.generate(notificationInput(won), ctx);
-      return this.succeeded(won, actor, 'order.shipped', OrderStatus.CONFIRMED);
+      return this.succeeded(
+        won,
+        actor,
+        'order.shipped',
+        OrderStatus.CONFIRMED,
+        ctx,
+      );
     });
   }
 
@@ -219,7 +234,13 @@ export class OrderTransitionService {
         });
       }
       await this.orderStatusNotifications.generate(notificationInput(won), ctx);
-      return this.succeeded(won, actor, 'order.delivered', OrderStatus.SHIPPED);
+      return this.succeeded(
+        won,
+        actor,
+        'order.delivered',
+        OrderStatus.SHIPPED,
+        ctx,
+      );
     });
   }
 
@@ -254,6 +275,7 @@ export class OrderTransitionService {
       actor,
       'order.cancelled',
       OrderStatus.PENDING_REVIEW,
+      ctx,
     );
   }
 
@@ -283,7 +305,13 @@ export class OrderTransitionService {
       ctx,
     );
     await this.orderStatusNotifications.generate(notificationInput(won), ctx);
-    return this.succeeded(won, actor, 'order.cancelled', OrderStatus.CONFIRMED);
+    return this.succeeded(
+      won,
+      actor,
+      'order.cancelled',
+      OrderStatus.CONFIRMED,
+      ctx,
+    );
   }
 
   private async releaseDiscountUsage(
@@ -418,13 +446,31 @@ export class OrderTransitionService {
     throw new OrderInvalidTransitionError(input.invalidMessage);
   }
 
-  private succeeded(
+  private async succeeded(
     order: OrderRecord,
     actor: OrderActor,
     operation: string,
     fromStatus: OrderStatus,
-  ): OrderTransitionResult {
+    ctx: TransactionContext,
+  ): Promise<OrderTransitionResult> {
     assertLifecycleTimestamps(order);
+    const actionByOperation: Record<string, AuditAction> = {
+      'order.cancelled': AuditAction.ORDER_CANCELLED,
+      'order.confirmed': AuditAction.ORDER_CONFIRMED,
+      'order.shipped': AuditAction.ORDER_SHIPPED,
+      'order.delivered': AuditAction.ORDER_DELIVERED,
+    };
+    await this.audit?.append(
+      {
+        action: actionByOperation[operation]!,
+        actorType: actor.type,
+        actorId: actor.id,
+        entityType: AuditEntityType.ORDER,
+        entityId: order.id,
+        metadata: undefined,
+      } as AuditEvent,
+      ctx,
+    );
     this.logger.info(
       {
         module: 'orders',

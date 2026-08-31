@@ -5,6 +5,16 @@ import {
   type PaginatedResponse,
 } from '../../../common/list';
 import { ApplicationLogger } from '../../../common/observability/application-logger.service';
+import {
+  TransactionRunner,
+  type TransactionContext,
+} from '../../../infrastructure/database/transaction';
+import { AuditLogService } from '../../audit/application/audit-log.service';
+import {
+  AuditAction,
+  AuditActorType,
+  AuditEntityType,
+} from '../../audit/domain/audit-event';
 import type { BlogRecord, UpdateBlogInput } from '../domain/blog';
 import { BlogNotFoundError } from '../domain/blog-errors';
 import { normalizeBlogSlug } from '../domain/blog-slug';
@@ -26,6 +36,8 @@ export class BlogService {
   constructor(
     private readonly blogs: BlogRepository,
     private readonly logger: ApplicationLogger,
+    private readonly transactions: TransactionRunner,
+    private readonly audit: AuditLogService,
     @Optional() private readonly media?: MediaService,
   ) {}
 
@@ -151,11 +163,21 @@ export class BlogService {
     return (await this.withMediaPresentations([updated], true))[0]!;
   }
 
-  async publish(id: string, now = new Date()): Promise<BlogRecord> {
-    const updated = await this.blogs.publish(id, now);
-    if (updated === null) {
+  async publish(
+    id: string,
+    actorId: string,
+    now = new Date(),
+  ): Promise<BlogRecord> {
+    const mutation = await this.transactions.run(async (tx) => {
+      const value = await this.blogs.publish(id, now, tx);
+      if (value?.changed)
+        await this.appendAudit(AuditAction.BLOG_PUBLISHED, id, actorId, tx);
+      return value;
+    });
+    if (mutation === null) {
       throw new BlogNotFoundError();
     }
+    const updated = mutation.record;
 
     this.logger.info(
       {
@@ -169,11 +191,17 @@ export class BlogService {
     return updated;
   }
 
-  async unpublish(id: string): Promise<BlogRecord> {
-    const updated = await this.blogs.unpublish(id);
-    if (updated === null) {
+  async unpublish(id: string, actorId: string): Promise<BlogRecord> {
+    const mutation = await this.transactions.run(async (tx) => {
+      const value = await this.blogs.unpublish(id, tx);
+      if (value?.changed)
+        await this.appendAudit(AuditAction.BLOG_UNPUBLISHED, id, actorId, tx);
+      return value;
+    });
+    if (mutation === null) {
       throw new BlogNotFoundError();
     }
+    const updated = mutation.record;
 
     this.logger.info(
       {
@@ -185,6 +213,26 @@ export class BlogService {
       'Blog unpublished',
     );
     return (await this.withMediaPresentations([updated], true))[0]!;
+  }
+
+  private appendAudit(
+    action:
+      typeof AuditAction.BLOG_PUBLISHED | typeof AuditAction.BLOG_UNPUBLISHED,
+    blogId: string,
+    actorId: string,
+    tx: TransactionContext,
+  ): Promise<unknown> {
+    return this.audit.append(
+      {
+        action,
+        actorType: AuditActorType.ADMIN,
+        actorId,
+        entityType: AuditEntityType.BLOG,
+        entityId: blogId,
+        metadata: undefined,
+      },
+      tx,
+    );
   }
 
   private async withMediaPresentations(

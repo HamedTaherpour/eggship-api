@@ -239,7 +239,7 @@ Public list reads use BlogRepository.listPublished; unrestricted listing is a se
 | Admin create/edit/publish/unpublish                                | CNT-02 (DONE)            |
 | This architecture                                                  | CNT-03 (DONE) / ADR 0021 |
 | Markdown contract, directives, taxonomy, excerpt, SEO, Author APIs | CNT-04 (DONE)            |
-| Cover/avatar/inline Media FKs, registry, lifecycle                 | MED-01 (READY; ADR 0022) |
+| Cover/avatar/inline Media FKs, registry, lifecycle                 | MED-01 (DONE; ADR 0022)  |
 | Audit events                                                       | AUD-01 / AUD-02          |
 | Legacy field inventory and HTML conversion                         | MIG-01 / MIG-02          |
 | Comments, revisions, scheduling, Yoast SEO                         | Not approved             |

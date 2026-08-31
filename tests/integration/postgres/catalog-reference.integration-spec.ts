@@ -10,12 +10,17 @@ import { CategoryService } from '../../../src/modules/categories/application/cat
 import { CategoryRepository } from '../../../src/modules/categories/infrastructure/category.repository';
 import { RegionService } from '../../../src/modules/regions/application/region.service';
 import { RegionRepository } from '../../../src/modules/regions/infrastructure/region.repository';
+import { AuditModule } from '../../../src/modules/audit/audit.module';
+import { AuditLogService } from '../../../src/modules/audit/application/audit-log.service';
+import { AuditAction } from '../../../src/modules/audit/domain/audit-event';
+import type { AuthenticatedPrincipal } from '../../../src/modules/auth/domain/authenticated-principal';
+import { AuthSubjectType } from '../../../src/modules/auth/domain/subject-type';
 import { assertDestructiveOperationsAllowed } from '../support/integration-environment';
 
 async function truncateCatalogTables(prisma: PrismaService): Promise<void> {
   assertDestructiveOperationsAllowed();
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "Category", "Region" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "AuditLog", "Category", "Region" RESTART IDENTITY CASCADE',
   );
 }
 
@@ -26,6 +31,12 @@ describe('Category and Region persistence (integration)', () => {
   let regions: RegionRepository;
   let categoryService: CategoryService;
   let regionService: RegionService;
+  let audit: AuditLogService;
+  const adminPrincipal: AuthenticatedPrincipal = {
+    subjectId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    subjectType: AuthSubjectType.ADMIN,
+    sessionId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  };
 
   beforeAll(async () => {
     // Persistence-focused module graph: avoid AuthModule/Redis (not needed for
@@ -35,6 +46,7 @@ describe('Category and Region persistence (integration)', () => {
         ConfigModule.forRoot(createConfigModuleOptions()),
         ObservabilityModule,
         PrismaModule,
+        AuditModule,
       ],
       providers: [
         CategoryRepository,
@@ -50,6 +62,7 @@ describe('Category and Region persistence (integration)', () => {
     regions = moduleRef.get(RegionRepository);
     categoryService = moduleRef.get(CategoryService);
     regionService = moduleRef.get(RegionService);
+    audit = moduleRef.get(AuditLogService);
     await app.init();
   });
 
@@ -136,5 +149,63 @@ describe('Category and Region persistence (integration)', () => {
         data: { name: '   ' },
       }),
     ).rejects.toThrow();
+  });
+
+  it('audits Category and Region mutations atomically with bounded metadata', async () => {
+    const category = await categoryService.create(
+      { name: 'Dairy' },
+      adminPrincipal,
+    );
+    await categoryService.update(
+      category.id,
+      { name: 'Eggs', isActive: false },
+      adminPrincipal,
+    );
+    const region = await regionService.create(
+      { name: 'Tehran' },
+      adminPrincipal,
+    );
+    await regionService.update(
+      region.id,
+      { name: 'Karaj', isActive: false },
+      adminPrincipal,
+    );
+
+    const rows = await prisma.auditLog.findMany({
+      where: { entityId: { in: [category.id, region.id] } },
+      orderBy: { occurredAt: 'asc' },
+    });
+    expect(rows).toHaveLength(4);
+    expect(rows.map((row) => row.action)).toEqual([
+      AuditAction.CATEGORY_CREATED,
+      AuditAction.CATEGORY_UPDATED,
+      AuditAction.REGION_CREATED,
+      AuditAction.REGION_UPDATED,
+    ]);
+    expect(rows[1]!.metadata).toEqual({ changedFields: ['name', 'isActive'] });
+    expect(rows[3]!.metadata).toEqual({ changedFields: ['name', 'isActive'] });
+    expect(
+      rows.every(
+        (row) =>
+          row.actorType === 'ADMIN' && row.actorId === adminPrincipal.subjectId,
+      ),
+    ).toBe(true);
+  });
+
+  it('rolls back Category and Region when audit append fails', async () => {
+    jest.spyOn(audit, 'append').mockRejectedValue(new Error('audit failure'));
+    await expect(
+      categoryService.create({ name: 'Rollback category' }, adminPrincipal),
+    ).rejects.toThrow('audit failure');
+    await expect(
+      regionService.create({ name: 'Rollback region' }, adminPrincipal),
+    ).rejects.toThrow('audit failure');
+    expect(
+      await prisma.category.findMany({ where: { name: 'Rollback category' } }),
+    ).toHaveLength(0);
+    expect(
+      await prisma.region.findMany({ where: { name: 'Rollback region' } }),
+    ).toHaveLength(0);
+    jest.restoreAllMocks();
   });
 });

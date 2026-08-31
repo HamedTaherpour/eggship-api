@@ -3,6 +3,11 @@ import { isAdminRole } from '../../../common/authz/admin-role';
 import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../infrastructure/database/prisma/prisma.service';
 import {
+  resolvePrismaConnection,
+  type PrismaConnection,
+} from '../../../infrastructure/database/prisma/prisma-transaction-context';
+import type { TransactionContext } from '../../../infrastructure/database/transaction';
+import {
   InvalidAdminEmailError,
   normalizeAdminEmail,
 } from '../domain/admin-email';
@@ -45,11 +50,14 @@ export class AdminRepository {
    * both commit, and the loser surfaces as `AdminEmailAlreadyExistsError`
    * instead of a Prisma error code leaking into the application layer.
    */
-  async create(input: CreateAdminInput): Promise<AdminRecord> {
+  async create(
+    input: CreateAdminInput,
+    tx?: TransactionContext,
+  ): Promise<AdminRecord> {
     const email = normalizeAdminEmail(input.email);
 
     try {
-      const created = await this.prisma.admin.create({
+      const created = await this.db(tx).admin.create({
         data: {
           email,
           passwordHash: input.passwordHash,
@@ -64,6 +72,10 @@ export class AdminRepository {
       }
       throw error;
     }
+  }
+
+  private db(tx: TransactionContext | undefined): PrismaConnection {
+    return resolvePrismaConnection(this.prisma, tx);
   }
 
   /** Returns null when the input cannot be canonicalized at all. */

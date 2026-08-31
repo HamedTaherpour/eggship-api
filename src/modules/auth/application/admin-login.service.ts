@@ -2,7 +2,15 @@ import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { ApplicationLogger } from '../../../common/observability/application-logger.service';
+import { TransactionRunner } from '../../../infrastructure/database/transaction';
 import { AdminIdentityService } from '../../admins/application/admin-identity.service';
+import { AuditLogService } from '../../audit/application/audit-log.service';
+import {
+  AuditAction,
+  AuditActorType,
+  AuditEntityType,
+  type AdminLoginFailureReason,
+} from '../../audit/domain/audit-event';
 import {
   InvalidAdminEmailError,
   normalizeAdminEmail,
@@ -59,6 +67,8 @@ export class AdminLoginService implements OnModuleInit {
     @Inject(PASSWORD_HASHER)
     private readonly passwords: PasswordHasher,
     private readonly logger: ApplicationLogger,
+    private readonly transactions: TransactionRunner,
+    private readonly audit: AuditLogService,
     config: ConfigService,
   ) {
     this.accessTokenTtlSeconds = config.getOrThrow<number>(
@@ -87,6 +97,7 @@ export class AdminLoginService implements OnModuleInit {
       clientIp: command.clientIp,
     });
     if (!abuseDecision.allowed) {
+      await this.recordLoginFailure('rate_limited');
       this.logger.info(
         {
           module: 'auth',
@@ -111,6 +122,7 @@ export class AdminLoginService implements OnModuleInit {
     );
 
     if (credential === null || !passwordOk) {
+      await this.recordLoginFailure('invalid_credentials');
       this.logger.info(
         {
           module: 'auth',
@@ -126,6 +138,7 @@ export class AdminLoginService implements OnModuleInit {
     }
 
     if (!credential.isActive) {
+      await this.recordLoginFailure('account_disabled');
       this.logger.info(
         {
           module: 'auth',
@@ -144,6 +157,7 @@ export class AdminLoginService implements OnModuleInit {
 
     const admin = await this.admins.findById(credential.id);
     if (admin === null || !admin.isActive) {
+      await this.recordLoginFailure('account_disabled');
       this.logger.info(
         {
           module: 'auth',
@@ -168,13 +182,29 @@ export class AdminLoginService implements OnModuleInit {
       now.getTime() + this.refreshTokenTtlSeconds * 1000,
     );
 
-    await this.sessions.createSession({
-      id: sessionId,
-      adminId: admin.id,
-      refreshTokenHash: issuedRefresh.digest,
-      tokenFamilyId,
-      expiresAt,
-      lastUsedAt: now,
+    await this.transactions.run(async (tx) => {
+      await this.sessions.createSession(
+        {
+          id: sessionId,
+          adminId: admin.id,
+          refreshTokenHash: issuedRefresh.digest,
+          tokenFamilyId,
+          expiresAt,
+          lastUsedAt: now,
+        },
+        tx,
+      );
+      await this.audit.append(
+        {
+          action: AuditAction.ADMIN_LOGIN_SUCCEEDED,
+          actorType: AuditActorType.ADMIN,
+          actorId: admin.id,
+          entityType: AuditEntityType.ADMIN,
+          entityId: admin.id,
+          metadata: { sessionId },
+        },
+        tx,
+      );
     });
 
     const access = await this.accessTokens.issueAccessToken({
@@ -223,5 +253,29 @@ export class AdminLoginService implements OnModuleInit {
       throw new Error('Admin login dummy password hash is not initialized.');
     }
     return this.dummyPasswordHash;
+  }
+
+  private async recordLoginFailure(
+    reason: AdminLoginFailureReason,
+  ): Promise<void> {
+    try {
+      await this.audit.append({
+        action: AuditAction.ADMIN_LOGIN_FAILED,
+        actorType: AuditActorType.ANONYMOUS,
+        actorId: null,
+        entityType: AuditEntityType.ADMIN,
+        entityId: null,
+        metadata: { reason },
+      });
+    } catch {
+      this.logger.warn(
+        {
+          module: 'auth',
+          operation: 'admin.auth.login.audit_persistence_failed',
+          reason,
+        },
+        'Admin login failure audit persistence failed',
+      );
+    }
   }
 }

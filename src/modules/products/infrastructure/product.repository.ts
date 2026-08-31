@@ -44,8 +44,14 @@ const SORT_FIELD_MAP: Record<
 export class ProductRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findById(id: string): Promise<ProductRecord | null> {
-    const found = await this.prisma.product.findUnique({ where: { id } });
+  async findById(
+    id: string,
+    tx?: TransactionContext,
+  ): Promise<ProductRecord | null> {
+    const found = await resolvePrismaConnection(
+      this.prisma,
+      tx,
+    ).product.findUnique({ where: { id } });
     return found === null ? null : mapProduct(found);
   }
 
@@ -148,6 +154,7 @@ export class ProductRepository {
         "name",
         "price",
         "categoryId",
+        "imageMediaId",
         "isActive",
         "createdAt",
         "updatedAt"

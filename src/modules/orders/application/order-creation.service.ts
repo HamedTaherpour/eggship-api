@@ -1,8 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { Prisma } from '../../../generated/prisma/client';
 import { ApplicationError } from '../../../common/errors/application-error';
 import { ApplicationLogger } from '../../../common/observability/application-logger.service';
 import { TransactionRunner } from '../../../infrastructure/database/transaction';
+import { AuditLogService } from '../../audit/application/audit-log.service';
+import { AuditAction, AuditEntityType } from '../../audit/domain/audit-event';
 import { CommercePolicyService } from '../../commerce-policy/application/commerce-policy.service';
 import { InventoryService } from '../../inventory/application/inventory.service';
 import { InventoryLedgerActorType } from '../../inventory/domain/inventory-ledger';
@@ -59,6 +61,7 @@ export class OrderCreationService {
     private readonly users: UserRepository,
     private readonly regions: RegionRepository,
     private readonly logger: ApplicationLogger,
+    @Optional() private readonly audit?: AuditLogService,
   ) {}
 
   async createOrder(input: CreateOrderCommand): Promise<CreateOrderResult> {
@@ -246,6 +249,18 @@ export class OrderCreationService {
             type: InventoryLedgerActorType.USER,
             id: input.userId,
           },
+        },
+        tx,
+      );
+
+      await this.audit?.append(
+        {
+          action: AuditAction.ORDER_CREATED,
+          actorType: 'USER',
+          actorId: input.userId,
+          entityType: AuditEntityType.ORDER,
+          entityId: created.id,
+          metadata: undefined,
         },
         tx,
       );

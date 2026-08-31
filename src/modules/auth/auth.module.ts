@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { RedisModule } from '../../infrastructure/redis/redis.module';
 import { PrismaModule } from '../../infrastructure/database/prisma/prisma.module';
 import { AdminsModule } from '../admins/admins.module';
+import { AuditModule } from '../audit/audit.module';
 import { UsersModule } from '../users/users.module';
 import { VisitorsModule } from '../visitors/visitors.module';
 import { AccessTokenGuard } from './api/access-token.guard';
@@ -45,6 +46,7 @@ import { SecureOtpCodeIssuer } from './infrastructure/secure-otp-code-issuer';
     forwardRef(() => AdminsModule),
     RedisModule,
     VisitorsModule,
+    AuditModule,
   ],
   controllers: [AuthController, AdminAuthController],
   providers: [

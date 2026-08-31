@@ -5,6 +5,11 @@ import {
   type PaginatedResponse,
 } from '../../../common/list';
 import { ApplicationLogger } from '../../../common/observability/application-logger.service';
+import { TransactionRunner } from '../../../infrastructure/database/transaction';
+import type { TransactionContext } from '../../../infrastructure/database/transaction';
+import { AuditLogService } from '../../audit/application/audit-log.service';
+import { AuditAction, AuditEntityType } from '../../audit/domain/audit-event';
+import type { AuthenticatedPrincipal } from '../../auth/domain/authenticated-principal';
 import { CategoryService } from '../../categories/application/category.service';
 import { ProductRepository } from '../../products/infrastructure/product.repository';
 import type { AdminDiscountListQueryDto } from '../api/dto/admin-discount-list-query.dto';
@@ -37,6 +42,8 @@ export class DiscountService {
     private readonly products: ProductRepository,
     private readonly categories: CategoryService,
     private readonly logger: ApplicationLogger,
+    private readonly transactions: TransactionRunner,
+    private readonly audit: AuditLogService,
   ) {}
 
   async findById(id: string): Promise<DiscountRecord | null> {
@@ -61,23 +68,43 @@ export class DiscountService {
     return toPaginatedResponse(page.items, pageRequest, page.total);
   }
 
-  async create(input: CreateDiscountInput): Promise<DiscountRecord> {
-    const payload = await this.preparePayload({
-      name: input.name,
-      type: input.type,
-      target: input.target,
-      percentValue: input.percentValue,
-      fixedAmount: input.fixedAmount,
-      productId: input.productId,
-      categoryId: input.categoryId,
-      isActive: input.isActive ?? true,
-      startsAt: input.startsAt,
-      endsAt: input.endsAt,
-      precedence: input.precedence ?? 0,
-      maxQuantityPerCustomer: input.maxQuantityPerCustomer,
-    });
+  async create(
+    input: CreateDiscountInput,
+    principal?: AuthenticatedPrincipal,
+  ): Promise<DiscountRecord> {
+    const created = await this.transactions.run(async (tx) => {
+      const payload = await this.preparePayload({
+        name: input.name,
+        type: input.type,
+        target: input.target,
+        percentValue: input.percentValue,
+        fixedAmount: input.fixedAmount,
+        productId: input.productId,
+        categoryId: input.categoryId,
+        isActive: input.isActive ?? true,
+        startsAt: input.startsAt,
+        endsAt: input.endsAt,
+        precedence: input.precedence ?? 0,
+        maxQuantityPerCustomer: input.maxQuantityPerCustomer,
+        tx,
+      });
 
-    const created = await this.discounts.create(payload);
+      const created = await this.discounts.create(payload, tx);
+      if (principal !== undefined) {
+        await this.audit.append(
+          {
+            action: AuditAction.DISCOUNT_CREATED,
+            actorType: 'ADMIN',
+            actorId: principal.subjectId,
+            entityType: AuditEntityType.DISCOUNT,
+            entityId: created.id,
+            metadata: undefined,
+          },
+          tx,
+        );
+      }
+      return created;
+    });
     this.logger.info(
       {
         module: 'pricing',
@@ -95,67 +122,111 @@ export class DiscountService {
   async update(
     id: string,
     input: UpdateDiscountInput,
+    principal?: AuthenticatedPrincipal,
   ): Promise<DiscountRecord> {
-    const existing = await this.discounts.findById(id);
-    if (existing === null) {
-      throw new DiscountNotFoundError();
-    }
+    const result = await this.transactions.run(async (tx) => {
+      const existing = await this.discounts.findById(id, tx);
+      if (existing === null) {
+        throw new DiscountNotFoundError();
+      }
 
-    const target = input.target ?? existing.target;
-    const productId = resolveProductIdForTarget(target, existing, input);
-    const categoryId = resolveCategoryIdForTarget(target, existing, input);
+      const target = input.target ?? existing.target;
+      const productId = resolveProductIdForTarget(target, existing, input);
+      const categoryId = resolveCategoryIdForTarget(target, existing, input);
 
-    const payload = await this.preparePayload({
-      name: input.name ?? existing.name,
-      type: input.type ?? existing.type,
-      target,
-      percentValue:
-        input.percentValue !== undefined
-          ? input.percentValue
-          : existing.percentValue,
-      fixedAmount:
-        input.fixedAmount !== undefined
-          ? input.fixedAmount
-          : existing.fixedAmount,
-      productId,
-      categoryId,
-      isActive: input.isActive ?? existing.isActive,
-      startsAt:
-        input.startsAt !== undefined ? input.startsAt : existing.startsAt,
-      endsAt: input.endsAt !== undefined ? input.endsAt : existing.endsAt,
-      precedence:
-        input.precedence !== undefined ? input.precedence : existing.precedence,
-      maxQuantityPerCustomer:
-        input.maxQuantityPerCustomer !== undefined
-          ? input.maxQuantityPerCustomer
-          : target === DiscountTarget.PRODUCT
-            ? existing.maxQuantityPerCustomer
-            : null,
+      const payload = await this.preparePayload({
+        name: input.name ?? existing.name,
+        type: input.type ?? existing.type,
+        target,
+        percentValue:
+          input.percentValue !== undefined
+            ? input.percentValue
+            : existing.percentValue,
+        fixedAmount:
+          input.fixedAmount !== undefined
+            ? input.fixedAmount
+            : existing.fixedAmount,
+        productId,
+        categoryId,
+        isActive: input.isActive ?? existing.isActive,
+        startsAt:
+          input.startsAt !== undefined ? input.startsAt : existing.startsAt,
+        endsAt: input.endsAt !== undefined ? input.endsAt : existing.endsAt,
+        precedence:
+          input.precedence !== undefined
+            ? input.precedence
+            : existing.precedence,
+        maxQuantityPerCustomer:
+          input.maxQuantityPerCustomer !== undefined
+            ? input.maxQuantityPerCustomer
+            : target === DiscountTarget.PRODUCT
+              ? existing.maxQuantityPerCustomer
+              : null,
+        tx,
+      });
+
+      const updated = await this.discounts.update(id, payload, tx);
+      if (updated === null) {
+        throw new DiscountNotFoundError();
+      }
+
+      if (principal !== undefined) {
+        const changedFields = discountChangedFields(existing, updated);
+        if (changedFields.length > 0) {
+          if (existing.isActive && !updated.isActive) {
+            await this.audit.append(
+              {
+                action: AuditAction.DISCOUNT_DEACTIVATED,
+                actorType: 'ADMIN',
+                actorId: principal.subjectId,
+                entityType: AuditEntityType.DISCOUNT,
+                entityId: updated.id,
+                metadata: undefined,
+              },
+              tx,
+            );
+          } else {
+            await this.audit.append(
+              {
+                action: AuditAction.DISCOUNT_UPDATED,
+                actorType: 'ADMIN',
+                actorId: principal.subjectId,
+                entityType: AuditEntityType.DISCOUNT,
+                entityId: updated.id,
+                metadata: { changedFields },
+              },
+              tx,
+            );
+          }
+        }
+      }
+      return updated;
     });
-
-    const updated = await this.discounts.update(id, payload);
-    if (updated === null) {
-      throw new DiscountNotFoundError();
-    }
 
     this.logger.info(
       {
         module: 'pricing',
         operation: 'pricing.discount.updated',
-        discountId: updated.id,
-        isActive: updated.isActive,
+        discountId: result.id,
+        isActive: result.isActive,
       },
       'Discount updated',
     );
-    return updated;
+    return result;
   }
 
-  async activate(id: string): Promise<DiscountRecord> {
-    return this.update(id, { isActive: true });
+  async activate(
+    id: string,
+    principal?: AuthenticatedPrincipal,
+  ): Promise<DiscountRecord> {
+    return this.update(id, { isActive: true }, principal);
   }
 
-  async deactivate(id: string): Promise<DiscountRecord> {
-    return this.update(id, { isActive: false });
+  async deactivate(
+    id: string,
+    principal?: AuthenticatedPrincipal,
+  ): Promise<DiscountRecord> {
+    return this.update(id, { isActive: false }, principal);
   }
 
   private async preparePayload(input: {
@@ -171,6 +242,7 @@ export class DiscountService {
     endsAt?: Date | null;
     precedence: number;
     maxQuantityPerCustomer?: number | null;
+    tx?: TransactionContext;
   }): Promise<DiscountPayload> {
     const payload = buildDiscountPayload({
       name: normalizeDiscountName(input.name),
@@ -187,22 +259,23 @@ export class DiscountService {
       maxQuantityPerCustomer: input.maxQuantityPerCustomer,
     });
 
-    await this.assertTargetReferencesExist(payload);
+    await this.assertTargetReferencesExist(payload, input.tx);
     return payload;
   }
 
   private async assertTargetReferencesExist(
     payload: DiscountPayload,
+    tx?: TransactionContext,
   ): Promise<void> {
     if (payload.productId !== null) {
-      const product = await this.products.findById(payload.productId);
+      const product = await this.products.findById(payload.productId, tx);
       if (product === null) {
         throw new DiscountInvalidProductError();
       }
     }
 
     if (payload.categoryId !== null) {
-      const category = await this.categories.findById(payload.categoryId);
+      const category = await this.categories.findById(payload.categoryId, tx);
       if (category === null) {
         throw new DiscountInvalidCategoryError();
       }
@@ -236,4 +309,33 @@ function resolveCategoryIdForTarget(
     return input.categoryId ?? existing.categoryId;
   }
   return null;
+}
+
+function discountChangedFields(
+  before: DiscountRecord,
+  after: DiscountRecord,
+): string[] {
+  const fields: string[] = [];
+  const scalarFields = [
+    'name',
+    'type',
+    'target',
+    'percentValue',
+    'fixedAmount',
+    'productId',
+    'categoryId',
+    'isActive',
+    'precedence',
+    'maxQuantityPerCustomer',
+  ] as const;
+  for (const field of scalarFields) {
+    if (before[field] !== after[field]) fields.push(field);
+  }
+  if (before.startsAt?.getTime() !== after.startsAt?.getTime()) {
+    fields.push('startsAt');
+  }
+  if (before.endsAt?.getTime() !== after.endsAt?.getTime()) {
+    fields.push('endsAt');
+  }
+  return fields;
 }

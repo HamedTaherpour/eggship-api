@@ -1,7 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { ApplicationLogger } from '../../../common/observability/application-logger.service';
 import { TransactionRunner } from '../../../infrastructure/database/transaction';
 import type { TransactionContext } from '../../../infrastructure/database/transaction';
+import { AuditLogService } from '../../audit/application/audit-log.service';
+import { AuditAction, AuditEntityType } from '../../audit/domain/audit-event';
 import type { AuthenticatedPrincipal } from '../../auth/domain/authenticated-principal';
 import { AuthSubjectType } from '../../auth/domain/subject-type';
 import type { ProductRecord } from '../../products/domain/product';
@@ -39,6 +41,7 @@ export class PricingService {
     private readonly priceHistory: PriceHistoryRepository,
     private readonly transactions: TransactionRunner,
     private readonly logger: ApplicationLogger,
+    @Optional() private readonly audit?: AuditLogService,
   ) {}
 
   requireAdminActor(principal: AuthenticatedPrincipal): PriceHistoryActor {
@@ -104,6 +107,18 @@ export class PricingService {
       },
       tx,
     );
+    if (this.audit !== undefined)
+      await this.audit.append(
+        {
+          action: AuditAction.PRICE_CHANGED,
+          actorType: actor.type,
+          actorId: actor.id,
+          entityType: AuditEntityType.PRODUCT,
+          entityId: productId,
+          metadata: { previousPrice: locked.price, newPrice },
+        },
+        tx,
+      );
 
     this.logger.info(
       {

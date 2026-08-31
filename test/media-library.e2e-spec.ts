@@ -35,6 +35,7 @@ import {
 } from '../src/modules/media/domain/media-test-fixtures';
 import { HARD_MEDIA_MAX_FILES_PER_BATCH } from '../src/modules/media/domain/media-upload-limits';
 import { MediaRepository } from '../src/modules/media/infrastructure/media.repository';
+import { AuditLogService } from '../src/modules/audit/application/audit-log.service';
 import { TransactionRunner } from '../src/infrastructure/database/transaction';
 
 class ConfigurableAdminRoleResolver implements AdminRoleResolver {
@@ -232,6 +233,8 @@ describe('Admin Media Library APIs (e2e)', () => {
           fn: (tx: object) => Promise<T>,
         ): Promise<T> => fn({}),
       })
+      .overrideProvider(AuditLogService)
+      .useValue({ append: jest.fn().mockResolvedValue({}) })
       .overrideProvider(STORAGE_PROVIDER)
       .useValue(storage)
       .overrideProvider(ADMIN_ROLE_RESOLVER)

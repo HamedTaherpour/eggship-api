@@ -23,11 +23,15 @@ import { PricingModule } from '../../../src/modules/pricing/pricing.module';
 import { ProductRepository } from '../../../src/modules/products/infrastructure/product.repository';
 import { ProductsModule } from '../../../src/modules/products/products.module';
 import { assertDestructiveOperationsAllowed } from '../support/integration-environment';
+import { AuditLogService } from '../../../src/modules/audit/application/audit-log.service';
+import { AuditAction } from '../../../src/modules/audit/domain/audit-event';
+import type { AuthenticatedPrincipal } from '../../../src/modules/auth/domain/authenticated-principal';
+import { AuthSubjectType } from '../../../src/modules/auth/domain/subject-type';
 
 async function truncateDiscountTables(prisma: PrismaService): Promise<void> {
   assertDestructiveOperationsAllowed();
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "DiscountUsageRecord", "DiscountCustomerUsage", "Discount", "PriceHistory", "InventoryLedger", "InventoryReservation", "Inventory", "Product", "Category" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "AuditLog", "DiscountUsageRecord", "DiscountCustomerUsage", "Discount", "PriceHistory", "InventoryLedger", "InventoryReservation", "Inventory", "Product", "Category" RESTART IDENTITY CASCADE',
   );
 }
 
@@ -37,6 +41,12 @@ describe('Discount persistence (integration)', () => {
   let categories: CategoryRepository;
   let products: ProductRepository;
   let discounts: DiscountService;
+  let audit: AuditLogService;
+  const adminPrincipal: AuthenticatedPrincipal = {
+    subjectId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    subjectType: AuthSubjectType.ADMIN,
+    sessionId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -55,6 +65,7 @@ describe('Discount persistence (integration)', () => {
     categories = moduleRef.get(CategoryRepository);
     products = moduleRef.get(ProductRepository);
     discounts = moduleRef.get(DiscountService);
+    audit = moduleRef.get(AuditLogService);
     await app.init();
   });
 
@@ -292,5 +303,109 @@ describe('Discount persistence (integration)', () => {
     await expect(
       prisma.product.delete({ where: { id: product.id } }),
     ).rejects.toThrow();
+  });
+
+  it('audits Discount create, update, and deactivation without duplicate lifecycle events', async () => {
+    const created = await discounts.create(
+      {
+        name: 'Audited promo',
+        type: DiscountType.PERCENT,
+        target: DiscountTarget.ORDER,
+        percentValue: 10,
+      },
+      adminPrincipal,
+    );
+    await discounts.update(
+      created.id,
+      { name: 'Audited promo 2' },
+      adminPrincipal,
+    );
+    await discounts.deactivate(created.id, adminPrincipal);
+    await discounts.deactivate(created.id, adminPrincipal);
+
+    const rows = await prisma.auditLog.findMany({
+      where: { entityId: created.id },
+      orderBy: { occurredAt: 'asc' },
+    });
+    expect(rows.map((row) => row.action)).toEqual([
+      AuditAction.DISCOUNT_CREATED,
+      AuditAction.DISCOUNT_UPDATED,
+      AuditAction.DISCOUNT_DEACTIVATED,
+    ]);
+    expect(rows[1]!.metadata).toEqual({ changedFields: ['name'] });
+    expect(rows[2]!.metadata).toBeNull();
+    expect(
+      rows.every(
+        (row) =>
+          row.actorType === 'ADMIN' && row.actorId === adminPrincipal.subjectId,
+      ),
+    ).toBe(true);
+  });
+
+  it('rolls back Discount create when audit append fails', async () => {
+    jest.spyOn(audit, 'append').mockRejectedValue(new Error('audit failure'));
+    await expect(
+      discounts.create(
+        {
+          name: 'Rollback promo',
+          type: DiscountType.PERCENT,
+          target: DiscountTarget.ORDER,
+          percentValue: 10,
+        },
+        adminPrincipal,
+      ),
+    ).rejects.toThrow('audit failure');
+    expect(
+      await prisma.discount.findMany({ where: { name: 'Rollback promo' } }),
+    ).toHaveLength(0);
+    expect(await prisma.auditLog.count()).toBe(0);
+    jest.restoreAllMocks();
+  });
+
+  it('rolls back Discount update when audit append fails', async () => {
+    const created = await discounts.create(
+      {
+        name: 'Update rollback promo',
+        type: DiscountType.PERCENT,
+        target: DiscountTarget.ORDER,
+        percentValue: 10,
+      },
+      adminPrincipal,
+    );
+    jest.spyOn(audit, 'append').mockRejectedValue(new Error('audit failure'));
+    await expect(
+      discounts.update(created.id, { name: 'Changed name' }, adminPrincipal),
+    ).rejects.toThrow('audit failure');
+    const persisted = await discounts.findById(created.id);
+    expect(persisted?.name).toBe('Update rollback promo');
+    expect(
+      await prisma.auditLog.count({ where: { entityId: created.id } }),
+    ).toBe(1);
+    jest.restoreAllMocks();
+  });
+
+  it('audits reactivation as discount.updated without a duplicate deactivation event', async () => {
+    const created = await discounts.create(
+      {
+        name: 'Reactivation promo',
+        type: DiscountType.PERCENT,
+        target: DiscountTarget.ORDER,
+        percentValue: 10,
+      },
+      adminPrincipal,
+    );
+    await discounts.deactivate(created.id, adminPrincipal);
+    await discounts.activate(created.id, adminPrincipal);
+
+    const rows = await prisma.auditLog.findMany({
+      where: { entityId: created.id },
+      orderBy: { occurredAt: 'asc' },
+    });
+    expect(rows.map((row) => row.action)).toEqual([
+      AuditAction.DISCOUNT_CREATED,
+      AuditAction.DISCOUNT_DEACTIVATED,
+      AuditAction.DISCOUNT_UPDATED,
+    ]);
+    expect(rows[2]!.metadata).toEqual({ changedFields: ['isActive'] });
   });
 });

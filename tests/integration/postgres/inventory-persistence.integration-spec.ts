@@ -19,6 +19,7 @@ import {
   InventoryReservationConflictError,
 } from '../../../src/modules/inventory/domain/inventory-errors';
 import { InventoryModule } from '../../../src/modules/inventory/inventory.module';
+import { AuditModule } from '../../../src/modules/audit/audit.module';
 import { ProductService } from '../../../src/modules/products/application/product.service';
 import { ProductRepository } from '../../../src/modules/products/infrastructure/product.repository';
 import { TransactionRunner } from '../../../src/infrastructure/database/transaction';
@@ -42,7 +43,7 @@ describe('Inventory persistence (integration)', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [...postgresIntegrationImports([InventoryModule])],
+      imports: [...postgresIntegrationImports([InventoryModule, AuditModule])],
       providers: [
         CategoryRepository,
         CategoryService,

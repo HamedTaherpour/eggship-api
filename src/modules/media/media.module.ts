@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaModule } from '../../infrastructure/database/prisma/prisma.module';
 import { StorageModule } from '../../infrastructure/storage/storage.module';
 import { AuthModule } from '../auth/auth.module';
+import { AuditModule } from '../audit/audit.module';
 import { AdminMediaController } from './api/admin-media.controller';
 import { MediaUploadExceptionFilter } from './api/media-upload.exception-filter';
 import { MEDIA_UPLOAD_LIMITS, MediaService } from './application/media.service';
@@ -16,7 +17,12 @@ import { MediaRepository } from './infrastructure/media.repository';
  * AccessTokenGuard.
  */
 @Module({
-  imports: [PrismaModule, StorageModule, forwardRef(() => AuthModule)],
+  imports: [
+    PrismaModule,
+    StorageModule,
+    forwardRef(() => AuthModule),
+    AuditModule,
+  ],
   controllers: [AdminMediaController],
   providers: [
     MediaRepository,

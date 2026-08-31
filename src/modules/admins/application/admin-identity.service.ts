@@ -1,6 +1,16 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { AdminRole } from '../../../common/authz/admin-role';
 import { ApplicationLogger } from '../../../common/observability/application-logger.service';
+import {
+  TransactionRunner,
+  type TransactionContext,
+} from '../../../infrastructure/database/transaction';
+import { AuditLogService } from '../../audit/application/audit-log.service';
+import {
+  AuditAction,
+  AuditActorType,
+  AuditEntityType,
+} from '../../audit/domain/audit-event';
 import { PASSWORD_HASHER } from '../../auth/auth.tokens';
 import type { PasswordHasher } from '../../auth/domain/password-hasher';
 import type { AdminLoginCredential, AdminRecord } from '../domain/admin';
@@ -32,6 +42,8 @@ export class AdminIdentityService {
     @Inject(PASSWORD_HASHER)
     private readonly passwords: PasswordHasher,
     private readonly logger: ApplicationLogger,
+    private readonly transactions: TransactionRunner,
+    private readonly audit: AuditLogService,
   ) {}
 
   /**
@@ -39,17 +51,33 @@ export class AdminIdentityService {
    * the canonical email is taken, including when a concurrent request won the
    * race — the database unique index is the authority, not a prior read.
    */
-  async createAdmin(input: CreateAdminIdentityInput): Promise<AdminRecord> {
+  async createAdmin(
+    input: CreateAdminIdentityInput,
+    existingTx?: TransactionContext,
+  ): Promise<AdminRecord> {
     const email = normalizeAdminEmail(input.email);
     // Validate before hashing: rejecting a weak password should not pay for an
     // Argon2 hash first.
     assertAdminPasswordPolicy(input.password);
 
     const passwordHash = await this.passwords.hash(input.password);
-    const admin = await this.admins.create({
-      email,
-      passwordHash,
-      role: input.role,
+    const admin = await this.transactions.runIn(existingTx, async (tx) => {
+      const created = await this.admins.create(
+        { email, passwordHash, role: input.role },
+        tx,
+      );
+      await this.audit.append(
+        {
+          action: AuditAction.ADMIN_IDENTITY_CREATED,
+          actorType: AuditActorType.SYSTEM,
+          actorId: null,
+          entityType: AuditEntityType.ADMIN,
+          entityId: created.id,
+          metadata: undefined,
+        },
+        tx,
+      );
+      return created;
     });
 
     this.logger.info(

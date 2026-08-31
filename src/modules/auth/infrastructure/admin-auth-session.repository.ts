@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../infrastructure/database/prisma/prisma.service';
+import {
+  resolvePrismaConnection,
+  type PrismaConnection,
+} from '../../../infrastructure/database/prisma/prisma-transaction-context';
+import type { TransactionContext } from '../../../infrastructure/database/transaction';
 import type {
   AdminAuthRefreshTokenConsumptionRecord,
   AdminAuthSessionRecord,
@@ -39,11 +43,11 @@ export class AdminAuthSessionRepository {
 
   async createSession(
     input: CreateAdminAuthSessionInput,
-    tx?: Prisma.TransactionClient,
+    tx?: TransactionContext,
   ): Promise<AdminAuthSessionRecord> {
     assertRefreshTokenHash(input.refreshTokenHash);
 
-    const db = tx ?? this.prisma;
+    const db: PrismaConnection = resolvePrismaConnection(this.prisma, tx);
     const created = await db.adminAuthSession.create({
       data: {
         ...(input.id === undefined ? {} : { id: input.id }),
@@ -58,8 +62,14 @@ export class AdminAuthSessionRepository {
     return mapSession(created);
   }
 
-  async findSessionById(id: string): Promise<AdminAuthSessionRecord | null> {
-    const found = await this.prisma.adminAuthSession.findUnique({
+  async findSessionById(
+    id: string,
+    tx?: TransactionContext,
+  ): Promise<AdminAuthSessionRecord | null> {
+    const found = await resolvePrismaConnection(
+      this.prisma,
+      tx,
+    ).adminAuthSession.findUnique({
       where: { id },
     });
     return found === null ? null : mapSession(found);
@@ -94,8 +104,15 @@ export class AdminAuthSessionRepository {
     return rows.map(mapSession);
   }
 
-  async revokeSession(sessionId: string, revokedAt: Date): Promise<boolean> {
-    const result = await this.prisma.adminAuthSession.updateMany({
+  async revokeSession(
+    sessionId: string,
+    revokedAt: Date,
+    tx?: TransactionContext,
+  ): Promise<boolean> {
+    const result = await resolvePrismaConnection(
+      this.prisma,
+      tx,
+    ).adminAuthSession.updateMany({
       where: {
         id: sessionId,
         revokedAt: null,
@@ -109,8 +126,12 @@ export class AdminAuthSessionRepository {
   async revokeAllAdminSessions(
     adminId: string,
     revokedAt: Date,
+    tx?: TransactionContext,
   ): Promise<number> {
-    const result = await this.prisma.adminAuthSession.updateMany({
+    const result = await resolvePrismaConnection(
+      this.prisma,
+      tx,
+    ).adminAuthSession.updateMany({
       where: {
         adminId,
         revokedAt: null,
@@ -124,8 +145,12 @@ export class AdminAuthSessionRepository {
   async revokeSessionsByTokenFamily(
     tokenFamilyId: string,
     revokedAt: Date,
+    tx?: TransactionContext,
   ): Promise<number> {
-    const result = await this.prisma.adminAuthSession.updateMany({
+    const result = await resolvePrismaConnection(
+      this.prisma,
+      tx,
+    ).adminAuthSession.updateMany({
       where: {
         tokenFamilyId,
         revokedAt: null,
@@ -138,16 +163,18 @@ export class AdminAuthSessionRepository {
 
   async findConsumedRefreshTokenByHash(
     refreshTokenHash: string,
+    tx?: TransactionContext,
   ): Promise<AdminAuthRefreshTokenConsumptionRecord | null> {
     if (!isRefreshTokenHashShape(refreshTokenHash)) {
       return null;
     }
 
-    const found = await this.prisma.adminAuthRefreshTokenConsumption.findUnique(
-      {
-        where: { refreshTokenHash },
-      },
-    );
+    const found = await resolvePrismaConnection(
+      this.prisma,
+      tx,
+    ).adminAuthRefreshTokenConsumption.findUnique({
+      where: { refreshTokenHash },
+    });
     return found === null ? null : mapConsumption(found);
   }
 

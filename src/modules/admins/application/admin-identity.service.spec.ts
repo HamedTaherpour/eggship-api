@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { AdminRole } from '../../../common/authz/admin-role';
 import type { ApplicationLogger } from '../../../common/observability/application-logger.service';
+import {
+  TRANSACTION_CONTEXT_BRAND,
+  TransactionRunner,
+  type TransactionContext,
+} from '../../../infrastructure/database/transaction';
+import type { AuditLogService } from '../../audit/application/audit-log.service';
 import type { PasswordHasher } from '../../auth/domain/password-hasher';
 import type { AdminRecord, CreateAdminInput } from '../domain/admin';
 import { InvalidAdminEmailError } from '../domain/admin-email';
@@ -12,6 +18,25 @@ import { AdminIdentityService } from './admin-identity.service';
 const STRONG_PASSWORD = 'correct horse battery staple';
 
 describe('AdminIdentityService', () => {
+  class ImmediateTransactionRunner extends TransactionRunner {
+    run<T>(fn: (tx: TransactionContext) => Promise<T>): Promise<T> {
+      return fn({ [TRANSACTION_CONTEXT_BRAND]: true });
+    }
+    runIn<T>(
+      existing: TransactionContext | undefined,
+      fn: (tx: TransactionContext) => Promise<T>,
+    ): Promise<T> {
+      return fn(existing ?? { [TRANSACTION_CONTEXT_BRAND]: true });
+    }
+    runSnapshotRead<T>(fn: (tx: TransactionContext) => Promise<T>): Promise<T> {
+      return this.run(fn);
+    }
+    runRepeatableRead<T>(
+      fn: (tx: TransactionContext) => Promise<T>,
+    ): Promise<T> {
+      return this.run(fn);
+    }
+  }
   let create: jest.Mock<Promise<AdminRecord>, [CreateAdminInput]>;
   let hash: jest.Mock<Promise<string>, [string]>;
   let logger: jest.Mocked<Pick<ApplicationLogger, 'info'>>;
@@ -37,6 +62,10 @@ describe('AdminIdentityService', () => {
       { create } as unknown as AdminRepository,
       { hash } as unknown as PasswordHasher,
       logger as unknown as ApplicationLogger,
+      new ImmediateTransactionRunner(),
+      {
+        append: jest.fn().mockResolvedValue(undefined),
+      } as unknown as AuditLogService,
     );
   });
 

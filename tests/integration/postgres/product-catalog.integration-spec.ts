@@ -13,6 +13,9 @@ import { ProductsModule } from '../../../src/modules/products/products.module';
 import type { AuthenticatedPrincipal } from '../../../src/modules/auth/domain/authenticated-principal';
 import { AuthSubjectType } from '../../../src/modules/auth/domain/subject-type';
 import { assertDestructiveOperationsAllowed } from '../support/integration-environment';
+import { AuditLogService } from '../../../src/modules/audit/application/audit-log.service';
+import { AuditAction } from '../../../src/modules/audit/domain/audit-event';
+import { AuditModule } from '../../../src/modules/audit/audit.module';
 
 const adminPrincipal: AuthenticatedPrincipal = {
   subjectId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
@@ -34,11 +37,16 @@ describe('Product catalog persistence (integration)', () => {
   let products: ProductRepository;
   let productService: ProductService;
   let inventory: InventoryService;
+  let audit: AuditLogService;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [
-        ...postgresIntegrationImports([InventoryModule, ProductsModule]),
+        ...postgresIntegrationImports([
+          InventoryModule,
+          ProductsModule,
+          AuditModule,
+        ]),
       ],
       providers: [CategoryRepository, CategoryService],
     }).compile();
@@ -49,6 +57,7 @@ describe('Product catalog persistence (integration)', () => {
     products = moduleRef.get(ProductRepository);
     productService = moduleRef.get(ProductService);
     inventory = moduleRef.get(InventoryService);
+    audit = moduleRef.get(AuditLogService);
     await app.init();
   });
 
@@ -284,5 +293,75 @@ describe('Product catalog persistence (integration)', () => {
       reserved: 0,
       available: 0,
     });
+  });
+
+  it('persists exactly one safe Product creation audit with the admin actor', async () => {
+    const category = await categories.create({ name: 'Eggs' });
+    const created = await productService.create(
+      { name: 'Audited eggs', price: 1000, categoryId: category.id },
+      adminPrincipal,
+    );
+
+    const rows = await prisma.auditLog.findMany({
+      where: { action: AuditAction.PRODUCT_CREATED, entityId: created.id },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: AuditAction.PRODUCT_CREATED,
+      entityType: 'PRODUCT',
+      entityId: created.id,
+      actorType: 'ADMIN',
+      actorId: adminPrincipal.subjectId,
+      metadata: null,
+    });
+  });
+
+  it('rolls back Product and dependent Inventory when required audit append fails', async () => {
+    const category = await categories.create({ name: 'Audit failure' });
+    const priorAuditCount = await prisma.auditLog.count({
+      where: { action: AuditAction.PRODUCT_CREATED },
+    });
+    jest
+      .spyOn(audit, 'append')
+      .mockRejectedValueOnce(new Error('audit failure'));
+
+    await expect(
+      productService.create(
+        { name: 'Must not commit', price: 1000, categoryId: category.id },
+        adminPrincipal,
+      ),
+    ).rejects.toThrow('audit failure');
+
+    expect(
+      await prisma.product.count({ where: { categoryId: category.id } }),
+    ).toBe(0);
+    expect(await prisma.inventory.count()).toBe(0);
+    expect(
+      await prisma.auditLog.count({
+        where: { action: AuditAction.PRODUCT_CREATED },
+      }),
+    ).toBe(priorAuditCount);
+    jest.restoreAllMocks();
+  });
+
+  it('persists bounded changedFields for Product updates and no audit for a no-op', async () => {
+    const category = await categories.create({ name: 'Eggs' });
+    const created = await productService.create(
+      { name: 'Before', price: 1000, categoryId: category.id },
+      adminPrincipal,
+    );
+    await productService.update(created.id, { name: 'After' }, adminPrincipal);
+    const rows = await prisma.auditLog.findMany({
+      where: { action: AuditAction.PRODUCT_UPDATED, entityId: created.id },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.metadata).toEqual({ changedFields: ['name'] });
+
+    await productService.update(created.id, {}, adminPrincipal);
+    expect(
+      await prisma.auditLog.count({
+        where: { action: AuditAction.PRODUCT_UPDATED, entityId: created.id },
+      }),
+    ).toBe(1);
   });
 });

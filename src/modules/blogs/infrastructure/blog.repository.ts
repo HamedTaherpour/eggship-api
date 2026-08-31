@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { toSkipTake, type PageResult } from '../../../common/list';
 import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../infrastructure/database/prisma/prisma.service';
+import { resolvePrismaConnection } from '../../../infrastructure/database/prisma/prisma-transaction-context';
+import type { TransactionContext } from '../../../infrastructure/database/transaction';
 import type {
   BlogListQuery,
   BlogRecord,
@@ -72,6 +74,11 @@ type PrismaBlog = {
   createdAt: Date;
   updatedAt: Date;
 };
+
+export interface BlogPublicationMutation {
+  record: BlogRecord;
+  changed: boolean;
+}
 
 const SORT_FIELD_MAP: Record<
   BlogSortField,
@@ -322,8 +329,12 @@ export class BlogRepository {
     }
   }
 
-  publish(id: string, now: Date): Promise<BlogRecord | null> {
-    return this.prisma.$transaction(async (tx) => {
+  publish(
+    id: string,
+    now: Date,
+    context?: TransactionContext,
+  ): Promise<BlogPublicationMutation | null> {
+    return this.runIn(context, async (tx) => {
       // Blog -> Author is the lock order for publication.
       await tx.$queryRaw`SELECT "id" FROM "Blog" WHERE "id" = ${id} FOR UPDATE`;
       const existing = await tx.blog.findUnique({
@@ -338,18 +349,23 @@ export class BlogRepository {
       });
       if (author === null) throw new BlogAuthorNotFoundError();
       if (!author.isActive) throw new BlogAuthorInactiveError();
+      if (existing.isPublished)
+        return { record: mapBlog(existing), changed: false };
       const publication = applyPublishTransition(existing, now);
       const updated = await tx.blog.update({
         where: { id },
         data: publication,
         include: blogInclude,
       });
-      return mapBlog(updated);
+      return { record: mapBlog(updated), changed: true };
     });
   }
 
-  async unpublish(id: string): Promise<BlogRecord | null> {
-    return this.prisma.$transaction(async (tx) => {
+  async unpublish(
+    id: string,
+    context?: TransactionContext,
+  ): Promise<BlogPublicationMutation | null> {
+    return this.runIn(context, async (tx) => {
       // Blog is the first lock for every Blog mutation.
       await tx.$queryRaw`SELECT "id" FROM "Blog" WHERE "id" = ${id} FOR UPDATE`;
       const existing = await tx.blog.findUnique({
@@ -357,6 +373,8 @@ export class BlogRepository {
         include: blogInclude,
       });
       if (existing === null) return null;
+      if (!existing.isPublished)
+        return { record: mapBlog(existing), changed: false };
 
       const publication = applyUnpublishTransition(existing);
       const updated = await tx.blog.update({
@@ -364,8 +382,17 @@ export class BlogRepository {
         data: publication,
         include: blogInclude,
       });
-      return mapBlog(updated);
+      return { record: mapBlog(updated), changed: true };
     });
+  }
+
+  private async runIn<T>(
+    context: TransactionContext | undefined,
+    work: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    if (context !== undefined)
+      return work(resolvePrismaConnection(this.prisma, context));
+    return this.prisma.$transaction(work);
   }
 
   private async listWithWhere(

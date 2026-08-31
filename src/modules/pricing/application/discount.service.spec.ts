@@ -8,6 +8,8 @@ import {
   type DiscountRecord,
 } from '../domain/discount';
 import type { DiscountRepository } from '../infrastructure/discount.repository';
+import type { TransactionRunner } from '../../../infrastructure/database/transaction';
+import type { AuditLogService } from '../../audit/application/audit-log.service';
 
 const DISCOUNT_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const PRODUCT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -42,6 +44,10 @@ describe('DiscountService', () => {
   let categories: jest.Mocked<Pick<CategoryService, 'findById'>>;
   let logger: jest.Mocked<Pick<ApplicationLogger, 'info'>>;
   let service: DiscountService;
+  const transactions = {
+    run: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
+  } as unknown as TransactionRunner;
+  const audit = { append: jest.fn() } as unknown as AuditLogService;
 
   beforeEach(() => {
     repository = {
@@ -57,6 +63,8 @@ describe('DiscountService', () => {
       products as unknown as ProductRepository,
       categories as unknown as CategoryService,
       logger as unknown as ApplicationLogger,
+      transactions,
+      audit,
     );
   });
 
@@ -79,6 +87,7 @@ describe('DiscountService', () => {
         productId: null,
         categoryId: null,
       }),
+      expect.anything(),
     );
   });
 
@@ -122,6 +131,7 @@ describe('DiscountService', () => {
     expect(repository.update).toHaveBeenCalledWith(
       DISCOUNT_ID,
       expect.objectContaining({ isActive: false }),
+      expect.anything(),
     );
   });
 });

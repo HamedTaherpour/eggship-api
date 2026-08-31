@@ -1,5 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { PrismaModule } from '../../infrastructure/database/prisma/prisma.module';
+import { AuditModule } from '../audit/audit.module';
 import { AuthModule } from '../auth/auth.module';
 import { AdminCategoriesController } from './api/admin-categories.controller';
 import { CategoriesController } from './api/categories.controller';
@@ -12,7 +13,7 @@ import { CategoryRepository } from './infrastructure/category.repository';
  * AuthModule is imported only so Admin routes can resolve AccessTokenGuard.
  */
 @Module({
-  imports: [PrismaModule, forwardRef(() => AuthModule)],
+  imports: [PrismaModule, AuditModule, forwardRef(() => AuthModule)],
   controllers: [CategoriesController, AdminCategoriesController],
   providers: [CategoryRepository, CategoryService],
   exports: [CategoryService],

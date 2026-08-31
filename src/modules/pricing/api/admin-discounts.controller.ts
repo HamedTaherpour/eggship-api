@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -30,6 +31,8 @@ import { PermissionGuard } from '../../../common/authz/permission.guard';
 import { RequirePermissions } from '../../../common/authz/require-permissions.decorator';
 import { ApiErrorResponseDto } from '../../../common/openapi/dto/common-response.dto';
 import { AccessTokenGuard } from '../../auth/api/access-token.guard';
+import { getAuthenticatedPrincipal } from '../../auth/api/authenticated-principal.util';
+import type { Request } from 'express';
 import { DiscountService } from '../application/discount.service';
 import { AdminDiscountListQueryDto } from './dto/admin-discount-list-query.dto';
 import {
@@ -105,8 +108,12 @@ export class AdminDiscountsController {
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   async create(
     @Body() body: CreateDiscountBodyDto,
+    @Req() request: Request,
   ): Promise<AdminDiscountResponseDto> {
-    const created = await this.discounts.create(toCreateDiscountInput(body));
+    const created = await this.discounts.create(
+      toCreateDiscountInput(body),
+      getAuthenticatedPrincipal(request),
+    );
     return { data: toAdminDiscountDto(created) };
   }
 
@@ -136,10 +143,12 @@ export class AdminDiscountsController {
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: UpdateDiscountBodyDto,
+    @Req() request: Request,
   ): Promise<AdminDiscountResponseDto> {
     const updated = await this.discounts.update(
       id,
       toUpdateDiscountInput(body),
+      getAuthenticatedPrincipal(request),
     );
     return { data: toAdminDiscountDto(updated) };
   }
@@ -166,8 +175,12 @@ export class AdminDiscountsController {
   @ApiNotFoundResponse({ type: ApiErrorResponseDto })
   async activate(
     @Param('id', ParseUUIDPipe) id: string,
+    @Req() request: Request,
   ): Promise<AdminDiscountResponseDto> {
-    const updated = await this.discounts.activate(id);
+    const updated = await this.discounts.activate(
+      id,
+      getAuthenticatedPrincipal(request),
+    );
     return { data: toAdminDiscountDto(updated) };
   }
 
@@ -193,8 +206,12 @@ export class AdminDiscountsController {
   @ApiNotFoundResponse({ type: ApiErrorResponseDto })
   async deactivate(
     @Param('id', ParseUUIDPipe) id: string,
+    @Req() request: Request,
   ): Promise<AdminDiscountResponseDto> {
-    const updated = await this.discounts.deactivate(id);
+    const updated = await this.discounts.deactivate(
+      id,
+      getAuthenticatedPrincipal(request),
+    );
     return { data: toAdminDiscountDto(updated) };
   }
 }

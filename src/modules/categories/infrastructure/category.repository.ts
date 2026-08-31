@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { toSkipTake, type PageResult } from '../../../common/list';
 import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../infrastructure/database/prisma/prisma.service';
+import { resolvePrismaConnection } from '../../../infrastructure/database/prisma/prisma-transaction-context';
+import type { TransactionContext } from '../../../infrastructure/database/transaction';
 import type {
   CategoryListQuery,
   CategoryRecord,
@@ -35,8 +37,14 @@ const SORT_FIELD_MAP: Record<
 export class CategoryRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findById(id: string): Promise<CategoryRecord | null> {
-    const found = await this.prisma.category.findUnique({ where: { id } });
+  async findById(
+    id: string,
+    tx?: TransactionContext,
+  ): Promise<CategoryRecord | null> {
+    const found = await resolvePrismaConnection(
+      this.prisma,
+      tx,
+    ).category.findUnique({ where: { id } });
     return found === null ? null : mapCategory(found);
   }
 
@@ -70,9 +78,15 @@ export class CategoryRepository {
     return { items: rows.map(mapCategory), total };
   }
 
-  async create(input: CreateCategoryInput): Promise<CategoryRecord> {
+  async create(
+    input: CreateCategoryInput,
+    tx?: TransactionContext,
+  ): Promise<CategoryRecord> {
     const name = normalizeCategoryName(input.name);
-    const created = await this.prisma.category.create({
+    const created = await resolvePrismaConnection(
+      this.prisma,
+      tx,
+    ).category.create({
       data: {
         name,
         isActive: input.isActive ?? true,
@@ -84,6 +98,7 @@ export class CategoryRepository {
   async update(
     id: string,
     input: UpdateCategoryInput,
+    tx?: TransactionContext,
   ): Promise<CategoryRecord | null> {
     const data: Prisma.CategoryUpdateInput = {};
     if (input.name !== undefined) {
@@ -94,11 +109,14 @@ export class CategoryRepository {
     }
 
     if (Object.keys(data).length === 0) {
-      return this.findById(id);
+      return this.findById(id, tx);
     }
 
     try {
-      const updated = await this.prisma.category.update({
+      const updated = await resolvePrismaConnection(
+        this.prisma,
+        tx,
+      ).category.update({
         where: { id },
         data,
       });

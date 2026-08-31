@@ -14,6 +14,12 @@ import type {
 } from '../src/common/authz/admin-role-resolver';
 import { ADMIN_ROLE_RESOLVER } from '../src/common/authz/authorization.tokens';
 import { PrismaService } from '../src/infrastructure/database/prisma/prisma.service';
+import {
+  TRANSACTION_CONTEXT_BRAND,
+  TransactionRunner,
+  type TransactionContext,
+} from '../src/infrastructure/database/transaction';
+import { AuditLogService } from '../src/modules/audit/application/audit-log.service';
 import { AuthSubjectType } from '../src/modules/auth/domain/subject-type';
 import type {
   BlogListQuery,
@@ -149,10 +155,18 @@ class InMemoryBlogRepository {
     return Promise.resolve(updated);
   }
 
-  publish(id: string, now: Date): Promise<BlogRecord | null> {
+  publish(
+    id: string,
+    now: Date,
+    _tx?: unknown,
+  ): Promise<{ record: BlogRecord; changed: boolean } | null> {
+    void _tx;
     const existing = this.rows.get(id);
     if (existing === undefined) {
       return Promise.resolve(null);
+    }
+    if (existing.isPublished) {
+      return Promise.resolve({ record: existing, changed: false });
     }
     const publication = applyPublishTransition(existing, now);
     const updated: BlogRecord = {
@@ -161,13 +175,20 @@ class InMemoryBlogRepository {
       updatedAt: new Date(),
     };
     this.rows.set(id, updated);
-    return Promise.resolve(updated);
+    return Promise.resolve({ record: updated, changed: true });
   }
 
-  unpublish(id: string): Promise<BlogRecord | null> {
+  unpublish(
+    id: string,
+    _tx?: unknown,
+  ): Promise<{ record: BlogRecord; changed: boolean } | null> {
+    void _tx;
     const existing = this.rows.get(id);
     if (existing === undefined) {
       return Promise.resolve(null);
+    }
+    if (!existing.isPublished) {
+      return Promise.resolve({ record: existing, changed: false });
     }
     const publication = applyUnpublishTransition(existing);
     const updated: BlogRecord = {
@@ -176,7 +197,7 @@ class InMemoryBlogRepository {
       updatedAt: new Date(),
     };
     this.rows.set(id, updated);
-    return Promise.resolve(updated);
+    return Promise.resolve({ record: updated, changed: true });
   }
 
   private listWithVisibility(
@@ -217,6 +238,31 @@ class InMemoryBlogRepository {
       items: items.slice(start, start + query.pageSize),
       total,
     });
+  }
+}
+
+class PassThroughTransactionRunner extends TransactionRunner {
+  override run<T>(fn: (tx: TransactionContext) => Promise<T>): Promise<T> {
+    return fn({ [TRANSACTION_CONTEXT_BRAND]: true });
+  }
+
+  override runIn<T>(
+    existing: TransactionContext | undefined,
+    fn: (tx: TransactionContext) => Promise<T>,
+  ): Promise<T> {
+    return fn(existing ?? { [TRANSACTION_CONTEXT_BRAND]: true });
+  }
+
+  override runSnapshotRead<T>(
+    fn: (tx: TransactionContext) => Promise<T>,
+  ): Promise<T> {
+    return this.run(fn);
+  }
+
+  override runRepeatableRead<T>(
+    fn: (tx: TransactionContext) => Promise<T>,
+  ): Promise<T> {
+    return this.run(fn);
   }
 }
 
@@ -293,6 +339,10 @@ describe('Admin blog APIs (e2e)', () => {
       })
       .overrideProvider(BlogRepository)
       .useValue(blogs)
+      .overrideProvider(TransactionRunner)
+      .useValue(new PassThroughTransactionRunner())
+      .overrideProvider(AuditLogService)
+      .useValue({ append: jest.fn().mockResolvedValue(undefined) })
       .overrideProvider(ADMIN_ROLE_RESOLVER)
       .useValue(admins)
       .compile();

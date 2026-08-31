@@ -26,6 +26,9 @@ import {
 } from '../../../src/modules/settlements/domain/settlement-errors';
 import { SettlementRepository } from '../../../src/modules/settlements/infrastructure/settlement.repository';
 import { assertDestructiveOperationsAllowed } from '../support/integration-environment';
+import { AuditModule } from '../../../src/modules/audit/audit.module';
+import { AuditLogService } from '../../../src/modules/audit/application/audit-log.service';
+import { AuditAction } from '../../../src/modules/audit/domain/audit-event';
 
 async function truncateSettlementTables(prisma: PrismaService): Promise<void> {
   assertDestructiveOperationsAllowed();
@@ -43,6 +46,7 @@ describe('Deferred settlement persistence and concurrency (integration)', () => 
   let mediaService: MediaService;
   let mediaRepository: MediaRepository;
   let storage: InMemoryStorageProvider;
+  let audit: AuditLogService;
 
   beforeAll(async () => {
     storage = new InMemoryStorageProvider('https://media.test.invalid');
@@ -51,6 +55,7 @@ describe('Deferred settlement persistence and concurrency (integration)', () => 
         ConfigModule.forRoot(createConfigModuleOptions()),
         ObservabilityModule,
         PrismaModule,
+        AuditModule,
       ],
       providers: [
         SettlementRepository,
@@ -76,6 +81,7 @@ describe('Deferred settlement persistence and concurrency (integration)', () => 
     transactions = moduleRef.get(TransactionRunner);
     mediaService = moduleRef.get(MediaService);
     mediaRepository = moduleRef.get(MediaRepository);
+    audit = moduleRef.get(AuditLogService);
     await app.init();
   });
 
@@ -246,6 +252,11 @@ describe('Deferred settlement persistence and concurrency (integration)', () => 
       status: SettlementStatus.OPEN,
       receiptAttachedByAdminId: expectedActor,
     });
+    expect(
+      await prisma.auditLog.count({
+        where: { action: AuditAction.SETTLEMENT_UPDATED, entityId: created.id },
+      }),
+    ).toBe(2);
     expect(final!.receiptAttachedAt).not.toBeNull();
     const timestamp = final!.receiptAttachedAt;
     await service.attachReceipt(created.id, final!.receiptMediaId!, adminId);
@@ -288,6 +299,11 @@ describe('Deferred settlement persistence and concurrency (integration)', () => 
     );
     expect(replay.settledAt).toEqual(first.settledAt);
     expect(replay.settledByAdminId).toBe(first.settledByAdminId);
+    expect(
+      await prisma.auditLog.count({
+        where: { action: AuditAction.SETTLEMENT_SETTLED, entityId: created.id },
+      }),
+    ).toBe(1);
     await expect(
       service.changeDueAt(created.id, '2027-01-01T00:00:00.000Z', adminId),
     ).rejects.toBeInstanceOf(SettlementInvalidTransitionError);
@@ -344,7 +360,7 @@ describe('Deferred settlement persistence and concurrency (integration)', () => 
 
     await service.attachReceipt(created.id, item.media.id, adminId);
     await expect(
-      mediaService.deleteAdmin(item.media.id),
+      mediaService.deleteAdmin(item.media.id, adminId),
     ).rejects.toBeInstanceOf(MediaReferencedError);
     expect(await mediaRepository.findById(item.media.id)).not.toBeNull();
     expect(await storage.exists(item.media.storageKey)).toBe(true);
@@ -385,5 +401,29 @@ describe('Deferred settlement persistence and concurrency (integration)', () => 
       status: SettlementStatus.OPEN,
       orderStatus: OrderStatus.RETURNED,
     });
+  });
+
+  it('rolls back settlement due-date mutation when required audit append fails', async () => {
+    const { orderId, adminId } = await seed();
+    const created = await service.create(
+      orderId,
+      '2026-08-01T00:00:00.000Z',
+      adminId,
+    );
+    jest
+      .spyOn(audit, 'append')
+      .mockRejectedValueOnce(new Error('audit failure'));
+    await expect(
+      service.changeDueAt(created.id, '2026-09-01T00:00:00.000Z', adminId),
+    ).rejects.toThrow('audit failure');
+    expect((await repository.findById(created.id))!.dueAt.toISOString()).toBe(
+      '2026-08-01T00:00:00.000Z',
+    );
+    expect(
+      await prisma.auditLog.count({
+        where: { action: AuditAction.SETTLEMENT_UPDATED, entityId: created.id },
+      }),
+    ).toBe(0);
+    jest.restoreAllMocks();
   });
 });

@@ -36,6 +36,8 @@ import {
 } from '../domain/media-errors';
 import { generateMediaStorageKey } from '../domain/storage-key';
 import { MediaRepository } from '../infrastructure/media.repository';
+import { AuditAction, AuditEntityType } from '../../audit/domain/audit-event';
+import { AuditLogService } from '../../audit/application/audit-log.service';
 import type { AdminMediaListQueryDto } from '../api/dto/admin-media-list-query.dto';
 import { resolveAdminMediaSort } from '../api/dto/admin-media-list-query.dto';
 import { isAcceptedMediaMimeType } from '../domain/accepted-media-types';
@@ -55,6 +57,7 @@ export class MediaService {
     @Inject(MEDIA_UPLOAD_LIMITS)
     private readonly limits: MediaUploadLimits,
     private readonly logger: ApplicationLogger,
+    private readonly audit: AuditLogService,
     @Optional() private readonly transactions?: TransactionRunner,
   ) {}
 
@@ -161,10 +164,10 @@ export class MediaService {
     };
   }
 
-  async deleteAdmin(id: string): Promise<MediaRecord> {
+  async deleteAdmin(id: string, actorId: string): Promise<MediaRecord> {
     if (this.transactions !== undefined) {
       return this.transactions.run((tx) =>
-        this.deleteAdminInTransaction(id, tx),
+        this.deleteAdminInTransaction(id, actorId, tx),
       );
     }
     const existing = await this.media.findById(id);
@@ -206,6 +209,7 @@ export class MediaService {
 
   private async deleteAdminInTransaction(
     id: string,
+    actorId: string,
     tx: TransactionContext,
   ): Promise<MediaRecord> {
     const existing = await this.media.findByIdForReference(id, tx);
@@ -223,7 +227,23 @@ export class MediaService {
     }
     try {
       const deleted = await this.media.deleteById(id, tx);
-      return deleted ?? existing;
+      if (deleted === null) return existing;
+      await this.audit.append(
+        {
+          action: AuditAction.MEDIA_DELETED,
+          actorType: 'ADMIN',
+          actorId,
+          entityType: AuditEntityType.MEDIA,
+          entityId: deleted.id,
+          metadata: undefined,
+        },
+        tx,
+      );
+      this.logger.info(
+        { module: 'media', operation: 'media.deleted', mediaId: deleted.id },
+        'Media deleted',
+      );
+      return deleted;
     } catch {
       throw new MediaDeleteFailedError();
     }

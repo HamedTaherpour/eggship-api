@@ -10,6 +10,8 @@ import { AdminsModule } from '../../../src/modules/admins/admins.module';
 import { AdminIdentityService } from '../../../src/modules/admins/application/admin-identity.service';
 import { AdminRepository } from '../../../src/modules/admins/infrastructure/admin.repository';
 import { AdminSessionLifecycleService } from '../../../src/modules/auth/application/admin-session-lifecycle.service';
+import { AdminLoginService } from '../../../src/modules/auth/application/admin-login.service';
+import { RequestContextService } from '../../../src/common/observability/request-context.service';
 import { AuthError } from '../../../src/modules/auth/domain/auth-error';
 import { AuthErrorCode } from '../../../src/modules/auth/domain/auth-error-codes';
 import { REFRESH_REUSE_RACE_GRACE_MS } from '../../../src/modules/auth/domain/auth-session';
@@ -17,8 +19,11 @@ import { AuthSubjectType } from '../../../src/modules/auth/domain/subject-type';
 import { AuthModule } from '../../../src/modules/auth/auth.module';
 import { AdminAuthSessionRepository } from '../../../src/modules/auth/infrastructure/admin-auth-session.repository';
 import { RefreshTokenService } from '../../../src/modules/auth/infrastructure/refresh-token.service';
+import { digestRefreshToken } from '../../../src/modules/auth/domain/refresh-token-digest';
 import type { RefreshSessionResult } from '../../../src/modules/auth/application/session-lifecycle.service';
 import { PrismaService } from '../../../src/infrastructure/database/prisma/prisma.service';
+import { TransactionRunner } from '../../../src/infrastructure/database/transaction';
+import { AuditLogService } from '../../../src/modules/audit/application/audit-log.service';
 import { truncateAuthPersistenceTables } from '../support/truncate-auth-tables';
 
 const PASSWORD = 'integration only never a default';
@@ -31,6 +36,10 @@ describe('Admin auth sessions (integration)', () => {
   let sessions: AdminAuthSessionRepository;
   let refreshTokens: RefreshTokenService;
   let lifecycle: AdminSessionLifecycleService;
+  let login: AdminLoginService;
+  let requestContext: RequestContextService;
+  let transactions: TransactionRunner;
+  let audit: AuditLogService;
   let emailCounter = 0;
 
   beforeAll(async () => {
@@ -58,11 +67,80 @@ describe('Admin auth sessions (integration)', () => {
     sessions = moduleRef.get(AdminAuthSessionRepository);
     refreshTokens = moduleRef.get(RefreshTokenService);
     lifecycle = moduleRef.get(AdminSessionLifecycleService);
+    login = moduleRef.get(AdminLoginService);
+    requestContext = moduleRef.get(RequestContextService);
+    transactions = moduleRef.get(TransactionRunner);
+    audit = moduleRef.get(AuditLogService);
     await app.init();
   });
 
   beforeEach(async () => {
     await truncateAuthPersistenceTables(prisma);
+  });
+
+  it('commits an Admin session and exactly one success audit event together', async () => {
+    const email = nextEmail();
+    const admin = await identity.createAdmin({
+      email,
+      password: PASSWORD,
+      role: AdminRole.WAREHOUSE,
+    });
+
+    const result = await requestContext.run(
+      {
+        requestId: 'req_integration_admin_login',
+        correlationId: 'corr_admin_login',
+      },
+      () => login.login({ email, password: PASSWORD }),
+    );
+
+    expect(result.admin.id).toBe(admin.id);
+    const sessionsForAdmin = await prisma.adminAuthSession.findMany({
+      where: { adminId: admin.id },
+    });
+    expect(sessionsForAdmin).toHaveLength(1);
+    const audits = await prisma.auditLog.findMany({
+      where: {
+        action: 'admin.auth.login.succeeded',
+        entityId: admin.id,
+      },
+    });
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      actorType: 'ADMIN',
+      actorId: admin.id,
+      entityType: 'ADMIN',
+      metadata: { sessionId: sessionsForAdmin[0]?.id },
+      requestId: 'req_integration_admin_login',
+      correlationId: 'corr_admin_login',
+    });
+  });
+
+  it('rolls back the Admin session when the required audit step fails', async () => {
+    const admin = await identity.createAdmin({
+      email: nextEmail(),
+      password: PASSWORD,
+      role: AdminRole.WAREHOUSE,
+    });
+    const sessionId = randomUUID();
+
+    await expect(
+      transactions.run(async (tx) => {
+        await sessions.createSession(
+          {
+            id: sessionId,
+            adminId: admin.id,
+            refreshTokenHash: digestRefreshToken(`rollback.${sessionId}`),
+            tokenFamilyId: randomUUID(),
+            expiresAt: new Date(Date.now() + 60_000),
+          },
+          tx,
+        );
+        throw new Error('simulated audit failure');
+      }),
+    ).rejects.toThrow('simulated audit failure');
+
+    await expect(sessions.findSessionById(sessionId)).resolves.toBeNull();
   });
 
   afterAll(async () => {
@@ -216,6 +294,63 @@ describe('Admin auth sessions (integration)', () => {
     expect(
       (await sessions.findSessionById(second.sessionId))?.revokedAt,
     ).toBeNull();
+    const audits = await prisma.auditLog.findMany({
+      where: {
+        action: 'admin.auth.sessions.revoked_all',
+        entityId: first.adminId,
+      },
+    });
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      actorType: 'ADMIN',
+      actorId: first.adminId,
+      entityType: 'ADMIN',
+      metadata: null,
+    });
+  });
+
+  it('rolls back revoke-all when the required audit append fails', async () => {
+    const seeded = await seedRefreshableSession();
+    jest
+      .spyOn(audit, 'append')
+      .mockRejectedValueOnce(new Error('audit failure'));
+
+    await expect(
+      lifecycle.logoutAll({
+        subjectId: seeded.adminId,
+        subjectType: AuthSubjectType.ADMIN,
+        sessionId: seeded.sessionId,
+      }),
+    ).rejects.toThrow('audit failure');
+
+    expect(
+      (await sessions.findSessionById(seeded.sessionId))?.revokedAt,
+    ).toBeNull();
+    expect(
+      await prisma.auditLog.count({
+        where: { action: 'admin.auth.sessions.revoked_all' },
+      }),
+    ).toBe(0);
+    jest.restoreAllMocks();
+  });
+
+  it('audits a repeated no-op revoke-all according to current action semantics', async () => {
+    const seeded = await seedRefreshableSession();
+    const principal = {
+      subjectId: seeded.adminId,
+      subjectType: AuthSubjectType.ADMIN,
+      sessionId: seeded.sessionId,
+    } as const;
+    await lifecycle.logoutAll(principal);
+    await lifecycle.logoutAll(principal);
+    expect(
+      await prisma.auditLog.count({
+        where: {
+          action: 'admin.auth.sessions.revoked_all',
+          entityId: seeded.adminId,
+        },
+      }),
+    ).toBe(2);
   });
 
   it('rejects refresh when the Admin is disabled', async () => {
@@ -265,6 +400,11 @@ describe('Admin auth sessions (integration)', () => {
 
     const stored = await sessions.findSessionById(seeded.sessionId);
     expect(stored?.revokedAt).toBeNull();
+    expect(
+      await prisma.auditLog.count({
+        where: { action: 'admin.auth.refresh.reuse_detected' },
+      }),
+    ).toBe(0);
   });
 
   it('reuse on one Admin token family does not revoke a sibling family', async () => {
@@ -306,13 +446,66 @@ describe('Admin auth sessions (integration)', () => {
       },
     });
 
-    await expect(lifecycle.refresh(seeded.rawToken)).rejects.toMatchObject({
-      code: AuthErrorCode.REFRESH_TOKEN_REUSED,
-    });
+    await requestContext.run(
+      {
+        requestId: 'req_admin_reuse',
+        correlationId: 'corr_admin_reuse',
+      },
+      () =>
+        expect(lifecycle.refresh(seeded.rawToken)).rejects.toMatchObject({
+          code: AuthErrorCode.REFRESH_TOKEN_REUSED,
+        }),
+    );
 
     const stored = await sessions.findSessionById(seeded.sessionId);
     expect(stored?.revokedAt).not.toBeNull();
     expect(first.refreshToken).not.toBe(seeded.rawToken);
+    const audits = await prisma.auditLog.findMany({
+      where: {
+        action: 'admin.auth.refresh.reuse_detected',
+        entityId: seeded.adminId,
+      },
+    });
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      actorType: 'ADMIN',
+      actorId: seeded.adminId,
+      entityType: 'ADMIN',
+      metadata: { sessionId: seeded.sessionId },
+      requestId: 'req_admin_reuse',
+      correlationId: 'corr_admin_reuse',
+    });
+    expect(JSON.stringify(audits[0])).not.toContain(seeded.rawToken);
+    expect(JSON.stringify(audits[0])).not.toContain(
+      refreshTokens.digest(seeded.rawToken),
+    );
+  });
+
+  it('rolls back family revocation when reuse audit append fails', async () => {
+    const seeded = await seedRefreshableSession();
+    await lifecycle.refresh(seeded.rawToken);
+    await prisma.adminAuthRefreshTokenConsumption.updateMany({
+      where: { sessionId: seeded.sessionId },
+      data: {
+        consumedAt: new Date(Date.now() - REFRESH_REUSE_RACE_GRACE_MS - 1_000),
+      },
+    });
+    jest
+      .spyOn(audit, 'append')
+      .mockRejectedValueOnce(new Error('audit failure'));
+
+    await expect(lifecycle.refresh(seeded.rawToken)).rejects.toThrow(
+      'audit failure',
+    );
+    expect(
+      (await sessions.findSessionById(seeded.sessionId))?.revokedAt,
+    ).toBeNull();
+    expect(
+      await prisma.auditLog.count({
+        where: { action: 'admin.auth.refresh.reuse_detected' },
+      }),
+    ).toBe(0);
+    jest.restoreAllMocks();
   });
 
   it('logout vs refresh leaves a revoked Admin session that cannot rotate', async () => {

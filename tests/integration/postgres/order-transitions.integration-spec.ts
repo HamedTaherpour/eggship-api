@@ -7,8 +7,8 @@ import {
 } from '../support/postgres-testing-module';
 import { PrismaService } from '../../../src/infrastructure/database/prisma/prisma.service';
 import { TransactionRunner } from '../../../src/infrastructure/database/transaction';
-import { CategoryService } from '../../../src/modules/categories/application/category.service';
 import { CategoryRepository } from '../../../src/modules/categories/infrastructure/category.repository';
+import { CategoryService } from '../../../src/modules/categories/application/category.service';
 import {
   InventoryService,
   SYSTEM_ACTOR,
@@ -26,12 +26,15 @@ import { OrderStatus } from '../../../src/modules/orders/domain/order-status';
 import { OrderTransitionService } from '../../../src/modules/orders/application/order-transition.service';
 import { OrderRepository } from '../../../src/modules/orders/infrastructure/order.repository';
 import { OrdersModule } from '../../../src/modules/orders/orders.module';
+import { AuditModule } from '../../../src/modules/audit/audit.module';
 import { ProductService } from '../../../src/modules/products/application/product.service';
 import { ProductRepository } from '../../../src/modules/products/infrastructure/product.repository';
 import { RegionRepository } from '../../../src/modules/regions/infrastructure/region.repository';
 import type { UserRecord } from '../../../src/modules/users/domain/user';
 import { UserRepository } from '../../../src/modules/users/infrastructure/user.repository';
 import { assertDestructiveOperationsAllowed } from '../support/integration-environment';
+import { AuditLogService } from '../../../src/modules/audit/application/audit-log.service';
+import { AuditAction } from '../../../src/modules/audit/domain/audit-event';
 
 function uniquePhone(suffix: number): string {
   const national = `912${String(suffix).padStart(7, '0')}`.slice(0, 10);
@@ -59,6 +62,7 @@ describe('Order transitions (integration)', () => {
   let inventory: InventoryService;
   let transactions: TransactionRunner;
   let phoneCounter = 0;
+  let audit: AuditLogService;
 
   const admin = {
     type: OrderActorType.ADMIN,
@@ -67,7 +71,13 @@ describe('Order transitions (integration)', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [...postgresIntegrationImports([InventoryModule, OrdersModule])],
+      imports: [
+        ...postgresIntegrationImports([
+          InventoryModule,
+          OrdersModule,
+          AuditModule,
+        ]),
+      ],
       providers: [
         RegionRepository,
         CategoryRepository,
@@ -88,6 +98,7 @@ describe('Order transitions (integration)', () => {
     transitions = moduleRef.get(OrderTransitionService);
     inventory = moduleRef.get(InventoryService);
     transactions = moduleRef.get(TransactionRunner);
+    audit = moduleRef.get(AuditLogService);
     await app.init();
   });
 
@@ -192,6 +203,11 @@ describe('Order transitions (integration)', () => {
 
     expect(result.replay).toBe(false);
     expect(result.order.status).toBe(OrderStatus.CONFIRMED);
+    expect(
+      await prisma.auditLog.count({
+        where: { action: AuditAction.ORDER_CONFIRMED, entityId: orderId },
+      }),
+    ).toBe(1);
     expect(result.order.confirmedAt).toBeInstanceOf(Date);
     expect(
       await prisma.outboxEvent.count({
@@ -724,5 +740,25 @@ describe('Order transitions (integration)', () => {
     await expect(
       transitions.confirmOrder({ orderId: randomUUID(), actor: admin }),
     ).rejects.toBeInstanceOf(OrderNotFoundError);
+  });
+
+  it('rolls back a transition when its required audit append fails', async () => {
+    const { orderId } = await seedReservedPending();
+    jest
+      .spyOn(audit, 'append')
+      .mockRejectedValueOnce(new Error('audit failure'));
+    await expect(
+      transitions.confirmOrder({ orderId, actor: admin }),
+    ).rejects.toThrow('audit failure');
+    expect(await orders.findById(orderId)).toMatchObject({
+      status: OrderStatus.PENDING_REVIEW,
+      confirmedAt: null,
+    });
+    expect(
+      await prisma.auditLog.count({
+        where: { action: AuditAction.ORDER_CONFIRMED, entityId: orderId },
+      }),
+    ).toBe(0);
+    jest.restoreAllMocks();
   });
 });

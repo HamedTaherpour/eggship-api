@@ -3,6 +3,7 @@ import { ObservabilityModule } from '../../common/observability/observability.mo
 import { PrismaModule } from '../../infrastructure/database/prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
 import { MediaModule } from '../media/media.module';
+import { AuditModule } from '../audit/audit.module';
 import { AdminBlogsController } from './api/admin-blogs.controller';
 import {
   AdminBlogTaxonomyController,
@@ -25,6 +26,7 @@ import { BlogTaxonomyService } from './application/blog-taxonomy.service';
     ObservabilityModule,
     forwardRef(() => AuthModule),
     forwardRef(() => MediaModule),
+    AuditModule,
   ],
   controllers: [
     BlogsController,

@@ -1,7 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApplicationLogger } from '../../../common/observability/application-logger.service';
+import { TransactionRunner } from '../../../infrastructure/database/transaction';
 import { AdminIdentityService } from '../../admins/application/admin-identity.service';
+import { AuditLogService } from '../../audit/application/audit-log.service';
+import {
+  AuditAction,
+  AuditActorType,
+  AuditEntityType,
+} from '../../audit/domain/audit-event';
 import type { AdminAuthSessionRecord } from '../domain/admin-auth-session';
 import { AuthError } from '../domain/auth-error';
 import { AuthErrorCode } from '../domain/auth-error-codes';
@@ -30,6 +37,8 @@ export class AdminSessionLifecycleService {
     private readonly refreshTokens: RefreshTokenService,
     private readonly accessTokens: AccessTokenService,
     private readonly logger: ApplicationLogger,
+    private readonly transactions: TransactionRunner,
+    private readonly audit: AuditLogService,
     config: ConfigService,
   ) {
     this.accessTokenTtlSeconds = config.getOrThrow<number>(
@@ -161,10 +170,20 @@ export class AdminSessionLifecycleService {
     }
 
     const now = new Date();
-    const count = await this.sessions.revokeAllAdminSessions(
-      principal.subjectId,
-      now,
-    );
+    await this.transactions.run(async (tx) => {
+      await this.sessions.revokeAllAdminSessions(principal.subjectId, now, tx);
+      await this.audit.append(
+        {
+          action: AuditAction.ADMIN_SESSIONS_REVOKED_ALL,
+          actorType: AuditActorType.ADMIN,
+          actorId: principal.subjectId,
+          entityType: AuditEntityType.ADMIN,
+          entityId: principal.subjectId,
+          metadata: undefined,
+        },
+        tx,
+      );
+    });
 
     this.logger.info(
       {
@@ -172,7 +191,6 @@ export class AdminSessionLifecycleService {
         operation: 'admin.auth.sessions.revoked_all',
         subjectType: principal.subjectType,
         subjectId: principal.subjectId,
-        revokedCount: count,
       },
       'All admin auth sessions revoked for subject',
     );
@@ -255,10 +273,24 @@ export class AdminSessionLifecycleService {
     }
 
     if (classification.kind === 'confirmed_reuse') {
-      await this.sessions.revokeSessionsByTokenFamily(
-        session.tokenFamilyId,
-        now,
-      );
+      await this.transactions.run(async (tx) => {
+        await this.sessions.revokeSessionsByTokenFamily(
+          session.tokenFamilyId,
+          now,
+          tx,
+        );
+        await this.audit.append(
+          {
+            action: AuditAction.ADMIN_REFRESH_REUSE_DETECTED,
+            actorType: AuditActorType.ADMIN,
+            actorId: session.adminId,
+            entityType: AuditEntityType.ADMIN,
+            entityId: session.adminId,
+            metadata: { sessionId: session.id },
+          },
+          tx,
+        );
+      });
       this.logger.warn(
         {
           module: 'auth',
@@ -293,10 +325,28 @@ export class AdminSessionLifecycleService {
       return;
     }
 
-    await this.sessions.revokeSessionsByTokenFamily(
-      consumed.tokenFamilyId,
-      now,
-    );
+    const session = await this.sessions.findSessionById(consumed.sessionId);
+    if (session === null) {
+      return;
+    }
+    await this.transactions.run(async (tx) => {
+      await this.sessions.revokeSessionsByTokenFamily(
+        consumed.tokenFamilyId,
+        now,
+        tx,
+      );
+      await this.audit.append(
+        {
+          action: AuditAction.ADMIN_REFRESH_REUSE_DETECTED,
+          actorType: AuditActorType.ADMIN,
+          actorId: session.adminId,
+          entityType: AuditEntityType.ADMIN,
+          entityId: session.adminId,
+          metadata: { sessionId: consumed.sessionId },
+        },
+        tx,
+      );
+    });
     this.logger.warn(
       {
         module: 'auth',
@@ -304,6 +354,7 @@ export class AdminSessionLifecycleService {
         sessionId: consumed.sessionId,
         tokenFamilyId: consumed.tokenFamilyId,
         subjectType: AuthSubjectType.ADMIN,
+        subjectId: session.adminId,
       },
       'Admin refresh token reuse detected for missing session; token family revoked',
     );

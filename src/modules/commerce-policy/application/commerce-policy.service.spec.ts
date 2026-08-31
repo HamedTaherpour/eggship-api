@@ -7,6 +7,29 @@ import {
 } from '../domain/commerce-policy-errors';
 import type { CommercePolicyRepository } from '../infrastructure/commerce-policy.repository';
 import { CommercePolicyService } from './commerce-policy.service';
+import {
+  TransactionRunner,
+  type TransactionContext,
+} from '../../../infrastructure/database/transaction';
+import type { AuditLogService } from '../../audit/application/audit-log.service';
+
+class ImmediateTransactionRunner extends TransactionRunner {
+  async run<T>(fn: (tx: TransactionContext) => Promise<T>): Promise<T> {
+    return fn({} as TransactionContext);
+  }
+  async runIn<T>(
+    existing: TransactionContext | undefined,
+    fn: (tx: TransactionContext) => Promise<T>,
+  ): Promise<T> {
+    return fn(existing ?? ({} as TransactionContext));
+  }
+  runSnapshotRead<T>(): Promise<T> {
+    throw new Error('not used');
+  }
+  runRepeatableRead<T>(): Promise<T> {
+    throw new Error('not used');
+  }
+}
 
 const ACTOR = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const NOW = new Date('2026-08-25T10:00:00.000Z');
@@ -40,6 +63,8 @@ describe('CommercePolicyService', () => {
     service = new CommercePolicyService(
       repository,
       logger as unknown as ApplicationLogger,
+      new ImmediateTransactionRunner(),
+      { append: jest.fn() } as unknown as AuditLogService,
     );
   });
 
@@ -60,6 +85,7 @@ describe('CommercePolicyService', () => {
     expect(repository.initialize.mock.calls[0]).toEqual([
       expect.any(Object),
       ACTOR,
+      expect.any(Object),
     ]);
     expect(logger.info).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -165,6 +191,7 @@ describe('CommercePolicyService', () => {
       expect.any(Object),
       1,
       ACTOR,
+      expect.any(Object),
     ]);
 
     repository.putOverride.mockResolvedValue({
@@ -246,6 +273,7 @@ describe('CommercePolicyService', () => {
       '2026-08-25',
       1,
       ACTOR,
+      expect.any(Object),
     ]);
     expect(logger.info).toHaveBeenCalledWith(
       expect.objectContaining({

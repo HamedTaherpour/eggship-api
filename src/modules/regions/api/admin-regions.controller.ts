@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -30,6 +31,8 @@ import { PermissionGuard } from '../../../common/authz/permission.guard';
 import { RequirePermissions } from '../../../common/authz/require-permissions.decorator';
 import { ApiErrorResponseDto } from '../../../common/openapi/dto/common-response.dto';
 import { AccessTokenGuard } from '../../auth/api/access-token.guard';
+import { getAuthenticatedPrincipal } from '../../auth/api/authenticated-principal.util';
+import type { Request } from 'express';
 import { RegionService } from '../application/region.service';
 import { AdminRegionListQueryDto } from './dto/admin-region-list-query.dto';
 import { CreateRegionBodyDto } from './dto/create-region.dto';
@@ -100,8 +103,12 @@ export class AdminRegionsController {
   @ApiForbiddenResponse({ type: ApiErrorResponseDto })
   async create(
     @Body() body: CreateRegionBodyDto,
+    @Req() request: Request,
   ): Promise<AdminRegionResponseDto> {
-    const created = await this.regions.create(body);
+    const created = await this.regions.create(
+      body,
+      getAuthenticatedPrincipal(request),
+    );
     return { data: toAdminRegionDto(created) };
   }
 
@@ -131,8 +138,13 @@ export class AdminRegionsController {
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: UpdateRegionBodyDto,
+    @Req() request: Request,
   ): Promise<AdminRegionResponseDto> {
-    const updated = await this.regions.update(id, body);
+    const updated = await this.regions.update(
+      id,
+      body,
+      getAuthenticatedPrincipal(request),
+    );
     return { data: toAdminRegionDto(updated) };
   }
 }

@@ -1,5 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { PrismaModule } from '../../infrastructure/database/prisma/prisma.module';
+import { AuditModule } from '../audit/audit.module';
 import { AuthModule } from '../auth/auth.module';
 import { AdminInventoryOperationsService } from './application/admin-inventory-operations.service';
 import { AdminInventoryQueryService } from './application/admin-inventory-query.service';
@@ -16,7 +17,7 @@ import { InventoryReservationRepository } from './infrastructure/inventory-reser
  * Orders must orchestrate stock mutations through InventoryService — not tables.
  */
 @Module({
-  imports: [PrismaModule, forwardRef(() => AuthModule)],
+  imports: [PrismaModule, AuditModule, forwardRef(() => AuthModule)],
   controllers: [AdminInventoryController],
   providers: [
     InventoryBalanceRepository,

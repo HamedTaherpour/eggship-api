@@ -23,6 +23,7 @@ import {
   InventoryLedgerReferenceType,
 } from '../../../src/modules/inventory/domain/inventory-ledger';
 import { InventoryModule } from '../../../src/modules/inventory/inventory.module';
+import { AuditModule } from '../../../src/modules/audit/audit.module';
 import { InventoryBalanceRepository } from '../../../src/modules/inventory/infrastructure/inventory-balance.repository';
 import { ProductService } from '../../../src/modules/products/application/product.service';
 import { ProductRepository } from '../../../src/modules/products/infrastructure/product.repository';
@@ -46,7 +47,7 @@ describe('Inventory reconciliation (integration)', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [...postgresIntegrationImports([InventoryModule])],
+      imports: [...postgresIntegrationImports([InventoryModule, AuditModule])],
       providers: [
         CategoryRepository,
         CategoryService,

@@ -12,7 +12,7 @@ This ADR does not implement AuditLog, change Prisma, add migrations, or modify a
 
 [AUD-01](../ROADMAP.md#aud-01--auditlog-model-and-safe-event-contract) requires a durable, append-oriented AuditLog with actor, action, entity identity, safe metadata, request/correlation provenance, and timestamps. Sensitive fields must be excluded or redacted by construction. AuditLog is distinct from application/security logging ([observability policy](../../instructions/observability.md)) and from domain business-history stores.
 
-Retention, deletion, backup, and legal-hold policy for AuditLog are owned by [DATA-01](../ROADMAP.md#data-01--data-classification-and-retention-decision-register) and must not be invented here.
+Retention, deletion, backup, and legal-hold policy for AuditLog are owned by [DATA-01](../data-lifecycle.md) and must not be invented here.
 
 Related policy:
 
@@ -766,7 +766,7 @@ They must not be incorrectly presented as gate blockers.
 
 ### Legal hold
 
-Explicitly deferred to [DATA-01](../ROADMAP.md#data-01--data-classification-and-retention-decision-register) / [DATA-03](../ROADMAP.md#data-03--durable-business-records-and-backup-lifecycle) as applicable.
+Explicitly deferred to [data-lifecycle.md](../data-lifecycle.md) / [DATA-03](../ROADMAP.md#data-03--durable-business-records-and-backup-lifecycle) as applicable.
 
 **Not** an AUD-01 implementation blocker.
 
@@ -774,7 +774,7 @@ No policy is invented here.
 
 ### Retention/deletion
 
-Explicitly deferred to [DATA-01](../ROADMAP.md#data-01--data-classification-and-retention-decision-register) / [DATA-03](../ROADMAP.md#data-03--durable-business-records-and-backup-lifecycle).
+Explicitly deferred to [data-lifecycle.md](../data-lifecycle.md) / [DATA-03](../ROADMAP.md#data-03--durable-business-records-and-backup-lifecycle).
 
 **Not** an AUD-01 implementation blocker.
 

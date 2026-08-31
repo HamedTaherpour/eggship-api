@@ -121,9 +121,9 @@ device fingerprinting, national-ID matching, behavioral fraud scoring, Redis
 abuse counters, click tracking, click history, server-side visitor sessions,
 monetary rewards, commissions, and referral aggregates are out of scope.
 Residual limitations are accepted: a person may use multiple independently
-registered phone accounts, and no speculative fraud signal is inferred. Raw
-Visitor/referral data remains subject to the future DATA-01 classification and
-retention decision.
+registered phone accounts, and no speculative fraud signal is inferred. Visitor/referral
+classification and lifecycle principles are recorded in [data-lifecycle.md](../docs/data-lifecycle.md);
+retention durations remain **UNRESOLVED**.
 
 REF-02 defines the minimal relational schema, ownership/provenance,
 normalization, uniqueness, deletion behavior, duplicate/idempotency behavior,

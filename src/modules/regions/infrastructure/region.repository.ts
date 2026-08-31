@@ -76,9 +76,15 @@ export class RegionRepository {
     return { items: rows.map(mapRegion), total };
   }
 
-  async create(input: CreateRegionInput): Promise<RegionRecord> {
+  async create(
+    input: CreateRegionInput,
+    tx?: TransactionContext,
+  ): Promise<RegionRecord> {
     const name = normalizeRegionName(input.name);
-    const created = await this.prisma.region.create({
+    const created = await resolvePrismaConnection(
+      this.prisma,
+      tx,
+    ).region.create({
       data: {
         name,
         isActive: input.isActive ?? true,
@@ -90,6 +96,7 @@ export class RegionRepository {
   async update(
     id: string,
     input: UpdateRegionInput,
+    tx?: TransactionContext,
   ): Promise<RegionRecord | null> {
     const data: Prisma.RegionUpdateInput = {};
     if (input.name !== undefined) {
@@ -100,11 +107,14 @@ export class RegionRepository {
     }
 
     if (Object.keys(data).length === 0) {
-      return this.findById(id);
+      return this.findById(id, tx);
     }
 
     try {
-      const updated = await this.prisma.region.update({
+      const updated = await resolvePrismaConnection(
+        this.prisma,
+        tx,
+      ).region.update({
         where: { id },
         data,
       });

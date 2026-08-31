@@ -31,6 +31,7 @@ import type {
 import { normalizeProductName } from '../src/modules/products/domain/product-name';
 import { normalizeProductPrice } from '../src/modules/products/domain/product-price';
 import { ProductRepository } from '../src/modules/products/infrastructure/product.repository';
+import { AuditLogService } from '../src/modules/audit/application/audit-log.service';
 import { InventoryService } from '../src/modules/inventory/application/inventory.service';
 import { PriceHistoryRepository } from '../src/modules/pricing/infrastructure/price-history.repository';
 import type {
@@ -515,6 +516,8 @@ describe('Product catalog APIs (e2e)', () => {
       .useValue(priceHistory)
       .overrideProvider(TransactionRunner)
       .useValue(new PassThroughTransactionRunner())
+      .overrideProvider(AuditLogService)
+      .useValue({ append: jest.fn().mockResolvedValue(undefined) })
       .overrideProvider(InventoryService)
       .useValue(stubInventoryService)
       .overrideProvider(ADMIN_ROLE_RESOLVER)

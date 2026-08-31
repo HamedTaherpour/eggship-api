@@ -15,6 +15,8 @@ import { CreateCategoryBodyDto } from '../api/dto/create-category.dto';
 import { PublicCategoryListQueryDto } from '../api/dto/public-category-list-query.dto';
 import { UpdateCategoryBodyDto } from '../api/dto/update-category.dto';
 import { CategoryService } from './category.service';
+import type { TransactionRunner } from '../../../infrastructure/database/transaction';
+import type { AuditLogService } from '../../audit/application/audit-log.service';
 
 function record(overrides: Partial<CategoryRecord> = {}): CategoryRecord {
   const now = new Date('2026-08-21T12:00:00.000Z');
@@ -32,14 +34,19 @@ describe('CategoryService', () => {
   let repository: jest.Mocked<
     Pick<
       CategoryRepository,
-      'listActiveOrderedByName' | 'list' | 'create' | 'update'
+      'listActiveOrderedByName' | 'list' | 'create' | 'update' | 'findById'
     >
   >;
   let logger: jest.Mocked<Pick<ApplicationLogger, 'info'>>;
   let service: CategoryService;
+  const transactions = {
+    run: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
+  } as unknown as TransactionRunner;
+  const audit = { append: jest.fn() } as unknown as AuditLogService;
 
   beforeEach(() => {
     repository = {
+      findById: jest.fn(),
       listActiveOrderedByName: jest.fn(),
       list: jest.fn(),
       create: jest.fn(),
@@ -49,6 +56,8 @@ describe('CategoryService', () => {
     service = new CategoryService(
       repository as unknown as CategoryRepository,
       logger as unknown as ApplicationLogger,
+      transactions,
+      audit,
     );
   });
 
@@ -115,10 +124,13 @@ describe('CategoryService', () => {
     expect(await validate(body)).toHaveLength(0);
 
     await expect(service.create(body)).resolves.toEqual(created);
-    expect(repository.create).toHaveBeenCalledWith({
-      name: 'Dairy',
-      isActive: true,
-    });
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Dairy',
+        isActive: true,
+      }),
+      expect.anything(),
+    );
     expect(logger.info).toHaveBeenCalledWith(
       expect.objectContaining({
         module: 'categories',
@@ -132,6 +144,7 @@ describe('CategoryService', () => {
   it('updates allowlisted fields only and maps not-found', async () => {
     const updated = record({ name: 'Eggs', isActive: false });
     repository.update.mockResolvedValue(updated);
+    repository.findById.mockResolvedValue(record());
 
     const body = plainToInstance(UpdateCategoryBodyDto, {
       name: 'Eggs',
@@ -140,10 +153,14 @@ describe('CategoryService', () => {
     expect(await validate(body)).toHaveLength(0);
 
     await expect(service.update(updated.id, body)).resolves.toEqual(updated);
-    expect(repository.update).toHaveBeenCalledWith(updated.id, {
-      name: 'Eggs',
-      isActive: false,
-    });
+    expect(repository.update).toHaveBeenCalledWith(
+      updated.id,
+      {
+        name: 'Eggs',
+        isActive: false,
+      },
+      expect.anything(),
+    );
 
     repository.update.mockResolvedValue(null);
     await expect(

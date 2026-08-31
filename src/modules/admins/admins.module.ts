@@ -1,6 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { PrismaModule } from '../../infrastructure/database/prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
+import { AuditModule } from '../audit/audit.module';
 import { AdminIdentityService } from './application/admin-identity.service';
 import { AdminRepository } from './infrastructure/admin.repository';
 import { PrismaAdminRoleResolver } from './infrastructure/prisma-admin-role.resolver';
@@ -16,7 +17,7 @@ import { PrismaAdminRoleResolver } from './infrastructure/prisma-admin-role.reso
  * keeps authorization free of a dependency on a business module (ADR 0007).
  */
 @Module({
-  imports: [PrismaModule, forwardRef(() => AuthModule)],
+  imports: [PrismaModule, AuditModule, forwardRef(() => AuthModule)],
   providers: [AdminRepository, PrismaAdminRoleResolver, AdminIdentityService],
   exports: [PrismaAdminRoleResolver, AdminIdentityService],
 })

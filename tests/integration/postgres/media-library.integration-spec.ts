@@ -7,14 +7,18 @@ import { createConfigModuleOptions } from '../../../src/config/config-module.opt
 import { PrismaModule } from '../../../src/infrastructure/database/prisma/prisma.module';
 import { PrismaService } from '../../../src/infrastructure/database/prisma/prisma.service';
 import { InMemoryStorageProvider } from '../../../src/infrastructure/storage/in-memory-storage.provider';
+import { StorageProviderError } from '../../../src/infrastructure/storage/storage-provider';
 import { STORAGE_PROVIDER } from '../../../src/infrastructure/storage/storage.tokens';
 import { MediaService } from '../../../src/modules/media/application/media.service';
 import { MEDIA_UPLOAD_LIMITS } from '../../../src/modules/media/application/media.service';
+import { MediaErrorCode } from '../../../src/modules/media/domain/media-errors';
 import {
   jpegFixture,
   pngFixture,
 } from '../../../src/modules/media/domain/media-test-fixtures';
 import { MediaRepository } from '../../../src/modules/media/infrastructure/media.repository';
+import { AuditModule } from '../../../src/modules/audit/audit.module';
+import { AuditLogService } from '../../../src/modules/audit/application/audit-log.service';
 import { assertDestructiveOperationsAllowed } from '../support/integration-environment';
 
 async function truncateMediaTable(prisma: PrismaService): Promise<void> {
@@ -30,6 +34,7 @@ describe('Media library persistence (integration)', () => {
   let media: MediaRepository;
   let service: MediaService;
   let storage: InMemoryStorageProvider;
+  let audit: AuditLogService;
 
   beforeAll(async () => {
     storage = new InMemoryStorageProvider('https://media.test.invalid');
@@ -38,6 +43,7 @@ describe('Media library persistence (integration)', () => {
         ConfigModule.forRoot(createConfigModuleOptions()),
         ObservabilityModule,
         PrismaModule,
+        AuditModule,
       ],
       providers: [
         MediaRepository,
@@ -59,11 +65,13 @@ describe('Media library persistence (integration)', () => {
     prisma = moduleRef.get(PrismaService);
     media = moduleRef.get(MediaRepository);
     service = moduleRef.get(MediaService);
+    audit = moduleRef.get(AuditLogService);
     await app.init();
   });
 
   beforeEach(async () => {
     await truncateMediaTable(prisma);
+    await prisma.auditLog.deleteMany({ where: { action: 'media.deleted' } });
     storage.clearForTest();
   });
 
@@ -125,9 +133,230 @@ describe('Media library persistence (integration)', () => {
     if (first === undefined || first.status !== 'uploaded') {
       throw new Error('expected uploaded item');
     }
-    await service.deleteAdmin(first.media.id);
+    const admin = await prisma.admin.create({
+      data: {
+        email: `${randomUUID()}@example.invalid`,
+        passwordHash: 'x'.repeat(32),
+        role: 'SUPER_ADMIN',
+      },
+    });
+    await service.deleteAdmin(first.media.id, admin.id);
     expect(await media.findById(first.media.id)).toBeNull();
     expect(await prisma.media.count()).toBe(1);
+  });
+
+  it('persists exactly one privacy-safe media.deleted event with the deletion', async () => {
+    const admin = await prisma.admin.create({
+      data: {
+        email: `${randomUUID()}@example.invalid`,
+        passwordHash: 'x'.repeat(32),
+        role: 'SUPER_ADMIN',
+      },
+    });
+    const created = await media.create({
+      storageKey: `media/2026/08/${randomUUID()}.png`,
+      originalFileName: 'private-name.png',
+      mimeType: 'image/png',
+      sizeBytes: 16,
+      width: 1,
+      height: 1,
+    });
+    await storage.put({
+      storageKey: created.storageKey,
+      body: Buffer.from('object'),
+      mimeType: created.mimeType,
+    });
+
+    await service.deleteAdmin(created.id, admin.id);
+
+    const events = await prisma.auditLog.findMany({
+      where: { action: 'media.deleted', entityId: created.id },
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      actorType: 'ADMIN',
+      actorId: admin.id,
+      action: 'media.deleted',
+      entityType: 'MEDIA',
+      entityId: created.id,
+      metadata: null,
+    });
+    expect(JSON.stringify(events[0])).not.toContain(created.storageKey);
+    expect(JSON.stringify(events[0])).not.toContain(created.originalFileName);
+  });
+
+  it('rolls back the Media row when AuditLog append fails', async () => {
+    const admin = await prisma.admin.create({
+      data: {
+        email: `${randomUUID()}@example.invalid`,
+        passwordHash: 'x'.repeat(32),
+        role: 'SUPER_ADMIN',
+      },
+    });
+    const created = await media.create({
+      storageKey: `media/2026/08/${randomUUID()}.png`,
+      originalFileName: 'audit-failure.png',
+      mimeType: 'image/png',
+      sizeBytes: 16,
+      width: 1,
+      height: 1,
+    });
+    await storage.put({
+      storageKey: created.storageKey,
+      body: Buffer.from('object'),
+      mimeType: created.mimeType,
+    });
+    const append = jest
+      .spyOn(audit, 'append')
+      .mockRejectedValueOnce(new Error('forced audit failure'));
+
+    await expect(
+      service.deleteAdmin(created.id, admin.id),
+    ).rejects.toMatchObject({
+      name: 'MediaDeleteFailedError',
+      code: MediaErrorCode.DELETE_FAILED,
+    });
+    append.mockRestore();
+    expect(await media.findById(created.id)).not.toBeNull();
+    expect(await storage.exists(created.storageKey)).toBe(false);
+    expect(
+      await prisma.auditLog.count({
+        where: { action: 'media.deleted', entityId: created.id },
+      }),
+    ).toBe(0);
+  });
+
+  it('succeeds when the storage object is already absent and persists one media.deleted audit', async () => {
+    const admin = await prisma.admin.create({
+      data: {
+        email: `${randomUUID()}@example.invalid`,
+        passwordHash: 'x'.repeat(32),
+        role: 'SUPER_ADMIN',
+      },
+    });
+    const created = await media.create({
+      storageKey: `media/2026/08/${randomUUID()}.png`,
+      originalFileName: 'orphan-row.png',
+      mimeType: 'image/png',
+      sizeBytes: 16,
+      width: 1,
+      height: 1,
+    });
+    expect(await storage.exists(created.storageKey)).toBe(false);
+
+    await service.deleteAdmin(created.id, admin.id);
+
+    expect(await media.findById(created.id)).toBeNull();
+    const events = await prisma.auditLog.findMany({
+      where: { action: 'media.deleted', entityId: created.id },
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      actorType: 'ADMIN',
+      actorId: admin.id,
+      action: 'media.deleted',
+      entityType: 'MEDIA',
+      entityId: created.id,
+      metadata: null,
+    });
+    const serialized = JSON.stringify(events[0]);
+    expect(serialized).not.toContain(created.storageKey);
+    expect(serialized).not.toContain(created.originalFileName);
+    expect(serialized).not.toContain(created.mimeType);
+    expect(serialized).not.toContain(storage.getPublicUrl(created.storageKey));
+  });
+
+  it('keeps the Media row and emits no audit when storage delete fails', async () => {
+    const admin = await prisma.admin.create({
+      data: {
+        email: `${randomUUID()}@example.invalid`,
+        passwordHash: 'x'.repeat(32),
+        role: 'SUPER_ADMIN',
+      },
+    });
+    const created = await media.create({
+      storageKey: `media/2026/08/${randomUUID()}.png`,
+      originalFileName: 'storage-failure.png',
+      mimeType: 'image/png',
+      sizeBytes: 16,
+      width: 1,
+      height: 1,
+    });
+    await storage.put({
+      storageKey: created.storageKey,
+      body: Buffer.from('object'),
+      mimeType: created.mimeType,
+    });
+    const deleteSpy = jest
+      .spyOn(storage, 'delete')
+      .mockRejectedValueOnce(
+        new StorageProviderError('Object storage delete failed.'),
+      );
+
+    await expect(
+      service.deleteAdmin(created.id, admin.id),
+    ).rejects.toMatchObject({
+      name: 'MediaDeleteFailedError',
+      code: MediaErrorCode.DELETE_FAILED,
+    });
+    deleteSpy.mockRestore();
+
+    expect(await media.findById(created.id)).not.toBeNull();
+    expect(await storage.exists(created.storageKey)).toBe(true);
+    expect(
+      await prisma.auditLog.count({
+        where: { action: 'media.deleted', entityId: created.id },
+      }),
+    ).toBe(0);
+    const auditRows = await prisma.auditLog.findMany({
+      where: { entityId: created.id },
+    });
+    for (const row of auditRows) {
+      expect(JSON.stringify(row)).not.toContain(created.storageKey);
+      expect(JSON.stringify(row)).not.toContain('Object storage delete failed');
+    }
+  });
+
+  it('does not append a second media.deleted audit when delete is replayed', async () => {
+    const admin = await prisma.admin.create({
+      data: {
+        email: `${randomUUID()}@example.invalid`,
+        passwordHash: 'x'.repeat(32),
+        role: 'SUPER_ADMIN',
+      },
+    });
+    const created = await media.create({
+      storageKey: `media/2026/08/${randomUUID()}.png`,
+      originalFileName: 'replay.png',
+      mimeType: 'image/png',
+      sizeBytes: 16,
+      width: 1,
+      height: 1,
+    });
+    await storage.put({
+      storageKey: created.storageKey,
+      body: Buffer.from('object'),
+      mimeType: created.mimeType,
+    });
+
+    await service.deleteAdmin(created.id, admin.id);
+    expect(
+      await prisma.auditLog.count({
+        where: { action: 'media.deleted', entityId: created.id },
+      }),
+    ).toBe(1);
+
+    await expect(
+      service.deleteAdmin(created.id, admin.id),
+    ).rejects.toMatchObject({
+      name: 'MediaNotFoundError',
+      code: MediaErrorCode.NOT_FOUND,
+    });
+    expect(
+      await prisma.auditLog.count({
+        where: { action: 'media.deleted', entityId: created.id },
+      }),
+    ).toBe(1);
   });
 
   it('exposes the MED-01 Product media FK without changing CAT-04 Media ownership', async () => {

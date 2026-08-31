@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import {
   resolvePageRequest,
   toPaginatedResponse,
@@ -6,6 +6,8 @@ import {
 } from '../../../common/list';
 import { ApplicationLogger } from '../../../common/observability/application-logger.service';
 import { TransactionRunner } from '../../../infrastructure/database/transaction';
+import { AuditLogService } from '../../audit/application/audit-log.service';
+import { AuditAction, AuditEntityType } from '../../audit/domain/audit-event';
 import { MediaService } from '../../media/application/media.service';
 import { OrderNotFoundError } from '../../orders/domain/order-errors';
 import { OrderStatus } from '../../orders/domain/order-status';
@@ -32,6 +34,7 @@ export class SettlementService {
     private readonly transactions: TransactionRunner,
     private readonly media: MediaService,
     private readonly logger: ApplicationLogger,
+    @Optional() private readonly audit?: AuditLogService,
   ) {}
 
   async listAdmin(
@@ -111,7 +114,20 @@ export class SettlementService {
     const dueAt = parseSettlementDueAt(dueAtValue);
     const result = await this.transactions.run(async (tx) => {
       const changed = await this.settlements.changeDueAt(id, dueAt, tx);
-      if (changed !== null) return changed;
+      if (changed !== null) {
+        await this.audit?.append(
+          {
+            action: AuditAction.SETTLEMENT_UPDATED,
+            actorType: 'ADMIN',
+            actorId,
+            entityType: AuditEntityType.SETTLEMENT,
+            entityId: id,
+            metadata: { changedFields: ['dueAt'] },
+          },
+          tx,
+        );
+        return changed;
+      }
       const current = await this.requireCurrent(id, tx);
       if (current.status !== SettlementStatus.OPEN) {
         throw new SettlementInvalidTransitionError();
@@ -151,11 +167,7 @@ export class SettlementService {
         tx,
       );
       if (changed !== null)
-        return {
-          kind:
-            changed.previousReceiptMediaId === null ? 'attached' : 'replaced',
-          record: changed.record,
-        } as const;
+        return this.auditReceiptChange(changed, id, actorId, tx);
 
       const current = await this.requireCurrent(id, tx);
       if (current.status !== SettlementStatus.OPEN) {
@@ -190,7 +202,20 @@ export class SettlementService {
   async markSettled(id: string, actorId: string): Promise<SettlementRecord> {
     const result = await this.transactions.run(async (tx) => {
       const settled = await this.settlements.markSettled(id, actorId, tx);
-      if (settled !== null) return { changed: true, record: settled };
+      if (settled !== null) {
+        await this.audit?.append(
+          {
+            action: AuditAction.SETTLEMENT_SETTLED,
+            actorType: 'ADMIN',
+            actorId,
+            entityType: AuditEntityType.SETTLEMENT,
+            entityId: id,
+            metadata: undefined,
+          },
+          tx,
+        );
+        return { changed: true, record: settled };
+      }
       const current = await this.requireCurrent(id, tx);
       if (current.status === SettlementStatus.SETTLED) {
         return { changed: false, record: current };
@@ -221,5 +246,31 @@ export class SettlementService {
     const current = await this.settlements.findById(id, tx);
     if (current === null) throw new SettlementNotFoundError();
     return current;
+  }
+
+  private async auditReceiptChange(
+    changed: {
+      record: SettlementRecord;
+      previousReceiptMediaId: string | null;
+    },
+    id: string,
+    actorId: string,
+    tx: Parameters<SettlementRepository['findById']>[1],
+  ): Promise<{ kind: 'attached' | 'replaced'; record: SettlementRecord }> {
+    await this.audit?.append(
+      {
+        action: AuditAction.SETTLEMENT_UPDATED,
+        actorType: 'ADMIN',
+        actorId,
+        entityType: AuditEntityType.SETTLEMENT,
+        entityId: id,
+        metadata: { changedFields: ['receiptMediaId'] },
+      },
+      tx,
+    );
+    return {
+      kind: changed.previousReceiptMediaId === null ? 'attached' : 'replaced',
+      record: changed.record,
+    } as const;
   }
 }

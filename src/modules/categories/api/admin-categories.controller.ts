@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -30,6 +31,8 @@ import { PermissionGuard } from '../../../common/authz/permission.guard';
 import { RequirePermissions } from '../../../common/authz/require-permissions.decorator';
 import { ApiErrorResponseDto } from '../../../common/openapi/dto/common-response.dto';
 import { AccessTokenGuard } from '../../auth/api/access-token.guard';
+import { getAuthenticatedPrincipal } from '../../auth/api/authenticated-principal.util';
+import type { Request } from 'express';
 import { CategoryService } from '../application/category.service';
 import { AdminCategoryListQueryDto } from './dto/admin-category-list-query.dto';
 import {
@@ -100,8 +103,12 @@ export class AdminCategoriesController {
   @ApiForbiddenResponse({ type: ApiErrorResponseDto })
   async create(
     @Body() body: CreateCategoryBodyDto,
+    @Req() request: Request,
   ): Promise<AdminCategoryResponseDto> {
-    const created = await this.categories.create(body);
+    const created = await this.categories.create(
+      body,
+      getAuthenticatedPrincipal(request),
+    );
     return { data: toAdminCategoryDto(created) };
   }
 
@@ -131,8 +138,13 @@ export class AdminCategoriesController {
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: UpdateCategoryBodyDto,
+    @Req() request: Request,
   ): Promise<AdminCategoryResponseDto> {
-    const updated = await this.categories.update(id, body);
+    const updated = await this.categories.update(
+      id,
+      body,
+      getAuthenticatedPrincipal(request),
+    );
     return { data: toAdminCategoryDto(updated) };
   }
 }

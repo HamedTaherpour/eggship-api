@@ -19,10 +19,13 @@ import {
 } from '../../../src/modules/inventory/domain/inventory-errors';
 import { InventoryHttpMessage } from '../../../src/modules/inventory/domain/inventory-http-messages';
 import { InventoryModule } from '../../../src/modules/inventory/inventory.module';
+import { AuditModule } from '../../../src/modules/audit/audit.module';
 import { ProductService } from '../../../src/modules/products/application/product.service';
 import { ProductRepository } from '../../../src/modules/products/infrastructure/product.repository';
 import { AuthSubjectType } from '../../../src/modules/auth/domain/subject-type';
 import { assertDestructiveOperationsAllowed } from '../support/integration-environment';
+import { AuditLogService } from '../../../src/modules/audit/application/audit-log.service';
+import { AuditAction } from '../../../src/modules/audit/domain/audit-event';
 
 async function truncateInventoryTables(prisma: PrismaService): Promise<void> {
   assertDestructiveOperationsAllowed();
@@ -38,6 +41,7 @@ describe('Admin inventory operations (integration)', () => {
   let productService: ProductService;
   let inventoryOps: AdminInventoryOperationsService;
   let inventory: InventoryService;
+  let audit: AuditLogService;
 
   const adminPrincipal = {
     subjectId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
@@ -47,7 +51,7 @@ describe('Admin inventory operations (integration)', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [...postgresIntegrationImports([InventoryModule])],
+      imports: [...postgresIntegrationImports([InventoryModule, AuditModule])],
       providers: [
         CategoryRepository,
         CategoryService,
@@ -63,6 +67,7 @@ describe('Admin inventory operations (integration)', () => {
     productService = moduleRef.get(ProductService);
     inventoryOps = moduleRef.get(AdminInventoryOperationsService);
     inventory = moduleRef.get(InventoryService);
+    audit = moduleRef.get(AuditLogService);
     await app.init();
   });
 
@@ -114,6 +119,11 @@ describe('Admin inventory operations (integration)', () => {
       }),
     ).toBe(1);
     expect(await prisma.inventoryCommandIdempotency.count()).toBe(1);
+    expect(
+      await prisma.auditLog.count({
+        where: { action: AuditAction.INVENTORY_RECEIVED, entityId: productId },
+      }),
+    ).toBe(1);
   });
 
   it('adjusts stock by signed delta and rejects below reserved', async () => {
@@ -152,6 +162,11 @@ describe('Admin inventory operations (integration)', () => {
       principal: adminPrincipal,
     });
     expect(adjusted).toMatchObject({ onHand: 8, reserved: 8, available: 0 });
+    expect(
+      await prisma.auditLog.count({
+        where: { action: AuditAction.INVENTORY_ADJUSTED, entityId: productId },
+      }),
+    ).toBe(1);
   });
 
   it('rejects same idempotency key with different payload', async () => {
@@ -200,6 +215,11 @@ describe('Admin inventory operations (integration)', () => {
         where: { productId, type: 'RECEIVE' },
       }),
     ).toBe(1);
+    expect(
+      await prisma.auditLog.count({
+        where: { action: AuditAction.INVENTORY_RECEIVED, entityId: productId },
+      }),
+    ).toBe(1);
   });
 
   it('rejects integer overflow receive safely', async () => {
@@ -223,6 +243,37 @@ describe('Admin inventory operations (integration)', () => {
       code: 'INVENTORY_INVALID_QUANTITY',
       message: InventoryHttpMessage.INVALID_QUANTITY,
     });
+  });
+
+  it('rolls back inventory state when the required receive audit fails', async () => {
+    const productId = await createProduct();
+    jest
+      .spyOn(audit, 'append')
+      .mockRejectedValueOnce(new Error('audit failure'));
+    await expect(
+      inventoryOps.receiveStock({
+        productId,
+        quantity: 5,
+        idempotencyKey: randomUUID(),
+        principal: adminPrincipal,
+      }),
+    ).rejects.toThrow('audit failure');
+    expect(await inventory.getBalance(productId)).toMatchObject({
+      onHand: 0,
+      reserved: 0,
+    });
+    expect(
+      await prisma.inventoryLedger.count({
+        where: { productId, type: 'RECEIVE' },
+      }),
+    ).toBe(0);
+    expect(await prisma.inventoryCommandIdempotency.count()).toBe(0);
+    expect(
+      await prisma.auditLog.count({
+        where: { action: AuditAction.INVENTORY_RECEIVED, entityId: productId },
+      }),
+    ).toBe(0);
+    jest.restoreAllMocks();
   });
 
   it('replays identical adjust commands without double mutation', async () => {

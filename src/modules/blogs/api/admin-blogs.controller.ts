@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -26,11 +27,13 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import type { Request } from 'express';
 import { Permission } from '../../../common/authz/permission';
 import { PermissionGuard } from '../../../common/authz/permission.guard';
 import { RequirePermissions } from '../../../common/authz/require-permissions.decorator';
 import { ApiErrorResponseDto } from '../../../common/openapi/dto/common-response.dto';
 import { AccessTokenGuard } from '../../auth/api/access-token.guard';
+import { getAuthenticatedPrincipal } from '../../auth/api/authenticated-principal.util';
 import { BlogService } from '../application/blog.service';
 import { AdminBlogListQueryDto } from './dto/admin-blog-list-query.dto';
 import {
@@ -194,8 +197,12 @@ export class AdminBlogsController {
   @ApiNotFoundResponse({ type: ApiErrorResponseDto })
   async publish(
     @Param('id', ParseUUIDPipe) id: string,
+    @Req() request: Request,
   ): Promise<AdminBlogResponseDto> {
-    const published = await this.blogs.publish(id);
+    const published = await this.blogs.publish(
+      id,
+      getAuthenticatedPrincipal(request)!.subjectId,
+    );
     return { data: toAdminBlogDetailDto(published) };
   }
 
@@ -222,8 +229,12 @@ export class AdminBlogsController {
   @ApiNotFoundResponse({ type: ApiErrorResponseDto })
   async unpublish(
     @Param('id', ParseUUIDPipe) id: string,
+    @Req() request: Request,
   ): Promise<AdminBlogResponseDto> {
-    const unpublished = await this.blogs.unpublish(id);
+    const unpublished = await this.blogs.unpublish(
+      id,
+      getAuthenticatedPrincipal(request)!.subjectId,
+    );
     return { data: toAdminBlogDetailDto(unpublished) };
   }
 }

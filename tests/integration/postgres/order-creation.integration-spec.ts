@@ -49,6 +49,8 @@ import { UsersModule } from '../../../src/modules/users/users.module';
 import { assertDestructiveOperationsAllowed } from '../support/integration-environment';
 import { ConcurrencyGate } from '../support/concurrency-gate';
 import { ApplicationLogger } from '../../../src/common/observability/application-logger.service';
+import { AuditLogService } from '../../../src/modules/audit/application/audit-log.service';
+import { AuditAction } from '../../../src/modules/audit/domain/audit-event';
 
 function uniquePhone(suffix: number): string {
   const national = `912${String(suffix).padStart(7, '0')}`.slice(0, 10);
@@ -78,6 +80,7 @@ describe('Order creation (integration)', () => {
   let logger: ApplicationLogger;
   let phoneCounter = 0;
   let adminActorId: string;
+  let audit: AuditLogService;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -107,6 +110,7 @@ describe('Order creation (integration)', () => {
     commercePolicy = moduleRef.get(CommercePolicyService);
     transactions = moduleRef.get(TransactionRunner);
     logger = moduleRef.get(ApplicationLogger);
+    audit = moduleRef.get(AuditLogService);
     await app.init();
   });
 
@@ -207,6 +211,16 @@ describe('Order creation (integration)', () => {
         status: 'ACTIVE',
       }),
     ]);
+    const audits = await prisma.auditLog.findMany({
+      where: { action: AuditAction.ORDER_CREATED, entityId: result.order.id },
+    });
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      actorType: 'USER',
+      actorId: user.id,
+      entityType: 'ORDER',
+      metadata: null,
+    });
   });
 
   it('rolls back Order and reservation when stock is insufficient', async () => {
@@ -277,7 +291,38 @@ describe('Order creation (integration)', () => {
     expect(await inventory.getBalance(productId)).toMatchObject({
       reserved: 2,
     });
+    expect(
+      await prisma.auditLog.count({
+        where: { action: AuditAction.ORDER_CREATED, entityId: orderId },
+      }),
+    ).toBe(1);
   }, 30_000);
+
+  it('rolls back Order and reservation when required creation audit fails', async () => {
+    const { user, regionId, productId } = await seedBase({ onHand: 10 });
+    const priorAuditCount = await prisma.auditLog.count({
+      where: { action: AuditAction.ORDER_CREATED },
+    });
+    jest
+      .spyOn(audit, 'append')
+      .mockRejectedValueOnce(new Error('audit failure'));
+    await expect(
+      creation.createOrder({
+        actor: { type: OrderActorType.USER, id: user.id },
+        regionId,
+        idempotencyKey: randomUUID(),
+        lines: [{ productId, quantity: 3 }],
+      }),
+    ).rejects.toThrow('audit failure');
+    expect(await prisma.order.count({ where: { userId: user.id } })).toBe(0);
+    expect(await prisma.inventoryReservation.count()).toBe(0);
+    expect(
+      await prisma.auditLog.count({
+        where: { action: AuditAction.ORDER_CREATED },
+      }),
+    ).toBe(priorAuditCount);
+    jest.restoreAllMocks();
+  });
 
   it('same key / different payload race yields one winner and conflicts', async () => {
     const { user, regionId, productId } = await seedBase({ onHand: 50 });

@@ -1,6 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { ApplicationLogger } from '../../../common/observability/application-logger.service';
 import type { TransactionContext } from '../../../infrastructure/database/transaction';
+import { TransactionRunner } from '../../../infrastructure/database/transaction';
+import { AuditLogService } from '../../audit/application/audit-log.service';
+import {
+  AuditAction,
+  AuditActorType,
+  AuditEntityType,
+} from '../../audit/domain/audit-event';
 import {
   CommerceOverrideMode,
   type CommerceOverrideInput,
@@ -36,6 +43,8 @@ export class CommercePolicyService {
   constructor(
     private readonly repository: CommercePolicyRepository,
     private readonly logger: ApplicationLogger,
+    private readonly transactions: TransactionRunner,
+    private readonly audit: AuditLogService,
   ) {}
 
   getSettings(): Promise<CommerceSettingsRecord | null> {
@@ -91,13 +100,18 @@ export class CommercePolicyService {
     input: CommerceSettingsInput,
     expectedRevision: number,
     actorId: string,
+    tx?: TransactionContext,
   ): Promise<CommerceSettingsRecord> {
     if (expectedRevision !== 0)
       throw new CommercePolicyRevisionConflictError(
         (await this.repository.getSettings())?.revision ?? null,
       );
     validateSettings(input);
-    const created = await this.repository.initialize(input, actorId);
+    const created = await this.transactions.runIn(tx, async (context) => {
+      const value = await this.repository.initialize(input, actorId, context);
+      await this.appendAudit(actorId, null, context);
+      return value;
+    });
     this.log('commerce.settings.created', actorId, 0, created.revision);
     return created;
   }
@@ -106,14 +120,20 @@ export class CommercePolicyService {
     input: CommerceSettingsInput,
     expectedRevision: number,
     actorId: string,
+    tx?: TransactionContext,
   ): Promise<PolicyMutationResult> {
     validateExpectedRevision(expectedRevision);
     validateSettings(input);
-    const result = await this.repository.updateSettings(
-      input,
-      expectedRevision,
-      actorId,
-    );
+    const result = await this.transactions.runIn(tx, async (context) => {
+      const value = await this.repository.updateSettings(
+        input,
+        expectedRevision,
+        actorId,
+        context,
+      );
+      if (value.changed) await this.appendAudit(actorId, null, context);
+      return value;
+    });
     if (result.changed)
       this.log(
         'commerce.settings.updated',
@@ -129,16 +149,23 @@ export class CommercePolicyService {
     input: CommerceOverrideInput,
     expectedRevision: number,
     actorId: string,
+    tx?: TransactionContext,
   ): Promise<OverrideMutationResult> {
     validateExpectedRevision(expectedRevision);
     validateDate(localDate);
     validateOverride(input);
-    const result = await this.repository.putOverride(
-      localDate,
-      input,
-      expectedRevision,
-      actorId,
-    );
+    const result = await this.transactions.runIn(tx, async (context) => {
+      const value = await this.repository.putOverride(
+        localDate,
+        input,
+        expectedRevision,
+        actorId,
+        context,
+      );
+      if (value.changed)
+        await this.appendAudit(actorId, value.override.id, context);
+      return value;
+    });
     if (result.changed)
       this.log(
         `commerce.schedule_override.${result.action}`,
@@ -154,14 +181,20 @@ export class CommercePolicyService {
     localDate: string,
     expectedRevision: number,
     actorId: string,
+    tx?: TransactionContext,
   ): Promise<PolicyMutationResult> {
     validateExpectedRevision(expectedRevision);
     validateDate(localDate);
-    const result = await this.repository.removeOverride(
-      localDate,
-      expectedRevision,
-      actorId,
-    );
+    const result = await this.transactions.runIn(tx, async (context) => {
+      const value = await this.repository.removeOverride(
+        localDate,
+        expectedRevision,
+        actorId,
+        context,
+      );
+      await this.appendAudit(actorId, value.overrideId ?? null, context);
+      return value;
+    });
     this.log(
       'commerce.schedule_override.removed',
       actorId,
@@ -170,6 +203,24 @@ export class CommercePolicyService {
       localDate,
     );
     return result;
+  }
+
+  private appendAudit(
+    actorId: string,
+    entityId: string | null,
+    tx: TransactionContext,
+  ): Promise<unknown> {
+    return this.audit.append(
+      {
+        action: AuditAction.COMMERCE_POLICY_UPDATED,
+        actorType: AuditActorType.ADMIN,
+        actorId,
+        entityType: AuditEntityType.COMMERCE_POLICY,
+        entityId,
+        metadata: undefined,
+      },
+      tx,
+    );
   }
 
   private log(

@@ -5,7 +5,6 @@ import { postgresIntegrationImports } from '../support/postgres-testing-module';
 import { PrismaService } from '../../../src/infrastructure/database/prisma/prisma.service';
 import type { AuthenticatedPrincipal } from '../../../src/modules/auth/domain/authenticated-principal';
 import { AuthSubjectType } from '../../../src/modules/auth/domain/subject-type';
-import { CategoryService } from '../../../src/modules/categories/application/category.service';
 import { CategoryRepository } from '../../../src/modules/categories/infrastructure/category.repository';
 import { InventoryModule } from '../../../src/modules/inventory/inventory.module';
 import {
@@ -27,6 +26,8 @@ import { ProductRepository } from '../../../src/modules/products/infrastructure/
 import { ProductsModule } from '../../../src/modules/products/products.module';
 import { PricingModule } from '../../../src/modules/pricing/pricing.module';
 import { assertDestructiveOperationsAllowed } from '../support/integration-environment';
+import { AuditLogService } from '../../../src/modules/audit/application/audit-log.service';
+import { AuditAction } from '../../../src/modules/audit/domain/audit-event';
 
 const ADMIN_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
@@ -51,6 +52,7 @@ describe('Product price history (integration)', () => {
   let priceHistory: PriceHistoryRepository;
   let pricing: PricingService;
   let productService: ProductService;
+  let audit: AuditLogService;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -61,7 +63,7 @@ describe('Product price history (integration)', () => {
           PricingModule,
         ]),
       ],
-      providers: [CategoryRepository, CategoryService],
+      providers: [CategoryRepository],
     }).compile();
 
     app = moduleRef;
@@ -71,6 +73,7 @@ describe('Product price history (integration)', () => {
     priceHistory = moduleRef.get(PriceHistoryRepository);
     pricing = moduleRef.get(PricingService);
     productService = moduleRef.get(ProductService);
+    audit = moduleRef.get(AuditLogService);
     await app.init();
   });
 
@@ -120,6 +123,16 @@ describe('Product price history (integration)', () => {
       actorId: ADMIN_ID,
     });
     expect(rows[0]!.createdAt).toBeInstanceOf(Date);
+    const audits = await prisma.auditLog.findMany({
+      where: { action: AuditAction.PRICE_CHANGED, entityId: created.id },
+    });
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      actorType: 'ADMIN',
+      actorId: ADMIN_ID,
+      entityType: 'PRODUCT',
+      metadata: { previousPrice: 625000, newPrice: 650000 },
+    });
   });
 
   it('skips history for a no-op admin price update', async () => {
@@ -241,6 +254,40 @@ describe('Product price history (integration)', () => {
       expect(rows[index]!.oldPrice).toBe(rows[index - 1]!.newPrice);
     }
     expect(rows.at(-1)!.newPrice).toBe(finalProduct!.price);
+    expect(
+      await prisma.auditLog.count({
+        where: { action: AuditAction.PRICE_CHANGED, entityId: created.id },
+      }),
+    ).toBe(3);
+  });
+
+  it('rolls back Product price and PriceHistory when required audit append fails', async () => {
+    const category = await categories.create({ name: 'Eggs' });
+    const created = await products.create({
+      name: 'Failure eggs',
+      price: 625000,
+      categoryId: category.id,
+    });
+    jest
+      .spyOn(audit, 'append')
+      .mockRejectedValueOnce(new Error('audit failure'));
+
+    await expect(
+      pricing.changeProductPrice({
+        productId: created.id,
+        newPrice: 650000,
+        actor: { type: PriceHistoryActorType.ADMIN, id: ADMIN_ID },
+      }),
+    ).rejects.toThrow('audit failure');
+
+    expect((await products.findById(created.id))!.price).toBe(625000);
+    expect(await priceHistory.countByProductId(created.id)).toBe(0);
+    expect(
+      await prisma.auditLog.count({
+        where: { action: AuditAction.PRICE_CHANGED, entityId: created.id },
+      }),
+    ).toBe(0);
+    jest.restoreAllMocks();
   });
 
   it('blocks Product deletion while PriceHistory rows exist', async () => {

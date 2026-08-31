@@ -5,6 +5,7 @@ import { Test } from '@nestjs/testing';
 import { ObservabilityModule } from '../../../src/common/observability/observability.module';
 import { createConfigModuleOptions } from '../../../src/config/config-module.options';
 import { PrismaModule } from '../../../src/infrastructure/database/prisma/prisma.module';
+import { AuditModule } from '../../../src/modules/audit/audit.module';
 import { PrismaService } from '../../../src/infrastructure/database/prisma/prisma.service';
 import { BlogService } from '../../../src/modules/blogs/application/blog.service';
 import { BlogSlugConflictError } from '../../../src/modules/blogs/domain/blog-errors';
@@ -31,6 +32,7 @@ describe('Blog persistence (integration)', () => {
         ConfigModule.forRoot(createConfigModuleOptions()),
         ObservabilityModule,
         PrismaModule,
+        AuditModule,
       ],
       providers: [BlogRepository, BlogService],
     }).compile();

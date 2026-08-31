@@ -2,6 +2,12 @@ import { randomUUID } from 'node:crypto';
 import type { ConfigService } from '@nestjs/config';
 import { AdminRole } from '../../../common/authz/admin-role';
 import type { ApplicationLogger } from '../../../common/observability/application-logger.service';
+import {
+  TRANSACTION_CONTEXT_BRAND,
+  TransactionRunner,
+  type TransactionContext,
+} from '../../../infrastructure/database/transaction';
+import type { AuditLogService } from '../../audit/application/audit-log.service';
 import type { AdminIdentityService } from '../../admins/application/admin-identity.service';
 import type {
   AdminLoginCredential,
@@ -20,6 +26,25 @@ const PASSWORD = 'correct horse battery staple';
 const HASH = '$argon2id$mock-hash';
 
 describe('AdminLoginService', () => {
+  class ImmediateTransactionRunner extends TransactionRunner {
+    run<T>(fn: (tx: TransactionContext) => Promise<T>): Promise<T> {
+      return fn({ [TRANSACTION_CONTEXT_BRAND]: true });
+    }
+    runIn<T>(
+      existing: TransactionContext | undefined,
+      fn: (tx: TransactionContext) => Promise<T>,
+    ): Promise<T> {
+      return fn(existing ?? { [TRANSACTION_CONTEXT_BRAND]: true });
+    }
+    runSnapshotRead<T>(fn: (tx: TransactionContext) => Promise<T>): Promise<T> {
+      return this.run(fn);
+    }
+    runRepeatableRead<T>(
+      fn: (tx: TransactionContext) => Promise<T>,
+    ): Promise<T> {
+      return this.run(fn);
+    }
+  }
   const adminId = randomUUID();
   const now = new Date('2026-08-21T00:00:00.000Z');
 
@@ -30,7 +55,8 @@ describe('AdminLoginService', () => {
   let accessTokens: jest.Mocked<Pick<AccessTokenService, 'issueAccessToken'>>;
   let abuse: jest.Mocked<Pick<AdminLoginAbuseLimiterService, 'consume'>>;
   let passwords: jest.Mocked<PasswordHasher>;
-  let logger: jest.Mocked<Pick<ApplicationLogger, 'info'>>;
+  let logger: jest.Mocked<Pick<ApplicationLogger, 'info' | 'warn'>>;
+  let audit: jest.Mocked<Pick<AuditLogService, 'append'>>;
   let service: AdminLoginService;
 
   const admin: AdminRecord = {
@@ -68,7 +94,8 @@ describe('AdminLoginService', () => {
       hash: jest.fn().mockResolvedValue('$argon2id$dummy'),
       verify: jest.fn(),
     };
-    logger = { info: jest.fn() };
+    logger = { info: jest.fn(), warn: jest.fn() };
+    audit = { append: jest.fn().mockResolvedValue(undefined) };
 
     service = new AdminLoginService(
       admins as unknown as AdminIdentityService,
@@ -78,6 +105,8 @@ describe('AdminLoginService', () => {
       abuse as unknown as AdminLoginAbuseLimiterService,
       passwords,
       logger as unknown as ApplicationLogger,
+      new ImmediateTransactionRunner(),
+      audit as unknown as AuditLogService,
       {
         getOrThrow: (key: string): string | number => {
           const values: Record<string, string | number> = {
@@ -117,6 +146,16 @@ describe('AdminLoginService', () => {
       role: AdminRole.WAREHOUSE,
     });
     expect(sessions.createSession).toHaveBeenCalled();
+    expect(audit.append).toHaveBeenCalledTimes(1);
+    expect(audit.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'admin.auth.login.succeeded',
+        actorType: 'ADMIN',
+        actorId: adminId,
+        entityId: adminId,
+      }),
+      expect.anything(),
+    );
     expect(accessTokens.issueAccessToken).toHaveBeenCalledWith(
       expect.objectContaining({
         subjectId: adminId,
@@ -142,6 +181,36 @@ describe('AdminLoginService', () => {
       ['$argon2id$dummy', PASSWORD],
     ]);
     expect(sessions.createSession).not.toHaveBeenCalled();
+    expect(audit.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'admin.auth.login.failed',
+        actorType: 'ANONYMOUS',
+        actorId: null,
+        entityId: null,
+        metadata: { reason: 'invalid_credentials' },
+      }),
+    );
+  });
+
+  it('preserves the authentication failure when failure-audit persistence fails', async () => {
+    admins.findLoginCredential.mockResolvedValue(null);
+    passwords.verify.mockResolvedValue(false);
+    audit.append.mockRejectedValueOnce(new Error('audit unavailable'));
+
+    await expect(
+      service.login({ email: 'nobody@example.test', password: PASSWORD }),
+    ).rejects.toMatchObject({ code: AuthErrorCode.INVALID_CREDENTIALS });
+    expect(logger.warn).toHaveBeenCalledWith(
+      {
+        module: 'auth',
+        operation: 'admin.auth.login.audit_persistence_failed',
+        reason: 'invalid_credentials',
+      },
+      'Admin login failure audit persistence failed',
+    );
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain(
+      'nobody@example.test',
+    );
   });
 
   it('returns the same public error for a wrong password', async () => {

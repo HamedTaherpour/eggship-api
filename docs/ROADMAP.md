@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   109 |
-| DONE        |    75 |
+| DONE        |    76 |
 | IN_PROGRESS |     0 |
 | READY       |     0 |
 | BLOCKED     |     0 |
-| PLANNED     |    34 |
+| PLANNED     |    33 |
 
-- Current task: `DATA-01` (Data classification and retention decision register) is **DONE**. Human legal/privacy/operations sign-off closed the canonical register in [data-lifecycle.md](data-lifecycle.md); independent final review passed with no BLOCKER, HIGH, or MEDIUM findings. Domain audit integration remains AUD-02; read APIs remain AUD-03; lifecycle enforcement remains DATA-02/DATA-03. No task remains BLOCKED.
+- Current task: `AUD-02` (Domain audit integration) is **DONE**. All approved AuditLog actions with existing production mutation paths are wired; registry actions for not-yet-implemented features remain deferred. AuditLog read APIs remain AUD-03; retention and lifecycle deletion remain DATA-01/DATA-03. No task remains BLOCKED.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate.
 
 ## Status model
@@ -579,7 +579,7 @@ Explicitly out of scope: Inventing refund, carrier, or physical-return rules; in
 
 ### ORD-08 — Order audit, concurrency, and load verification
 
-Status: PLANNED | Depends on: ORD-03, ORD-05, ORD-06, COM-03, DLU-02, SET-02, AUD-01 | Primary: Codex | Review: Claude/Cursor concurrency/performance review
+Status: PLANNED | Depends on: ORD-03, ORD-05, ORD-06, COM-03, DLU-02, SET-02, AUD-01, AUD-02 | Primary: Codex | Review: Claude/Cursor concurrency/performance review
 
 Scope: Complete order audit events, race-condition suites, idempotency verification, query analysis, and representative create/list/transition load tests.
 
@@ -1079,17 +1079,19 @@ Acceptance criteria: Sensitive fields are excluded/redacted by construction per 
 
 Explicitly out of scope: Logging every read, raw payload capture, retention periods, legal hold, and lifecycle deletion (deferred to DATA-01/DATA-03).
 
-Delivered: Additive append-only `AuditLog` PostgreSQL model and migration; closed action/entity registries and action-specific metadata validation with bounded safe JSON per ADR 0023; context-derived `requestId`/`correlationId` linkage; transaction-aware `AuditLogService.append()` writer with INSERT-only repository boundary; [audit-log.md](audit-log.md) implementation contract; unit and PostgreSQL integration coverage. Domain event integration remains AUD-02; read APIs remain AUD-03; retention and lifecycle deletion remain DATA-01/DATA-03.
+Delivered: Additive append-only `AuditLog` PostgreSQL model and migration; closed action/entity registries and action-specific metadata validation with bounded safe JSON per ADR 0023; context-derived `requestId`/`correlationId` linkage; transaction-aware `AuditLogService.append()` writer with INSERT-only repository boundary; [audit-log.md](audit-log.md) implementation contract; unit and PostgreSQL integration coverage. Domain event integration delivered in AUD-02; read APIs remain AUD-03; retention and lifecycle deletion remain DATA-01/DATA-03.
 
 ### AUD-02 — Domain audit integration
 
-Status: PLANNED | Depends on: AUD-01, AUTH-08 | Primary: Codex | Review: Claude/Cursor architecture/security review
+Status: DONE | Depends on: AUD-01, AUTH-08 | Primary: Codex | Review: Claude/Cursor architecture/security review
 
 Scope: Provide an application-level audit writer and integrate approved security and mutation events without modules writing another module's tables directly.
 
 Acceptance criteria: Audit creation follows transaction/durability decisions per event; failures are observable; tests prove actor/request/correlation propagation and redaction.
 
 Explicitly out of scope: Retrofitting unimplemented domains and external SIEM delivery.
+
+Delivered: Integrated approved AuditLog events into existing production mutation and security paths via transaction-aware `AuditLogService.append()` on caller-owned PostgreSQL connections: Admin identity/auth security; Product/Category/Region; Pricing/Discount; Inventory receive/adjust; Order create and transitions; Settlement lifecycle; Commerce Policy; Blog publish/unpublish; Media deletion. Transaction atomicity, replay/idempotency, privacy, actor provenance, and concurrency verified. Registry actions for not-yet-implemented features remain deferred. AuditLog read APIs remain AUD-03. Retention and lifecycle deletion remain DATA-01/DATA-03. Media audit represents the durable PostgreSQL Media deletion transition, not distributed object-storage atomicity.
 
 ### AUD-03 — Admin audit access
 

@@ -20,6 +20,7 @@ import {
 } from '../domain/media-errors';
 import type { MediaRepository } from '../infrastructure/media.repository';
 import { MediaService } from './media.service';
+import type { AuditLogService } from '../../audit/application/audit-log.service';
 
 const LIMITS = {
   maxFileBytes: 1_024,
@@ -53,6 +54,7 @@ describe('MediaService', () => {
   >;
   let storage: InMemoryStorageProvider;
   let logger: jest.Mocked<Pick<ApplicationLogger, 'info' | 'warn' | 'error'>>;
+  let audit: jest.Mocked<Pick<AuditLogService, 'append'>>;
   let service: MediaService;
 
   beforeEach(() => {
@@ -69,11 +71,13 @@ describe('MediaService', () => {
       warn: jest.fn(),
       error: jest.fn(),
     };
+    audit = { append: jest.fn() };
     service = new MediaService(
       repository as unknown as MediaRepository,
       storage,
       LIMITS,
       logger as unknown as ApplicationLogger,
+      audit as unknown as AuditLogService,
     );
   });
 
@@ -147,6 +151,7 @@ describe('MediaService', () => {
       failing,
       LIMITS,
       logger as unknown as ApplicationLogger,
+      audit as unknown as AuditLogService,
     );
 
     const result = await service.uploadBatch([
@@ -225,11 +230,12 @@ describe('MediaService', () => {
       failing,
       LIMITS,
       logger as unknown as ApplicationLogger,
+      audit as unknown as AuditLogService,
     );
 
-    await expect(service.deleteAdmin(existing.id)).rejects.toBeInstanceOf(
-      MediaDeleteFailedError,
-    );
+    await expect(
+      service.deleteAdmin(existing.id, randomUUID()),
+    ).rejects.toBeInstanceOf(MediaDeleteFailedError);
     expect(repository.deleteById).not.toHaveBeenCalled();
   });
 
@@ -243,7 +249,7 @@ describe('MediaService', () => {
       mimeType: 'image/jpeg',
     });
 
-    await service.deleteAdmin(existing.id);
+    await service.deleteAdmin(existing.id, randomUUID());
     expect(await storage.exists(existing.storageKey)).toBe(false);
     expect(repository.deleteById).toHaveBeenCalledWith(existing.id);
   });
@@ -258,9 +264,9 @@ describe('MediaService', () => {
       mimeType: 'image/jpeg',
     });
 
-    await expect(service.deleteAdmin(existing.id)).rejects.toBeInstanceOf(
-      MediaReferencedError,
-    );
+    await expect(
+      service.deleteAdmin(existing.id, randomUUID()),
+    ).rejects.toBeInstanceOf(MediaReferencedError);
     expect(await storage.exists(existing.storageKey)).toBe(true);
     expect(repository.deleteById).not.toHaveBeenCalled();
   });
@@ -297,6 +303,7 @@ describe('MediaService', () => {
       tracking,
       LIMITS,
       logger as unknown as ApplicationLogger,
+      audit as unknown as AuditLogService,
     );
 
     const files = Array.from({ length: 4 }, (_, index) => ({
@@ -331,6 +338,7 @@ describe('MediaService', () => {
       failingPuts,
       { ...LIMITS, maxFilesPerBatch: 10, maxBatchBytes: 16_384 },
       logger as unknown as ApplicationLogger,
+      audit as unknown as AuditLogService,
     );
 
     const files = [
@@ -380,7 +388,9 @@ describe('MediaService', () => {
       mimeType: 'image/jpeg',
     });
 
-    await expect(service.deleteAdmin(existing.id)).resolves.toEqual(existing);
+    await expect(
+      service.deleteAdmin(existing.id, randomUUID()),
+    ).resolves.toEqual(existing);
     expect(await storage.exists(existing.storageKey)).toBe(false);
   });
 
@@ -394,9 +404,9 @@ describe('MediaService', () => {
       mimeType: 'image/jpeg',
     });
 
-    await expect(service.deleteAdmin(existing.id)).rejects.toBeInstanceOf(
-      MediaDeleteFailedError,
-    );
+    await expect(
+      service.deleteAdmin(existing.id, randomUUID()),
+    ).rejects.toBeInstanceOf(MediaDeleteFailedError);
     expect(await storage.exists(existing.storageKey)).toBe(false);
   });
 });

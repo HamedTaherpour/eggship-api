@@ -7,6 +7,12 @@ import { AppModule } from '../src/app.module';
 import { configureApplication } from '../src/app.setup';
 import { AdminRole } from '../src/common/authz/admin-role';
 import { PrismaService } from '../src/infrastructure/database/prisma/prisma.service';
+import {
+  TRANSACTION_CONTEXT_BRAND,
+  TransactionRunner,
+  type TransactionContext,
+} from '../src/infrastructure/database/transaction';
+import { AuditLogService } from '../src/modules/audit/application/audit-log.service';
 import { PASSWORD_HASHER } from '../src/modules/auth/auth.tokens';
 import { AdminIdentityService } from '../src/modules/admins/application/admin-identity.service';
 import type {
@@ -264,6 +270,23 @@ function asCurrentAdminBody(body: unknown): CurrentAdminBody {
 }
 
 describe('Admin auth (e2e)', () => {
+  const transactionRunner = {
+    run: <T>(fn: (tx: TransactionContext) => Promise<T>): Promise<T> =>
+      fn({ [TRANSACTION_CONTEXT_BRAND]: true }),
+    runIn: <T>(
+      existing: TransactionContext | undefined,
+      fn: (tx: TransactionContext) => Promise<T>,
+    ): Promise<T> => fn(existing ?? { [TRANSACTION_CONTEXT_BRAND]: true }),
+    runSnapshotRead: <T>(
+      fn: (tx: TransactionContext) => Promise<T>,
+    ): Promise<T> => fn({ [TRANSACTION_CONTEXT_BRAND]: true }),
+    runRepeatableRead: <T>(
+      fn: (tx: TransactionContext) => Promise<T>,
+    ): Promise<T> => fn({ [TRANSACTION_CONTEXT_BRAND]: true }),
+  } satisfies Pick<
+    TransactionRunner,
+    'run' | 'runIn' | 'runSnapshotRead' | 'runRepeatableRead'
+  >;
   let app: INestApplication;
   let identity: InMemoryAdminIdentity;
   let sessions: InMemoryAdminAuthSessionRepository;
@@ -288,6 +311,10 @@ describe('Admin auth (e2e)', () => {
       .useValue(identity)
       .overrideProvider(AdminAuthSessionRepository)
       .useValue(sessions)
+      .overrideProvider(TransactionRunner)
+      .useValue(transactionRunner)
+      .overrideProvider(AuditLogService)
+      .useValue({ append: jest.fn().mockResolvedValue(undefined) })
       .compile();
 
     app = moduleRef.createNestApplication();

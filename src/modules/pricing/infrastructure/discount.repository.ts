@@ -47,8 +47,14 @@ const SORT_FIELD_MAP: Record<
 export class DiscountRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findById(id: string): Promise<DiscountRecord | null> {
-    const found = await this.prisma.discount.findUnique({ where: { id } });
+  async findById(
+    id: string,
+    tx?: TransactionContext,
+  ): Promise<DiscountRecord | null> {
+    const found = await resolvePrismaConnection(
+      this.prisma,
+      tx,
+    ).discount.findUnique({ where: { id } });
     return found === null ? null : mapDiscount(found);
   }
 
@@ -112,8 +118,14 @@ export class DiscountRepository {
     return { items: rows.map(mapDiscount), total };
   }
 
-  async create(payload: DiscountPayload): Promise<DiscountRecord> {
-    const created = await this.prisma.discount.create({
+  async create(
+    payload: DiscountPayload,
+    tx?: TransactionContext,
+  ): Promise<DiscountRecord> {
+    const created = await resolvePrismaConnection(
+      this.prisma,
+      tx,
+    ).discount.create({
       data: mapPayloadToCreate(payload),
     });
     return mapDiscount(created);
@@ -122,9 +134,13 @@ export class DiscountRepository {
   async update(
     id: string,
     payload: DiscountPayload,
+    tx?: TransactionContext,
   ): Promise<DiscountRecord | null> {
     try {
-      const updated = await this.prisma.discount.update({
+      const updated = await resolvePrismaConnection(
+        this.prisma,
+        tx,
+      ).discount.update({
         where: { id },
         data: mapPayloadToUpdate(payload),
       });

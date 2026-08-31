@@ -5,6 +5,10 @@ import {
   type PaginatedResponse,
 } from '../../../common/list';
 import { ApplicationLogger } from '../../../common/observability/application-logger.service';
+import { TransactionRunner } from '../../../infrastructure/database/transaction';
+import { AuditLogService } from '../../audit/application/audit-log.service';
+import { AuditAction, AuditEntityType } from '../../audit/domain/audit-event';
+import type { AuthenticatedPrincipal } from '../../auth/domain/authenticated-principal';
 import type { RegionRecord } from '../domain/region';
 import { RegionNotFoundError } from '../domain/region-errors';
 import { RegionRepository } from '../infrastructure/region.repository';
@@ -18,6 +22,8 @@ export class RegionService {
   constructor(
     private readonly regions: RegionRepository,
     private readonly logger: ApplicationLogger,
+    private readonly transactions: TransactionRunner,
+    private readonly audit: AuditLogService,
   ) {}
 
   /** Public storefront: active regions only, full list (tiny reference set). */
@@ -41,10 +47,29 @@ export class RegionService {
     return toPaginatedResponse(page.items, pageRequest, page.total);
   }
 
-  async create(body: CreateRegionBodyDto): Promise<RegionRecord> {
-    const created = await this.regions.create({
-      name: body.name,
-      isActive: body.isActive,
+  async create(
+    body: CreateRegionBodyDto,
+    principal?: AuthenticatedPrincipal,
+  ): Promise<RegionRecord> {
+    const created = await this.transactions.run(async (tx) => {
+      const created = await this.regions.create(
+        { name: body.name, isActive: body.isActive },
+        tx,
+      );
+      if (principal !== undefined) {
+        await this.audit.append(
+          {
+            action: AuditAction.REGION_CREATED,
+            actorType: 'ADMIN',
+            actorId: principal.subjectId,
+            entityType: AuditEntityType.REGION,
+            entityId: created.id,
+            metadata: undefined,
+          },
+          tx,
+        );
+      }
+      return created;
     });
     this.logger.info(
       {
@@ -58,7 +83,11 @@ export class RegionService {
     return created;
   }
 
-  async update(id: string, body: UpdateRegionBodyDto): Promise<RegionRecord> {
+  async update(
+    id: string,
+    body: UpdateRegionBodyDto,
+    principal?: AuthenticatedPrincipal,
+  ): Promise<RegionRecord> {
     const patch: { name?: string; isActive?: boolean } = {};
     if (body.name !== undefined) {
       patch.name = body.name;
@@ -67,7 +96,28 @@ export class RegionService {
       patch.isActive = body.isActive;
     }
 
-    const updated = await this.regions.update(id, patch);
+    const updated = await this.transactions.run(async (tx) => {
+      const before = await this.regions.findById(id, tx);
+      if (before === null) return null;
+      const updated = await this.regions.update(id, patch, tx);
+      if (updated !== null && principal !== undefined) {
+        const changedFields = regionChangedFields(before, updated);
+        if (changedFields.length > 0) {
+          await this.audit.append(
+            {
+              action: AuditAction.REGION_UPDATED,
+              actorType: 'ADMIN',
+              actorId: principal.subjectId,
+              entityType: AuditEntityType.REGION,
+              entityId: updated.id,
+              metadata: { changedFields },
+            },
+            tx,
+          );
+        }
+      }
+      return updated;
+    });
     if (updated === null) {
       throw new RegionNotFoundError();
     }
@@ -83,4 +133,14 @@ export class RegionService {
     );
     return updated;
   }
+}
+
+function regionChangedFields(
+  before: RegionRecord,
+  after: RegionRecord,
+): string[] {
+  const fields: string[] = [];
+  if (before.name !== after.name) fields.push('name');
+  if (before.isActive !== after.isActive) fields.push('isActive');
+  return fields;
 }

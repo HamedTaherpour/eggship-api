@@ -6,6 +6,8 @@ import {
 } from '../../../common/list';
 import { ApplicationLogger } from '../../../common/observability/application-logger.service';
 import { TransactionRunner } from '../../../infrastructure/database/transaction';
+import { AuditLogService } from '../../audit/application/audit-log.service';
+import { AuditAction, AuditEntityType } from '../../audit/domain/audit-event';
 import { CategoryService } from '../../categories/application/category.service';
 import { InventoryService } from '../../inventory/application/inventory.service';
 import { PricingService } from '../../pricing/application/pricing.service';
@@ -33,6 +35,7 @@ export class ProductService {
     private readonly pricing: PricingService,
     private readonly transactions: TransactionRunner,
     private readonly logger: ApplicationLogger,
+    @Optional() private readonly audit?: AuditLogService,
     @Optional() private readonly media?: MediaService,
   ) {}
 
@@ -99,8 +102,15 @@ export class ProductService {
     return (await this.withMediaPresentations([found]))[0]!;
   }
 
-  async create(body: CreateProductBodyDto): Promise<ProductRecord> {
+  async create(
+    body: CreateProductBodyDto,
+    principal?: AuthenticatedPrincipal,
+  ): Promise<ProductRecord> {
     await this.requireExistingCategory(body.categoryId);
+    const actor =
+      principal === undefined
+        ? undefined
+        : this.pricing.requireAdminActor(principal);
 
     const created = await this.transactions.run(async (tx) => {
       if (body.imageMediaId !== undefined && body.imageMediaId !== null) {
@@ -121,6 +131,19 @@ export class ProductService {
         tx,
       );
       await this.inventory.ensureForProduct(product.id, tx);
+      if (actor !== undefined) {
+        await this.audit?.append(
+          {
+            action: AuditAction.PRODUCT_CREATED,
+            actorType: actor.type,
+            actorId: actor.id,
+            entityType: AuditEntityType.PRODUCT,
+            entityId: product.id,
+            metadata: undefined,
+          },
+          tx,
+        );
+      }
       return product;
     });
     this.logger.info(
@@ -173,14 +196,16 @@ export class ProductService {
       return current;
     }
 
-    const actor = hasPriceChange
-      ? this.pricing.requireAdminActor(principal)
-      : undefined;
-
+    const actor = this.pricing.requireAdminActor(principal);
     const updated = await this.transactions.run(async (tx) => {
+      const before =
+        this.audit === undefined
+          ? null
+          : await this.products.findByIdForUpdate(id, tx);
+      if (this.audit !== undefined && before === null) {
+        throw new ProductNotFoundError();
+      }
       if (body.imageMediaId !== undefined) {
-        const lockedProduct = await this.products.findByIdForUpdate(id, tx);
-        if (lockedProduct === null) throw new ProductNotFoundError();
         if (body.imageMediaId !== null) {
           if (this.media === undefined)
             throw new Error('Media module is not configured.');
@@ -194,7 +219,7 @@ export class ProductService {
           {
             productId: id,
             newPrice: body.price!,
-            actor: actor!,
+            actor,
           },
           tx,
         );
@@ -210,6 +235,21 @@ export class ProductService {
 
       if (product === null) {
         throw new ProductNotFoundError();
+      }
+      const changedFields =
+        before === null ? [] : productChangedFields(before, product);
+      if (changedFields.length > 0) {
+        await this.audit?.append(
+          {
+            action: AuditAction.PRODUCT_UPDATED,
+            actorType: actor.type,
+            actorId: actor.id,
+            entityType: AuditEntityType.PRODUCT,
+            entityId: product.id,
+            metadata: { changedFields },
+          },
+          tx,
+        );
       }
       return product;
     });
@@ -257,4 +297,16 @@ export class ProductService {
         : null,
     }));
   }
+}
+
+function productChangedFields(
+  before: ProductRecord,
+  after: ProductRecord,
+): string[] {
+  const fields: string[] = [];
+  if (before.name !== after.name) fields.push('name');
+  if (before.categoryId !== after.categoryId) fields.push('categoryId');
+  if (before.isActive !== after.isActive) fields.push('isActive');
+  if (before.imageMediaId !== after.imageMediaId) fields.push('imageMediaId');
+  return fields;
 }

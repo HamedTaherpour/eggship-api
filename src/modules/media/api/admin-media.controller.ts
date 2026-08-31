@@ -12,6 +12,7 @@ import {
   UseFilters,
   UseGuards,
   UseInterceptors,
+  Req,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import {
@@ -52,6 +53,8 @@ import {
 } from './dto/media-upload-response.dto';
 import { createBoundedMemoryStorage } from './bounded-memory-storage';
 import { MediaUploadExceptionFilter } from './media-upload.exception-filter';
+import type { Request } from 'express';
+import { getAuthenticatedPrincipal } from '../../auth/api/authenticated-principal.util';
 
 interface UploadedFile {
   originalname: string;
@@ -225,8 +228,12 @@ export class AdminMediaController {
   @ApiConflictResponse({ type: ApiErrorResponseDto })
   async remove(
     @Param('id', ParseUUIDPipe) id: string,
+    @Req() request: Request,
   ): Promise<AdminMediaResponseDto> {
-    const deleted = await this.media.deleteAdmin(id);
+    const deleted = await this.media.deleteAdmin(
+      id,
+      getAuthenticatedPrincipal(request)!.subjectId,
+    );
     return { data: toAdminMediaDto(deleted, this.media.publicUrl(deleted)) };
   }
 

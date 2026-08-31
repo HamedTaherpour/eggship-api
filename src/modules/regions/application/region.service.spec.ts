@@ -14,6 +14,8 @@ import {
 import { CreateRegionBodyDto } from '../api/dto/create-region.dto';
 import { UpdateRegionBodyDto } from '../api/dto/update-region.dto';
 import { RegionService } from './region.service';
+import type { TransactionRunner } from '../../../infrastructure/database/transaction';
+import type { AuditLogService } from '../../audit/application/audit-log.service';
 
 function record(overrides: Partial<RegionRecord> = {}): RegionRecord {
   const now = new Date('2026-08-21T12:00:00.000Z');
@@ -31,14 +33,19 @@ describe('RegionService', () => {
   let repository: jest.Mocked<
     Pick<
       RegionRepository,
-      'listActiveOrderedByName' | 'list' | 'create' | 'update'
+      'listActiveOrderedByName' | 'list' | 'create' | 'update' | 'findById'
     >
   >;
   let logger: jest.Mocked<Pick<ApplicationLogger, 'info'>>;
   let service: RegionService;
+  const transactions = {
+    run: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
+  } as unknown as TransactionRunner;
+  const audit = { append: jest.fn() } as unknown as AuditLogService;
 
   beforeEach(() => {
     repository = {
+      findById: jest.fn(),
       listActiveOrderedByName: jest.fn(),
       list: jest.fn(),
       create: jest.fn(),
@@ -48,6 +55,8 @@ describe('RegionService', () => {
     service = new RegionService(
       repository as unknown as RegionRepository,
       logger as unknown as ApplicationLogger,
+      transactions,
+      audit,
     );
   });
 
@@ -101,6 +110,7 @@ describe('RegionService', () => {
 
     const updated = record({ isActive: false });
     repository.update.mockResolvedValue(updated);
+    repository.findById.mockResolvedValue(record());
     const updateBody = plainToInstance(UpdateRegionBodyDto, {
       isActive: false,
     });

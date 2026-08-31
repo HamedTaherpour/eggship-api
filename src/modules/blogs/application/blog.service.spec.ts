@@ -16,6 +16,29 @@ import {
 } from '../api/dto/blog-response.dto';
 import { BlogService } from './blog.service';
 import type { BlogRepository } from '../infrastructure/blog.repository';
+import {
+  TransactionRunner,
+  type TransactionContext,
+} from '../../../infrastructure/database/transaction';
+import type { AuditLogService } from '../../audit/application/audit-log.service';
+
+class ImmediateTransactionRunner extends TransactionRunner {
+  async run<T>(fn: (tx: TransactionContext) => Promise<T>): Promise<T> {
+    return fn({} as TransactionContext);
+  }
+  async runIn<T>(
+    existing: TransactionContext | undefined,
+    fn: (tx: TransactionContext) => Promise<T>,
+  ): Promise<T> {
+    return fn(existing ?? ({} as TransactionContext));
+  }
+  runSnapshotRead<T>(): Promise<T> {
+    throw new Error('not used');
+  }
+  runRepeatableRead<T>(): Promise<T> {
+    throw new Error('not used');
+  }
+}
 
 const PUBLISHED_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const PUBLISHED_AT = new Date('2026-08-21T12:00:00.000Z');
@@ -67,6 +90,8 @@ describe('BlogService', () => {
     service = new BlogService(
       repository as unknown as BlogRepository,
       logger as unknown as ApplicationLogger,
+      new ImmediateTransactionRunner(),
+      { append: jest.fn() } as unknown as AuditLogService,
     );
   });
 
@@ -164,17 +189,24 @@ describe('BlogService', () => {
 
   it('publish and unpublish delegate to repository commands', async () => {
     const published = blog();
-    repository.publish.mockResolvedValue(published);
-    await expect(service.publish(PUBLISHED_ID)).resolves.toBe(published);
+    repository.publish.mockResolvedValue({ record: published, changed: true });
+    await expect(service.publish(PUBLISHED_ID, PUBLISHED_ID)).resolves.toBe(
+      published,
+    );
 
     const unpublished = blog({ isPublished: false, publishedAt: PUBLISHED_AT });
-    repository.unpublish.mockResolvedValue(unpublished);
-    await expect(service.unpublish(PUBLISHED_ID)).resolves.toBe(unpublished);
+    repository.unpublish.mockResolvedValue({
+      record: unpublished,
+      changed: true,
+    });
+    await expect(service.unpublish(PUBLISHED_ID, PUBLISHED_ID)).resolves.toBe(
+      unpublished,
+    );
 
     repository.publish.mockResolvedValue(null);
-    await expect(service.publish(PUBLISHED_ID)).rejects.toBeInstanceOf(
-      BlogNotFoundError,
-    );
+    await expect(
+      service.publish(PUBLISHED_ID, PUBLISHED_ID),
+    ).rejects.toBeInstanceOf(BlogNotFoundError);
   });
 
   it('serializes public DTOs without lifecycle or unpublished fields', () => {

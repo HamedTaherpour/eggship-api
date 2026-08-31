@@ -19,6 +19,7 @@ import {
   TransactionRunner,
   type TransactionContext,
 } from '../src/infrastructure/database/transaction';
+import { AuditLogService } from '../src/modules/audit/application/audit-log.service';
 import type {
   CategoryListQuery,
   CategoryRecord,
@@ -549,6 +550,8 @@ describe('Admin pricing and discount APIs (e2e)', () => {
       .useValue(discounts)
       .overrideProvider(TransactionRunner)
       .useValue(new PassThroughTransactionRunner())
+      .overrideProvider(AuditLogService)
+      .useValue({ append: jest.fn().mockResolvedValue(undefined) })
       .overrideProvider(ADMIN_ROLE_RESOLVER)
       .useValue(admins)
       .compile();

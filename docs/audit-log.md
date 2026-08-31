@@ -29,4 +29,19 @@ Metadata limits are 2,048 UTF-8 bytes, depth 3, 12 keys per object, 256 characte
 
 `normalizeAuditEvent()` validates the caller event only and always leaves `requestId`/`correlationId` null. `AuditLogService.append()` derives request/correlation linkage exclusively from `RequestContextService`; callers cannot provide or spoof those values through the public append API.
 
-It accepts an opaque caller-owned `TransactionContext`, and `AuditLogRepository` performs only one INSERT through that connection. It does not read or lock actor/entity tables and exposes no update/delete/upsert methods. PostgreSQL privilege hardening, retention, lifecycle deletion, read APIs, and domain integration remain deferred to the approved future tasks.
+It accepts an opaque caller-owned `TransactionContext`, and `AuditLogRepository` performs only one INSERT through that connection. It does not read or lock actor/entity tables and exposes no update/delete/upsert methods. AUD-02 integrated all approved mutation and security paths that exist in production; registry actions whose underlying feature does not yet exist remain deferred. AuditLog read APIs remain AUD-03, retention and lifecycle deletion remain DATA-01/DATA-03, and this contract makes no WORM or tamper-proof claim.
+
+## AUD-02 Media deletion integration
+
+`MediaService.deleteAdmin()` locks the Media row, checks all durable consumers,
+deletes the object using the existing MED-01 sequence, deletes the Media row,
+and appends `media.deleted` on the same PostgreSQL transaction connection.
+The event uses `actorType = ADMIN`, the authenticated Admin UUID as `actorId`,
+`entityType = MEDIA`, the deleted Media UUID as `entityId`, and null metadata.
+It is emitted only when the Media row deletion succeeds; referenced, missing,
+or failed-delete attempts do not emit it.
+
+Because object storage is external to PostgreSQL, the event proves only the
+durable PostgreSQL Media deletion transition. If the object delete succeeds
+but the PostgreSQL transaction (including AuditLog insertion) rolls back, the
+Media row remains while the object may be missing and requires reconciliation.

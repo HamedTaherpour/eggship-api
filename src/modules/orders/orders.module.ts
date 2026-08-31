@@ -1,5 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { PrismaModule } from '../../infrastructure/database/prisma/prisma.module';
+import { AuditModule } from '../audit/audit.module';
 import { AuthModule } from '../auth/auth.module';
 import { CommercePolicyModule } from '../commerce-policy/commerce-policy.module';
 import { InventoryModule } from '../inventory/inventory.module';
@@ -25,6 +26,7 @@ import { OrderRepository } from './infrastructure/order.repository';
 @Module({
   imports: [
     PrismaModule,
+    AuditModule,
     forwardRef(() => AuthModule),
     CommercePolicyModule,
     InventoryModule,

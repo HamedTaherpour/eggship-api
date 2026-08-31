@@ -5,6 +5,7 @@ import { Test } from '@nestjs/testing';
 import { ObservabilityModule } from '../../../src/common/observability/observability.module';
 import { createConfigModuleOptions } from '../../../src/config/config-module.options';
 import { PrismaModule } from '../../../src/infrastructure/database/prisma/prisma.module';
+import { AuditModule } from '../../../src/modules/audit/audit.module';
 import { PrismaService } from '../../../src/infrastructure/database/prisma/prisma.service';
 import { BlogService } from '../../../src/modules/blogs/application/blog.service';
 import { BlogSlugConflictError } from '../../../src/modules/blogs/domain/blog-errors';
@@ -24,6 +25,7 @@ describe('Blog admin persistence (integration)', () => {
   let blogs: BlogRepository;
   let blogService: BlogService;
   let authorId: string;
+  let actorId: string;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -31,6 +33,7 @@ describe('Blog admin persistence (integration)', () => {
         ConfigModule.forRoot(createConfigModuleOptions()),
         ObservabilityModule,
         PrismaModule,
+        AuditModule,
       ],
       providers: [BlogRepository, BlogService],
     }).compile();
@@ -52,6 +55,7 @@ describe('Blog admin persistence (integration)', () => {
       },
     });
     authorId = author.id;
+    actorId = randomUUID();
   });
 
   afterAll(async () => {
@@ -74,7 +78,11 @@ describe('Blog admin persistence (integration)', () => {
     expect(updated.title).toBe('Updated draft');
 
     const firstPublishAt = new Date('2026-08-28T12:00:00.000Z');
-    const published = await blogService.publish(created.id, firstPublishAt);
+    const published = await blogService.publish(
+      created.id,
+      actorId,
+      firstPublishAt,
+    );
     expect(published.isPublished).toBe(true);
     expect(published.publishedAt?.toISOString()).toBe(
       firstPublishAt.toISOString(),
@@ -82,6 +90,7 @@ describe('Blog admin persistence (integration)', () => {
 
     const replay = await blogService.publish(
       created.id,
+      actorId,
       new Date('2026-08-29T12:00:00.000Z'),
     );
     expect(replay.publishedAt?.toISOString()).toBe(
@@ -94,7 +103,7 @@ describe('Blog admin persistence (integration)', () => {
       id: created.id,
     });
 
-    const unpublished = await blogService.unpublish(created.id);
+    const unpublished = await blogService.unpublish(created.id, actorId);
     expect(unpublished.isPublished).toBe(false);
     expect(unpublished.publishedAt?.toISOString()).toBe(
       firstPublishAt.toISOString(),
@@ -111,6 +120,7 @@ describe('Blog admin persistence (integration)', () => {
 
     const republished = await blogService.publish(
       created.id,
+      actorId,
       new Date('2026-08-30T12:00:00.000Z'),
     );
     expect(republished.publishedAt?.toISOString()).toBe(

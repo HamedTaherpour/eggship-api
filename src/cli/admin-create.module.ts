@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ObservabilityModule } from '../common/observability/observability.module';
 import { createConfigModuleOptions } from '../config/config-module.options';
 import { PrismaModule } from '../infrastructure/database/prisma/prisma.module';
+import { AuditModule } from '../modules/audit/audit.module';
 import { AdminIdentityService } from '../modules/admins/application/admin-identity.service';
 import { AdminRepository } from '../modules/admins/infrastructure/admin.repository';
 import { PASSWORD_HASHER } from '../modules/auth/auth.tokens';
@@ -18,6 +19,7 @@ import { Argon2PasswordHasher } from '../modules/auth/infrastructure/argon2-pass
     ConfigModule.forRoot(createConfigModuleOptions()),
     ObservabilityModule,
     PrismaModule,
+    AuditModule,
   ],
   providers: [
     Argon2PasswordHasher,

@@ -1,8 +1,10 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, Optional } from '@nestjs/common';
 import { ApplicationError } from '../../../common/errors/application-error';
 import { ApplicationLogger } from '../../../common/observability/application-logger.service';
 import { TransactionRunner } from '../../../infrastructure/database/transaction';
 import type { TransactionContext } from '../../../infrastructure/database/transaction';
+import { AuditLogService } from '../../audit/application/audit-log.service';
+import { AuditAction, AuditEntityType } from '../../audit/domain/audit-event';
 import type { AuthenticatedPrincipal } from '../../auth/domain/authenticated-principal';
 import { AuthSubjectType } from '../../auth/domain/subject-type';
 import type { InventoryBalance } from '../domain/inventory-balance';
@@ -65,6 +67,7 @@ export class AdminInventoryOperationsService {
     private readonly inventory: InventoryService,
     private readonly idempotency: InventoryCommandIdempotencyRepository,
     private readonly logger: ApplicationLogger,
+    @Optional() private readonly audit?: AuditLogService,
   ) {}
 
   async getBalance(productId: string): Promise<InventoryBalance> {
@@ -106,6 +109,18 @@ export class AdminInventoryOperationsService {
             referenceId: idempotencyKey,
             actor,
             correlationId: idempotencyKey,
+          },
+          ctx,
+        );
+
+        await this.audit?.append(
+          {
+            action: AuditAction.INVENTORY_RECEIVED,
+            actorType: actor.type,
+            actorId: actor.id,
+            entityType: AuditEntityType.INVENTORY,
+            entityId: productId,
+            metadata: undefined,
           },
           ctx,
         );
@@ -173,6 +188,18 @@ export class AdminInventoryOperationsService {
             referenceId: idempotencyKey,
             actor,
             correlationId: idempotencyKey,
+          },
+          ctx,
+        );
+
+        await this.audit?.append(
+          {
+            action: AuditAction.INVENTORY_ADJUSTED,
+            actorType: actor.type,
+            actorId: actor.id,
+            entityType: AuditEntityType.INVENTORY,
+            entityId: productId,
+            metadata: { changedFields: ['onHand'] },
           },
           ctx,
         );

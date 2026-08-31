@@ -6,6 +6,7 @@ import { AdminRole } from '../../../src/common/authz/admin-role';
 import { AuthorizationService } from '../../../src/common/authz/authorization.service';
 import { Permission } from '../../../src/common/authz/permission';
 import { PrismaService } from '../../../src/infrastructure/database/prisma/prisma.service';
+import { TransactionRunner } from '../../../src/infrastructure/database/transaction';
 import { AdminsModule } from '../../../src/modules/admins/admins.module';
 import { AdminIdentityService } from '../../../src/modules/admins/application/admin-identity.service';
 import { AdminEmailAlreadyExistsError } from '../../../src/modules/admins/domain/admin-errors';
@@ -25,6 +26,7 @@ describe('Admin identity persistence (integration)', () => {
   let admins: AdminRepository;
   let identity: AdminIdentityService;
   let authorization: AuthorizationService;
+  let transactions: TransactionRunner;
   let emailCounter = 0;
 
   beforeAll(async () => {
@@ -37,6 +39,7 @@ describe('Admin identity persistence (integration)', () => {
     admins = moduleRef.get(AdminRepository);
     identity = moduleRef.get(AdminIdentityService);
     authorization = moduleRef.get(AuthorizationService);
+    transactions = moduleRef.get(TransactionRunner);
     await app.init();
   });
 
@@ -78,6 +81,48 @@ describe('Admin identity persistence (integration)', () => {
     expect(await admins.findByEmail(` ${email.toUpperCase()}`)).toMatchObject({
       id: created.id,
     });
+    await expect(
+      prisma.auditLog.findMany({
+        where: { action: 'admin.identity.created', entityId: created.id },
+      }),
+    ).resolves.toHaveLength(1);
+    await expect(
+      prisma.auditLog.findFirstOrThrow({
+        where: { action: 'admin.identity.created', entityId: created.id },
+      }),
+    ).resolves.toMatchObject({
+      actorType: 'SYSTEM',
+      actorId: null,
+      entityType: 'ADMIN',
+      metadata: null,
+    });
+  });
+
+  it('rolls back the Admin when the required audit step fails', async () => {
+    const email = nextEmail();
+    let createdId: string | undefined;
+
+    await expect(
+      transactions.run(async (tx) => {
+        const created = await admins.create(
+          {
+            email,
+            passwordHash: 'integration-test-hash',
+            role: AdminRole.WAREHOUSE,
+          },
+          tx,
+        );
+        createdId = created.id;
+        throw new Error('simulated audit failure');
+      }),
+    ).rejects.toThrow('simulated audit failure');
+
+    await expect(admins.findByEmail(email)).resolves.toBeNull();
+    await expect(
+      prisma.auditLog.count({
+        where: { action: 'admin.identity.created', entityId: createdId },
+      }),
+    ).resolves.toBe(0);
   });
 
   it('persists only an Argon2 hash, never the plaintext password', async () => {

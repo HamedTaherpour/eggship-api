@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- ORD-08 PostgreSQL concurrency proofs for capped discount release, cancel/confirm races, once-only Order transition auditing, N-way hot-SKU creation invariants, and representative query-plan analysis.
 - AUD-02 domain AuditLog integration: wired approved AuditLog events into existing production mutation and security paths for Admin identity/auth security, Product/Category/Region, Pricing/Discount, Inventory receive/adjust, Order create and transitions, Settlement lifecycle, Commerce Policy, Blog publish/unpublish, and Media deletion (`media.deleted` on durable PostgreSQL row deletion — not distributed object-storage atomicity). Transaction atomicity, replay/idempotency, privacy, actor provenance, and concurrency verified. Registry actions for not-yet-implemented features remain deferred. AuditLog read APIs remain AUD-03; retention and lifecycle deletion remain DATA-01/DATA-03.
 - DATA-01 data classification and retention decision register: current data inventory, approved A–G lifecycle principles, explicit unresolved durations, lifecycle invariants, and roadmap ownership. No cleanup implementation or retention duration was added.
 - AUD-01 AuditLog foundation: additive append-only PostgreSQL model, closed action/entity registries, action-specific metadata validation with bounded safe JSON, context-derived request/correlation linkage, transaction-aware writer, and focused unit/PostgreSQL coverage. Domain event integration delivered in AUD-02; read and lifecycle APIs remain AUD-03/DATA-01/DATA-03.
@@ -27,6 +28,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Closed ORD-08 with real-PostgreSQL order audit, concurrency, bounded hot-SKU invariant, and query-plan verification; no production Orders behavior or query/index change required. Full deployed load/spike/stress/soak capacity evidence remains REL-03/REL-04/REL-05.
 - Closed REL-02 with deterministic real-PostgreSQL concurrency coordination and durable inventory/order idempotency assertions.
 
 ### Added

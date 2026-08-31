@@ -639,6 +639,38 @@ describe('Order transitions (integration)', () => {
     expect(deliveredAtValues.size).toBe(1);
   });
 
+  it('writes exactly one durable audit fact for each committed transition', async () => {
+    const { orderId } = await seedReservedPending();
+
+    await transitions.confirmOrder({ orderId, actor: admin });
+    await transitions.confirmOrder({ orderId, actor: admin });
+    await transitions.shipOrder({ orderId, actor: admin });
+    await transitions.shipOrder({ orderId, actor: admin });
+    await transitions.deliverOrder({ orderId, actor: admin });
+    await transitions.deliverOrder({ orderId, actor: admin });
+
+    const rows = await prisma.auditLog.findMany({
+      where: { entityId: orderId },
+      orderBy: { occurredAt: 'asc' },
+    });
+    expect(rows.map((row) => row.action)).toEqual([
+      AuditAction.ORDER_CONFIRMED,
+      AuditAction.ORDER_SHIPPED,
+      AuditAction.ORDER_DELIVERED,
+    ]);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actorType: 'ADMIN',
+          actorId: admin.id,
+          entityType: 'ORDER',
+          entityId: orderId,
+          metadata: null,
+        }),
+      ]),
+    );
+  });
+
   it('rolls back a joined outer transaction', async () => {
     const { orderId, productId } = await seedReservedPending();
     await transitions.confirmOrder({ orderId, actor: admin });

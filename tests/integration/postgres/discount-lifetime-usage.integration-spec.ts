@@ -17,6 +17,7 @@ import { InventoryLedgerReferenceType } from '../../../src/modules/inventory/dom
 import { InventoryModule } from '../../../src/modules/inventory/inventory.module';
 import { OrderCreationService } from '../../../src/modules/orders/application/order-creation.service';
 import type { CreateOrderResult } from '../../../src/modules/orders/application/order-creation.commands';
+import type { OrderTransitionResult } from '../../../src/modules/orders/application/order-transition.commands';
 import { OrderTransitionService } from '../../../src/modules/orders/application/order-transition.service';
 import { OrderActorType } from '../../../src/modules/orders/domain/order-actor';
 import {
@@ -43,6 +44,8 @@ import type { UserRecord } from '../../../src/modules/users/domain/user';
 import { UserRepository } from '../../../src/modules/users/infrastructure/user.repository';
 import { UsersModule } from '../../../src/modules/users/users.module';
 import { assertDestructiveOperationsAllowed } from '../support/integration-environment';
+import { ConcurrencyGate } from '../support/concurrency-gate';
+import { AuditAction } from '../../../src/modules/audit/domain/audit-event';
 
 function uniquePhone(suffix: number): string {
   const national = `912${String(suffix).padStart(7, '0')}`.slice(0, 10);
@@ -52,7 +55,7 @@ function uniquePhone(suffix: number): string {
 async function truncateTables(prisma: PrismaService): Promise<void> {
   assertDestructiveOperationsAllowed();
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "DiscountUsageRecord", "DiscountCustomerUsage", "InventoryLedger", "InventoryReservation", "Inventory", "Discount", "PriceHistory", "OrderLine", "Order", "Product", "Category", "Region", "User", "CommerceScheduleOverride", "CommerceSettings" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "AuditLog", "DiscountUsageRecord", "DiscountCustomerUsage", "InventoryLedger", "InventoryReservation", "Inventory", "Discount", "PriceHistory", "OrderLine", "Order", "Product", "Category", "Region", "User", "CommerceScheduleOverride", "CommerceSettings" RESTART IDENTITY CASCADE',
   );
 }
 
@@ -435,6 +438,144 @@ describe('Discount lifetime usage (DLU-02 integration)', () => {
     ).filter((row) => row.kind === DiscountUsageRecordKind.RELEASE);
     expect(releases).toHaveLength(1);
   });
+
+  it('concurrent cancellation releases capped DLU, Inventory, and AuditLog exactly once', async () => {
+    const { user, regionId, productId, discount } = await seedBase({
+      maxQuantityPerCustomer: 5,
+      onHand: 10,
+    });
+    const created = await createOrder({
+      userId: user.id,
+      regionId,
+      productId,
+      quantity: 2,
+    });
+    const gate = new ConcurrencyGate(12);
+
+    const outcomes = await Promise.allSettled(
+      Array.from({ length: 12 }, async () => {
+        await gate.arriveAndWait();
+        return transitions.cancelPendingOrderByCustomer({
+          orderId: created.order.id,
+          actor: { type: OrderActorType.USER, id: user.id },
+        });
+      }),
+    );
+
+    const fulfilled = outcomes.filter((row) => row.status === 'fulfilled');
+    expect(fulfilled).toHaveLength(12);
+    expect(fulfilled.filter((row) => row.value.replay === false)).toHaveLength(
+      1,
+    );
+    expect(fulfilled.filter((row) => row.value.replay === true)).toHaveLength(
+      11,
+    );
+
+    expect(
+      await prisma.order.findUnique({ where: { id: created.order.id } }),
+    ).toMatchObject({
+      status: OrderStatus.CANCELLED,
+    });
+    expect(
+      await prisma.inventoryReservation.findMany({
+        where: { orderId: created.order.id },
+      }),
+    ).toEqual([expect.objectContaining({ status: 'RELEASED', quantity: 2 })]);
+    expect(await inventory.getBalance(productId)).toMatchObject({
+      onHand: 10,
+      reserved: 0,
+      available: 10,
+    });
+    expect(
+      await prisma.inventoryLedger.count({
+        where: { referenceId: created.order.id, type: 'RELEASE' },
+      }),
+    ).toBe(1);
+    expect(await usageRepo.findUsage(discount.id, user.id)).toMatchObject({
+      consumedQuantity: 0,
+    });
+    expect(
+      (await usageRepo.listRecordsForOrder(created.order.id)).filter(
+        (row) => row.kind === DiscountUsageRecordKind.RELEASE,
+      ),
+    ).toHaveLength(1);
+    expect(
+      await prisma.auditLog.count({
+        where: {
+          action: AuditAction.ORDER_CANCELLED,
+          entityId: created.order.id,
+        },
+      }),
+    ).toBe(1);
+  }, 30_000);
+
+  it('cancel XOR confirm with capped DLU leaves the winner state mathematically consistent', async () => {
+    const { user, regionId, productId, discount } = await seedBase({
+      maxQuantityPerCustomer: 5,
+      onHand: 10,
+    });
+    const created = await createOrder({
+      userId: user.id,
+      regionId,
+      productId,
+      quantity: 2,
+    });
+    const gate = new ConcurrencyGate(2);
+    const outcomes = await Promise.allSettled([
+      (async (): Promise<OrderTransitionResult> => {
+        await gate.arriveAndWait();
+        return transitions.confirmOrder({
+          orderId: created.order.id,
+          actor: admin,
+        });
+      })(),
+      (async (): Promise<OrderTransitionResult> => {
+        await gate.arriveAndWait();
+        return transitions.cancelPendingOrderByCustomer({
+          orderId: created.order.id,
+          actor: { type: OrderActorType.USER, id: user.id },
+        });
+      })(),
+    ]);
+    const final = await prisma.order.findUnique({
+      where: { id: created.order.id },
+    });
+    expect(
+      final?.status === OrderStatus.CONFIRMED ||
+        final?.status === OrderStatus.CANCELLED,
+    ).toBe(true);
+
+    const reservation = await prisma.inventoryReservation.findUnique({
+      where: { orderId_productId: { orderId: created.order.id, productId } },
+    });
+    const usage = await usageRepo.findUsage(discount.id, user.id);
+    const cancelAuditCount = await prisma.auditLog.count({
+      where: {
+        action: AuditAction.ORDER_CANCELLED,
+        entityId: created.order.id,
+      },
+    });
+    const confirmAuditCount = await prisma.auditLog.count({
+      where: {
+        action: AuditAction.ORDER_CONFIRMED,
+        entityId: created.order.id,
+      },
+    });
+    expect(outcomes.filter((row) => row.status === 'fulfilled')).toHaveLength(
+      1,
+    );
+    if (final?.status === OrderStatus.CANCELLED) {
+      expect(reservation?.status).toBe('RELEASED');
+      expect(usage?.consumedQuantity).toBe(0);
+      expect(cancelAuditCount).toBe(1);
+      expect(confirmAuditCount).toBe(0);
+    } else {
+      expect(reservation?.status).toBe('ACTIVE');
+      expect(usage?.consumedQuantity).toBe(2);
+      expect(cancelAuditCount).toBe(0);
+      expect(confirmAuditCount).toBe(1);
+    }
+  }, 30_000);
 
   it('after ship, usage remains consumed and cancel is invalid', async () => {
     const { user, regionId, productId, discount } = await seedBase({

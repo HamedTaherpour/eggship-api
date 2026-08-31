@@ -60,7 +60,7 @@ function uniquePhone(suffix: number): string {
 async function truncateTables(prisma: PrismaService): Promise<void> {
   assertDestructiveOperationsAllowed();
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "DiscountUsageRecord", "DiscountCustomerUsage", "InventoryLedger", "InventoryReservation", "Inventory", "Discount", "PriceHistory", "OrderLine", "Order", "Product", "Category", "Region", "User", "CommerceScheduleOverride", "CommerceSettings" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "AuditLog", "DiscountUsageRecord", "DiscountCustomerUsage", "InventoryLedger", "InventoryReservation", "Inventory", "Discount", "PriceHistory", "OrderLine", "Order", "Product", "Category", "Region", "User", "CommerceScheduleOverride", "CommerceSettings" RESTART IDENTITY CASCADE',
   );
 }
 
@@ -435,6 +435,64 @@ describe('Order creation (integration)', () => {
       reserved: 4,
     });
   });
+
+  it('N-way hot-SKU order creation preserves Order, Inventory, and audit equations', async () => {
+    const { regionId, productId } = await seedBase({ onHand: 5 });
+    const actors = await Promise.all(
+      Array.from({ length: 8 }, () => users.create({ phone: nextPhone() })),
+    );
+    const gate = new ConcurrencyGate(actors.length);
+    const settled = await Promise.allSettled(
+      actors.map(async (user) => {
+        await gate.arriveAndWait();
+        return creation.createOrder({
+          actor: { type: OrderActorType.USER, id: user.id },
+          regionId,
+          idempotencyKey: randomUUID(),
+          lines: [{ productId, quantity: 1 }],
+        });
+      }),
+    );
+    const successful = settled.filter((row) => row.status === 'fulfilled');
+    expect(successful).toHaveLength(5);
+    expect(settled.filter((row) => row.status === 'rejected')).toHaveLength(3);
+    const orderIds = successful.map((row) => row.value.order.id);
+    expect(await prisma.order.count()).toBe(5);
+    expect(await prisma.orderLine.count({ where: { productId } })).toBe(5);
+    expect(
+      await prisma.inventoryReservation.count({
+        where: { productId, status: 'ACTIVE' },
+      }),
+    ).toBe(5);
+    expect(
+      await prisma.inventoryLedger.count({
+        where: { productId, type: 'RESERVE' },
+      }),
+    ).toBe(5);
+    expect(
+      await prisma.auditLog.count({
+        where: { action: AuditAction.ORDER_CREATED },
+      }),
+    ).toBe(5);
+    expect(
+      await prisma.auditLog.count({
+        where: {
+          action: AuditAction.ORDER_CREATED,
+          entityId: { in: orderIds },
+        },
+      }),
+    ).toBe(5);
+    expect(await inventory.getBalance(productId)).toMatchObject({
+      onHand: 5,
+      reserved: 5,
+      available: 0,
+    });
+    const activeQuantity = await prisma.inventoryReservation.aggregate({
+      _sum: { quantity: true },
+      where: { productId, status: 'ACTIVE' },
+    });
+    expect(activeQuantity._sum.quantity).toBe(5);
+  }, 60_000);
 
   it('records real PostgreSQL serialization retry evidence under equivalent-key contention', async () => {
     const { regionId, productId } = await seedBase({ onHand: 20 });

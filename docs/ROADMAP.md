@@ -7,11 +7,11 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   109 |
-| DONE        |    76 |
+| DONE        |    77 |
 | IN_PROGRESS |     0 |
 | READY       |     0 |
 | BLOCKED     |     0 |
-| PLANNED     |    33 |
+| PLANNED     |    32 |
 
 - Current task: `AUD-02` (Domain audit integration) is **DONE**. All approved AuditLog actions with existing production mutation paths are wired; registry actions for not-yet-implemented features remain deferred. AuditLog read APIs remain AUD-03; retention and lifecycle deletion remain DATA-01/DATA-03. No task remains BLOCKED.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate.
@@ -579,13 +579,15 @@ Explicitly out of scope: Inventing refund, carrier, or physical-return rules; in
 
 ### ORD-08 — Order audit, concurrency, and load verification
 
-Status: PLANNED | Depends on: ORD-03, ORD-05, ORD-06, COM-03, DLU-02, SET-02, AUD-01, AUD-02 | Primary: Codex | Review: Claude/Cursor concurrency/performance review
+Status: DONE | Depends on: ORD-03, ORD-05, ORD-06, COM-03, DLU-02, SET-02, AUD-01, AUD-02 | Primary: Codex | Review: Claude/Cursor concurrency/performance review
 
 Scope: Complete order audit events, race-condition suites, idempotency verification, query analysis, and representative create/list/transition load tests.
 
 Acceptance criteria: Duplicate creation, hot-SKU reservation, cancel/transition races, and normal/spike behavior have measurable assertions with no invariant loss.
 
-Explicitly out of scope: Changing business rules to meet performance targets.
+Delivered: Real-PostgreSQL verification only — no production Orders behavior or query/index change. Extended existing order-creation, order-transitions, discount-lifetime-usage, and settlement suites with `ConcurrencyGate` overlap proofs for capped DLU release, cancel XOR confirm, and once-only transition AuditLog rows; added bounded N-way hot-SKU creation invariant proof (five successes / three rejections against five units); added `ord-08-query-analysis.integration-spec.ts` with `EXPLAIN (FORMAT JSON)` evidence that existing `Order` indexes satisfy list/detail/transition/idempotency paths. Representative bounded load asserts durable invariants only — not throughput, latency, or capacity. Full deployed API load/spike/stress/soak and connection-pool evidence remain REL-03/REL-04/REL-05.
+
+Explicitly out of scope: Changing business rules to meet performance targets; production query/index changes; REL-03/REL-04/REL-05 capacity ownership.
 
 ## Phase 4A — Commerce Order-Acceptance Policy
 

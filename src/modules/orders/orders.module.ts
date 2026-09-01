@@ -14,6 +14,7 @@ import { OrderCreationService } from './application/order-creation.service';
 import { OrderReadService } from './application/order-read.service';
 import { OrderTransitionService } from './application/order-transition.service';
 import { OrderRepository } from './infrastructure/order.repository';
+import { OrderReturnRepository } from './infrastructure/order-return.repository';
 
 /**
  * Order persistence, historical snapshots, creation (ORD-03 + COM-03 + DLU-02),
@@ -38,12 +39,14 @@ import { OrderRepository } from './infrastructure/order.repository';
   controllers: [OrdersController, AdminOrdersController],
   providers: [
     OrderRepository,
+    OrderReturnRepository,
     OrderCreationService,
     OrderReadService,
     OrderTransitionService,
   ],
   exports: [
     OrderRepository,
+    OrderReturnRepository,
     OrderCreationService,
     OrderReadService,
     OrderTransitionService,

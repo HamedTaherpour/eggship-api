@@ -40,6 +40,7 @@ model Admin {
   settlementsCreated         OrderSettlement[]          @relation("SettlementCreatedBy")
   settlementsSettled         OrderSettlement[]          @relation("SettlementSettledBy")
   settlementReceiptsAttached OrderSettlement[]          @relation("SettlementReceiptAttachedBy")
+  returnsRecorded            OrderReturn[]              @relation("ReturnRecordedBy")
 }
 
 enum CommerceScheduleOverrideMode {
@@ -772,6 +773,7 @@ model Order {
   confirmedAt                      DateTime?     @db.Timestamptz(3)
   shippedAt                        DateTime?     @db.Timestamptz(3)
   deliveredAt                      DateTime?     @db.Timestamptz(3)
+  returnedAt                       DateTime?     @db.Timestamptz(3)
   cancelledAt                      DateTime?     @db.Timestamptz(3)
   /// Human-readable cancellation reason when status is CANCELLED (ORD-05).
   cancelReason                     String?       @db.VarChar(500)
@@ -782,11 +784,50 @@ model Order {
   region     Region           @relation(fields: [regionId], references: [id], onDelete: Restrict)
   lines      OrderLine[]
   settlement OrderSettlement?
+  returns    OrderReturn[]
 
   @@unique([userId, idempotencyKey])
   @@index([userId, createdAt])
   @@index([status, createdAt])
   @@index([createdAt])
+}
+
+/// Durable Admin-recorded return inspection event (ORD-07 Slice 1 / ADR 0024).
+/// Return recording is independent from Order completion; no financial or
+/// inventory state is stored here. The idempotency payload hash is retained so
+/// a future command can distinguish replay from conflicting key reuse.
+model OrderReturn {
+  id                     String   @id @default(uuid()) @db.Uuid
+  orderId                String   @db.Uuid
+  recordedByAdminId      String   @db.Uuid
+  reason                 String   @db.VarChar(500)
+  idempotencyKey         String   @unique @db.Uuid
+  idempotencyPayloadHash String   @db.VarChar(64)
+  createdAt              DateTime @default(now()) @db.Timestamptz(3)
+
+  order           Order             @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  recordedByAdmin Admin             @relation("ReturnRecordedBy", fields: [recordedByAdminId], references: [id], onDelete: Restrict)
+  lines           OrderReturnLine[]
+
+  @@index([orderId, createdAt, id])
+  @@index([recordedByAdminId, createdAt, id])
+}
+
+/// Quantities inspected for one OrderLine within one return event.
+model OrderReturnLine {
+  id               String   @id @default(uuid()) @db.Uuid
+  returnId         String   @db.Uuid
+  orderLineId      String   @db.Uuid
+  sellableQuantity Int
+  damagedQuantity  Int
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+
+  return    OrderReturn @relation(fields: [returnId], references: [id], onDelete: Restrict)
+  orderLine OrderLine   @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+
+  @@unique([returnId, orderLineId])
+  @@index([returnId, createdAt, id])
+  @@index([orderLineId, createdAt, id])
 }
 
 /// Post-delivery deferred-settlement tracking (SET-02 / ADR 0018).
@@ -849,8 +890,9 @@ model OrderLine {
   appliedLineDiscountCategoryId   String?         @db.Uuid
   createdAt                       DateTime        @default(now()) @db.Timestamptz(3)
 
-  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  order   Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  returns OrderReturnLine[]
 
   @@unique([orderId, productId])
   @@index([orderId])

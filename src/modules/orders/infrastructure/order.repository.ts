@@ -68,6 +68,7 @@ type PrismaOrderWithLines = {
   confirmedAt: Date | null;
   shippedAt: Date | null;
   deliveredAt: Date | null;
+  returnedAt: Date | null;
   cancelledAt: Date | null;
   cancelReason: string | null;
   createdAt: Date;
@@ -149,6 +150,17 @@ export class OrderRepository {
       },
     });
     return found === null ? null : mapOrder(found);
+  }
+
+  /** Establishes the Orders-first row lock required by ORD-07 return work. */
+  async lockByIdForReturn(
+    id: string,
+    tx: TransactionContext,
+  ): Promise<boolean> {
+    const rows = await this.db(tx).$queryRaw<Array<{ id: string }>>(
+      Prisma.sql`SELECT "id" FROM "Order" WHERE "id" = ${id}::uuid FOR UPDATE`,
+    );
+    return rows.length === 1;
   }
 
   /**
@@ -578,6 +590,7 @@ function mapOrder(row: PrismaOrderWithLines): OrderRecord {
     confirmedAt: row.confirmedAt,
     shippedAt: row.shippedAt,
     deliveredAt: row.deliveredAt,
+    returnedAt: row.returnedAt,
     cancelledAt: row.cancelledAt,
     cancelReason: row.cancelReason,
     createdAt: row.createdAt,

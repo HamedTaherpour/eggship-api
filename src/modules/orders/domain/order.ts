@@ -42,6 +42,8 @@ export interface OrderRecord {
   confirmedAt: Date | null;
   shippedAt: Date | null;
   deliveredAt: Date | null;
+  /** Nullable lifecycle timestamp; optional for legacy in-memory test fixtures. */
+  returnedAt?: Date | null;
   cancelledAt: Date | null;
   cancelReason: string | null;
   createdAt: Date;

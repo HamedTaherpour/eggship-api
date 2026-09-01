@@ -74,7 +74,7 @@ Introduce a separate bounded module with a one-to-one `OrderSettlement` aggregat
 ### Return interaction
 
 - A later ORD-07 `DELIVERED → RETURNED` transition does **not** settle, reopen, delete, or otherwise mutate settlement state. An `OPEN` settlement on a returned Order remains `OPEN` (overdue continues to derive); a `SETTLED` one remains `SETTLED`.
-- Return/refund/credit adjustments that interact with settlement are future policy and must not be inferred. ORD-07 must not import or write Settlement state.
+- Return/refund/credit adjustments that interact with settlement are future policy and must not be inferred. ORD-07 must not import or write Settlement state. See [ADR 0024](0024-order-returns-bulk-transitions-and-dispatch-board.md) for `RETURNED` vs financial/refund semantics.
 
 ### Amount semantics
 

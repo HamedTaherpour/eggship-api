@@ -62,7 +62,7 @@ V1 has no `SETTLED → OPEN` reopen, no due-date or receipt edits after settleme
 
 ## Return interaction
 
-A later ORD-07 `DELIVERED → RETURNED` transition does not settle, reopen, delete, or otherwise mutate settlement state: an `OPEN` settlement remains `OPEN` (overdue still derives) and a `SETTLED` one remains `SETTLED`. Return/refund/credit adjustments interacting with settlement are future policy and must not be inferred; ORD-07 must not import or write Settlement state.
+A later ORD-07 `DELIVERED → RETURNED` transition does not settle, reopen, delete, or otherwise mutate settlement state: an `OPEN` settlement remains `OPEN` (overdue still derives) and a `SETTLED` one remains `SETTLED`. Return/refund/credit adjustments interacting with settlement are future policy and must not be inferred; ORD-07 must not import or write Settlement state ([ADR 0024](../docs/adr/0024-order-returns-bulk-transitions-and-dispatch-board.md) — `RETURNED` is not refund).
 
 ## Media rules
 

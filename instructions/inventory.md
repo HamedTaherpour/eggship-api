@@ -69,11 +69,26 @@ Approved V1 event types:
 
 Corrections are **additional** ledger entries. Do not update or delete prior ledger rows.
 
-## Returns
+## Returns (ORD-07)
+
+Canonical contract: [ADR 0024](../docs/adr/0024-order-returns-bulk-transitions-and-dispatch-board.md).
 
 A return/request alone does **not** increase stock.
 
-Warehouse/operations inspects returned goods and decides sellable versus unsellable quantities. Inventory only restocks the approved sellable quantity (`onHand += sellableQty`). Unsellable returned units do not generate a further stock decrease: they already left `onHand` at `SHIPPED` and were never re-entered.
+Warehouse/operations inspects returned goods after delivery. V1 records partial line-level returns in a dedicated Orders-owned return aggregate (`OrderReturn` + `OrderReturnLine` conceptually). Each return line carries:
+
+- **`sellableQuantity`** — restocked through `returnToStock` (`onHand += qty`, `RETURN_TO_STOCK` ledger)
+- **`damagedQuantity`** — recorded for inspection history only; does **not** change `onHand` or `reserved` (units already left at `SHIPPED`)
+
+Rules:
+
+- An Order may have **multiple return events**; cumulative returned quantity per OrderLine must not exceed shipped/eligible quantity.
+- **`reserved` is unchanged** by post-shipment returns.
+- Return recording is Orders-orchestrated; Inventory exposes `returnToStock` only — Orders must not mutate Inventory tables directly.
+- Multi-SKU return restock uses deterministic **`productId` ascending** lock order inside one PostgreSQL transaction with the return aggregate write.
+- Return creation is idempotent (same key + payload → replay; conflicting payload → conflict) and concurrency-safe against over-return and double-restock.
+
+Unsellable returned units do not generate a further stock decrease: they already left `onHand` at `SHIPPED` and were never re-entered.
 
 ## Representation
 
@@ -126,6 +141,6 @@ Admin inventory reads/adjustments use `INVENTORY_READ` / `INVENTORY_ADJUST` ([au
 
 - Whether a future `PACKED` / `PICKED` state moves the physical `onHand` decrement earlier than `SHIPPED`
 - Partial fulfillment or split shipment after V1
-- Detailed return-inspection HTTP/domain design (ORD-07)
+- Detailed return-inspection HTTP/domain design — canonical semantics in [ADR 0024](../docs/adr/0024-order-returns-bulk-transitions-and-dispatch-board.md); ORD-07 implements
 - Public exposure of exact `available`
 - Preferred-customer allocation / fairness under contention

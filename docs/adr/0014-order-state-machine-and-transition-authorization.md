@@ -30,9 +30,10 @@ PENDING_REVIEW → CANCELLED
 CONFIRMED      → SHIPPED
 CONFIRMED      → CANCELLED
 SHIPPED        → DELIVERED
+DELIVERED      → RETURNED   (ORD-07 explicit completion only; [ADR 0024](0024-order-returns-bulk-transitions-and-dispatch-board.md))
 ```
 
-`DELIVERED → RETURNED` is reserved for ORD-07 only. ORD-02 does not implement it. No other transitions are legal.
+`DELIVERED → RETURNED` is implemented in ORD-07 only ([ADR 0024](0024-order-returns-bulk-transitions-and-dispatch-board.md)). ORD-02 does not implement it. No other transitions are legal.
 
 ### Terminal semantics
 
@@ -71,12 +72,15 @@ Set on **first** occurrence only; never cleared; idempotent replay must not rewr
 - `shippedAt` — first shipment
 - `deliveredAt` — first delivery
 - `cancelledAt` — first cancellation
+- `returnedAt` — first explicit return-process completion (`DELIVERED → RETURNED`; ORD-07 / [ADR 0024](0024-order-returns-bulk-transitions-and-dispatch-board.md))
 
-### `RETURNED` (deferred implementation)
+### `RETURNED` (ORD-07 — see ADR 0024)
 
-- Coarse order-level outcome meaning a return process has completed.
-- ORD-07 owns return request/receipt/inspection/restock semantics.
-- `RETURNED` never implies automatic inventory restock.
+Semantics are canonical in [ADR 0024](0024-order-returns-bulk-transitions-and-dispatch-board.md). Summary:
+
+- Coarse order-level outcome meaning the **operational return process has been explicitly completed** by Admin — not inferred from return records or restock alone.
+- ORD-07 owns return inspection/recording, restock, and explicit `DELIVERED → RETURNED` completion as separate operations.
+- `RETURNED` never implies automatic inventory restock, refund, or settlement change.
 
 ### Inactive source entities
 
@@ -172,7 +176,7 @@ V1 has no payment-dependent state or transition.
 
 - ORD-02 implements domain transition services and repository conditional updates; ORD-05/ORD-06 expose HTTP.
 - ORD-03 order creation integrates `reserveForOrder` in the same transaction without requiring full transition runtime beyond architecture approval.
-- ORD-07 must revisit this ADR before implementing `DELIVERED → RETURNED`.
+- `DELIVERED → RETURNED` and `returnedAt` are implemented per [ADR 0024](0024-order-returns-bulk-transitions-and-dispatch-board.md) in ORD-07.
 - Finer admin permissions remain a future policy change with evidence, not a V1 assumption.
 - Durable implementation rules live in `instructions/orders.md`; authorization notes in `instructions/authorization.md`.
 
@@ -180,3 +184,4 @@ V1 has no payment-dependent state or transition.
 
 - [0012 — Inventory quantity, ledger, and concurrency](0012-inventory-quantity-ledger-concurrency.md) — quantity semantics and Inventory contracts (not duplicated here).
 - [0013 — Order historical snapshots](0013-order-historical-snapshots.md) — immutable snapshot columns (not duplicated here).
+- [0024 — Order returns, bulk transitions, and dispatch board](0024-order-returns-bulk-transitions-and-dispatch-board.md) — return aggregate, `RETURNED` completion, bulk ship/deliver, dispatch read model.

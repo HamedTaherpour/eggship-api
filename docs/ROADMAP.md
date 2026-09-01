@@ -569,13 +569,17 @@ Delivered: Permissioned `GET /api/v1/admin/orders` and `GET /api/v1/admin/orders
 
 ### ORD-07 — Returns, bulk transitions, and dispatch board
 
-Status: PLANNED | Depends on: ORD-05, ORD-06, DLU-02 | Primary: Codex after Human business approval | Review: Claude/Cursor concurrency review, Human approval
+Status: PLANNED | Depends on: ORD-05, ORD-06, DLU-02 | Primary: Codex | Review: Claude/Cursor concurrency review, Human approval
+
+Architecture gate: **Closed** ([ADR 0024](adr/0024-order-returns-bulk-transitions-and-dispatch-board.md)). Human-approved ORD-07 business and architecture decisions are recorded; dependencies (ORD-05, ORD-06, DLU-02) are DONE and implementation is dependency-ready. Do not treat this gate closure as implementation DONE.
 
 Scope: Implement separately approved return semantics, bounded bulk transition behavior, and dispatch-board queries without bypassing the order state machine.
 
-Acceptance criteria: Partial/batch failure semantics and authorization are explicit; every item is transition-validated; inventory/reversal behavior follows approved contracts; returns do **not** restore lifetime discount entitlement in V1 (ADR 0017).
+Acceptance criteria: Partial/batch failure semantics and authorization are explicit; every item is transition-validated; inventory/reversal behavior follows approved contracts; returns do **not** restore lifetime discount entitlement in V1 (ADR 0017); return recording and explicit `DELIVERED → RETURNED` completion remain distinct; dispatch is a dedicated read model with `ORDER_READ` only.
 
-Explicitly out of scope: Inventing refund, carrier, or physical-return rules; inventing discount-entitlement restoration.
+Explicitly out of scope: Inventing refund, carrier, or physical-return rules; inventing discount-entitlement restoration; customer return initiation; RETURNED customer notifications; settlement mutation; `ORDER_RETURN` / `DISPATCH_READ` permissions; bulk CONFIRM/CANCEL/RETURN; persisted Dispatch domain.
+
+Delivered (architecture only): Accepted [ADR 0024](adr/0024-order-returns-bulk-transitions-and-dispatch-board.md); durable policy in `instructions/orders.md`, `instructions/inventory.md`, and authorization notes. Partial line-level returns with sellable/damaged quantities; multiple return events; dedicated return aggregate; `returnToStock` for sellable only; explicit completion transition with `returnedAt` and `order.returned`; bulk SHIP/DELIVER partial success; dispatch grouped by Region. No production code, schema, migrations, HTTP, tests, or AuditAction registry changes in this gate.
 
 ### ORD-08 — Order audit, concurrency, and load verification
 
@@ -1410,7 +1414,7 @@ The following are not implementation assumptions:
 - Customer/store business profile fields required at registration vs later completion (store name, manager name, address, region, coordinates): no in-repo legacy inventory yet (`MIG-01`); AUTH-07 shipped Pattern A phone-only identity with empty profile update allowlist. Region **reference** rows exist (CAT-02); profile `regionId` FK remains deferred.
 - Category/Region legacy parity gaps (MIG-01): name uniqueness, public slug, sortOrder, category hierarchy/parent, shipping-related Region fields, and whether hard delete is ever allowed after Product/profile FKs land.
 - Product legacy parity gaps (MIG-01): SKU/code uniqueness, description, unit/package semantics, whether zero-price products should be allowed, and whether product name uniqueness is ever required. Product image attachment is decided in ADR 0022 (exactly one optional `imageMediaId`; no gallery); MED-01 implements it.
-- Order transition runtime (ORD-02), customer create/read HTTP (`ORD-03A`/`ORD-04`), customer cancellation HTTP (`ORD-05`), and Admin Orders HTTP (`ORD-06`) are DONE. V1 state machine, actors, concurrency, and Inventory orchestration rules are settled in ADR 0014 / [instructions/orders.md](../instructions/orders.md). Shipping/address snapshot fields, dispatch board, return HTTP beyond ORD-07 scope, and payment/refund semantics remain deferred. Deferred settlement is separately planned in SET-01/SET-02 and must not become Order state.
+- Order transition runtime (ORD-02), customer create/read HTTP (`ORD-03A`/`ORD-04`), customer cancellation HTTP (`ORD-05`), and Admin Orders HTTP (`ORD-06`) are DONE. V1 state machine, actors, concurrency, and Inventory orchestration rules are settled in ADR 0014 / [instructions/orders.md](../instructions/orders.md). Return/bulk/dispatch architecture is decided in [ADR 0024](adr/0024-order-returns-bulk-transitions-and-dispatch-board.md) / ORD-07 (Human gate closed; implementation PLANNED). Shipping/address snapshot fields and payment/refund semantics remain deferred. Deferred settlement is separately planned in SET-01/SET-02 and must not become Order state.
 - Whether a future `PACKED`/`PICKED` state should move the physical `onHand` decrement earlier than `SHIPPED`.
 - Whether partial fulfillment or split shipment is ever allowed after V1.
 - Public exposure of exact inventory `available`, and any preferred-customer allocation/fairness policy under contention.

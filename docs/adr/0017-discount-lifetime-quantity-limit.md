@@ -119,4 +119,4 @@ Cancel before ship:
 - DLU-02 implements schema, Admin DTO fields, PRC-05 partial-quantity integration, ORD-03 consume, ORD-05 release, snapshot columns, and PostgreSQL race tests under this contract.
 - Existing null-cap PRODUCT discounts and all CATEGORY/ORDER discounts remain behaviorally unchanged.
 - Historical money evidence remains reconstructable from OrderLine snapshots even after Discount mutation or usage release.
-- ORD-07 return work stays inventory/restock-focused and must not silently restore discount entitlement.
+- ORD-07 return work stays inventory/restock-focused and must not silently restore discount entitlement. Canonical return semantics: [ADR 0024](0024-order-returns-bulk-transitions-and-dispatch-board.md).

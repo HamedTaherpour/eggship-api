@@ -164,9 +164,10 @@ PENDING_REVIEW → CANCELLED
 CONFIRMED      → SHIPPED
 CONFIRMED      → CANCELLED
 SHIPPED        → DELIVERED
+DELIVERED      → RETURNED   (ORD-07 explicit completion only)
 ```
 
-`DELIVERED → RETURNED` is reserved for **ORD-07** only. ORD-02 does not implement it.
+`DELIVERED → RETURNED` is implemented in ORD-07 only ([ADR 0024](../docs/adr/0024-order-returns-bulk-transitions-and-dispatch-board.md)). ORD-02 does not implement it.
 
 **Terminal states:** `CANCELLED`, `RETURNED`. `DELIVERED` is not strictly terminal (ORD-07 may transition to `RETURNED`).
 
@@ -176,13 +177,15 @@ Do not encode the state machine in CHECK constraints.
 
 Transitions are **explicit application commands** — not a generic status PATCH and not a public `transition(orderId, toStatus)` API:
 
-| Command                        | From → to                                     | Inventory         |
-| ------------------------------ | --------------------------------------------- | ----------------- |
-| `confirmOrder`                 | `PENDING_REVIEW` → `CONFIRMED`                | none              |
-| `cancelPendingOrderByCustomer` | `PENDING_REVIEW` → `CANCELLED` (owner-scoped) | `releaseForOrder` |
-| `cancelOrderByAdmin`           | `PENDING_REVIEW` or `CONFIRMED` → `CANCELLED` | `releaseForOrder` |
-| `shipOrder`                    | `CONFIRMED` → `SHIPPED`                       | `shipForOrder`    |
-| `deliverOrder`                 | `SHIPPED` → `DELIVERED`                       | none              |
+| Command                        | From → to                                     | Inventory                             |
+| ------------------------------ | --------------------------------------------- | ------------------------------------- |
+| `confirmOrder`                 | `PENDING_REVIEW` → `CONFIRMED`                | none                                  |
+| `cancelPendingOrderByCustomer` | `PENDING_REVIEW` → `CANCELLED` (owner-scoped) | `releaseForOrder`                     |
+| `cancelOrderByAdmin`           | `PENDING_REVIEW` or `CONFIRMED` → `CANCELLED` | `releaseForOrder`                     |
+| `shipOrder`                    | `CONFIRMED` → `SHIPPED`                       | `shipForOrder`                        |
+| `deliverOrder`                 | `SHIPPED` → `DELIVERED`                       | none                                  |
+| `recordOrderReturn` (ORD-07)   | none (Order stays `DELIVERED`)                | `returnToStock` for sellable qty only |
+| `completeOrderReturn` (ORD-07) | `DELIVERED` → `RETURNED`                      | none                                  |
 
 HTTP, `AccessTokenGuard`, `PermissionGuard`, and BOLA mapping belong to ORD-05/ORD-06. Commands accept a trusted `USER`/`ADMIN` actor (UUID id). Customer cancel uses `actor.id` as `userId` and cannot cancel `CONFIRMED`. Confirm/ship/deliver/admin-cancel require an `ADMIN` actor at the command boundary; they do not check `ORDER_TRANSITION` themselves.
 
@@ -223,12 +226,13 @@ Customer self-service remains subject to Auth account-disable policy. A User dis
 
 Set on **first** occurrence only; **never clear**; idempotent replay must **not** rewrite them:
 
-| Field         | Set when           |
-| ------------- | ------------------ |
-| `confirmedAt` | first confirmation |
-| `shippedAt`   | first shipment     |
-| `deliveredAt` | first delivery     |
-| `cancelledAt` | first cancellation |
+| Field         | Set when                                                                  |
+| ------------- | ------------------------------------------------------------------------- |
+| `confirmedAt` | first confirmation                                                        |
+| `shippedAt`   | first shipment                                                            |
+| `deliveredAt` | first delivery                                                            |
+| `cancelledAt` | first cancellation                                                        |
+| `returnedAt`  | first explicit return-process completion (`DELIVERED → RETURNED`; ORD-07) |
 
 ## `deliveryAt`
 
@@ -297,6 +301,8 @@ PostgreSQL transaction
 
 Every Orders+Inventory(+discount usage) flow must use this order. Discount usage locks sit after Order identity / transition success and before Inventory locks so concurrent same-user discount races serialize without crossing Inventory lock order.
 
+For ORD-07 return recording with sellable restock, Slice 2 must use the approved extension: lock the Order row first (`FOR UPDATE`), validate the delivered state, enforce each line's cumulative returned quantity while that Order lock is held, then take the Inventory `orderId` advisory lock, lock Inventory rows in sorted `productId` order, and append the return-to-stock effects before commit. Return persistence primitives join the caller-owned transaction; they do not open nested transactions or claim cumulative safety from an unlocked pre-read.
+
 ### Lifetime discounted-quantity lifecycle (DLU-01)
 
 - **Create:** consume `discountedQuantity` for each applied capped PRODUCT LINE winner in the same RR transaction as pricing snapshot + reservation ([ADR 0017](../docs/adr/0017-discount-lifetime-quantity-limit.md)).
@@ -315,9 +321,54 @@ On create, insufficient stock surfaces as stable Inventory `INVENTORY_INSUFFICIE
 - **Region** rename/deactivation does not change historical snapshot columns or block fulfillment.
 - User disable after order creation does not auto-cancel; see authorization table above.
 
-## `RETURNED` (deferred)
+## Returns, bulk transitions, and dispatch (ORD-07)
 
-Coarse order-level outcome meaning a return process has completed. **ORD-07** owns return request/receipt/inspection/restock semantics. `RETURNED` never implies automatic inventory restock. ORD-02 does not implement `DELIVERED → RETURNED`. ORD-07 must **not** restore lifetime discount entitlement from return/restock; that remains an explicit future business decision ([ADR 0017](../docs/adr/0017-discount-lifetime-quantity-limit.md)). `RETURNED` also never settles, reopens, deletes, or otherwise mutates deferred-settlement state; an existing settlement remains independently recorded and return/refund/credit adjustments are future policy ([ADR 0018](../docs/adr/0018-deferred-settlement-lifecycle.md)).
+Canonical semantics: [ADR 0024](../docs/adr/0024-order-returns-bulk-transitions-and-dispatch-board.md).
+
+### Return aggregate
+
+- V1 supports **partial line-level returns** with **multiple return events** per Order.
+- Durable history lives in a dedicated return aggregate (`OrderReturn` + `OrderReturnLine` conceptually — not on `Order` alone).
+- Each return line records **`sellableQuantity`** and **`damagedQuantity`**.
+- Every return creation requires a trimmed **Human-entered reason** (no enum). Validation bounds are an implementation decision; align with Admin cancel reason (**1–500** characters) unless review chooses otherwise.
+- Return creation requires **`ORDER_TRANSITION`**; do not introduce `ORDER_RETURN`.
+- Return creation uses **retry-safe idempotency** (same key + payload → replay; same key + different payload → conflict).
+- Cumulative returned quantity per **OrderLine** must never exceed shipped/eligible quantity; multiple returns per line are allowed until remaining eligible quantity is zero.
+- **`sellableQuantity`** restocks via Inventory `returnToStock` (`onHand += qty`, `RETURN_TO_STOCK` ledger). **`damagedQuantity`** does not change `onHand` or `reserved` (stock already left at `SHIPPED`).
+- Returns do **not** mutate pricing snapshots, `Order.total`, discount usage, or Settlement ([ADR 0017](../docs/adr/0017-discount-lifetime-quantity-limit.md), [ADR 0018](../docs/adr/0018-deferred-settlement-lifecycle.md)).
+- **`RETURNED` does not mean refunded.** Refund/credit/carrier/customer-initiated return remain out of scope.
+
+### Two return operations
+
+| Operation                    | Effect                                                                         |
+| ---------------------------- | ------------------------------------------------------------------------------ |
+| **Record return/inspection** | Persist return event + optional restock; Order may remain **`DELIVERED`**      |
+| **Complete return process**  | Explicit Admin completion → **`DELIVERED → RETURNED`**; sets `returnedAt` once |
+
+Do not infer completion from partial/full return quantity or the mere existence of return records.
+
+Completion replay follows normal transition idempotency (preserve `returnedAt`; append **`order.returned`** audit only on first success). Return aggregate + `InventoryLedger` provide inspection history; no per-return AuditLog is approved by default ([ADR 0024](../docs/adr/0024-order-returns-bulk-transitions-and-dispatch-board.md)).
+
+### Bulk transitions (V1)
+
+Bulk supports **SHIP** and **DELIVER** only — not CONFIRM, CANCEL, or RETURN.
+
+- Each Order is an **independent transactional unit** (partial success; no whole-batch PostgreSQL transaction).
+- HTTP **200** with explicit per-order successes/failures and stable error codes (not HTTP 207).
+- Reuse ORD-02 per-order transition invariants and per-order AuditLog (`order.shipped`, `order.delivered` — no bulk audit action).
+- Every item is individually authorized and transition-validated.
+- Implementation must propose a conservative batch maximum (recommended starting point: **50**).
+
+### Dispatch board (V1 read model)
+
+- Dedicated Admin read contract (conceptual: `GET /api/v1/admin/orders/dispatch`) — **not** a persisted Dispatch domain.
+- **`ORDER_READ`** only; no `DISPATCH_READ`.
+- Includes **`CONFIRMED`** and **`SHIPPED`** only; grouped by Region; deterministic within-group ordering (recommended: `deliveryAt`, `createdAt`, `id`).
+- No carrier/GPS/route optimization; no new address fields. Shipping address snapshots remain deferred (MIG-01).
+
+## `RETURNED` (canonical summary)
+
+Coarse order-level outcome meaning the **operational return process has been explicitly completed** ([ADR 0024](../docs/adr/0024-order-returns-bulk-transitions-and-dispatch-board.md)). **ORD-07** owns return inspection/recording and explicit completion as separate operations. `RETURNED` never implies automatic inventory restock, refund, or settlement change. ORD-02 does not implement `DELIVERED → RETURNED`. ORD-07 must **not** restore lifetime discount entitlement from return/restock; that remains an explicit future business decision ([ADR 0017](../docs/adr/0017-discount-lifetime-quantity-limit.md)). `RETURNED` also never settles, reopens, deletes, or otherwise mutates deferred-settlement state; an existing settlement remains independently recorded and return/refund/credit adjustments are future policy ([ADR 0018](../docs/adr/0018-deferred-settlement-lifecycle.md)).
 
 ## Order error codes
 
@@ -337,7 +388,7 @@ Do not add per-command status-error explosion. Pricing unavailability maps to `O
 
 **Immutable after creation:** `id`, `userId`, customer/region/line/money/discount snapshots (including `discountedQuantity`), `pricingEvaluatedAt`, `idempotencyKey` / `idempotencyPayloadHash`, `createdAt`.
 
-**Mutable through explicit domain transitions (ORD-02+):** `status`, lifecycle timestamps (`confirmedAt`, `shippedAt`, `deliveredAt`, `deliveryAt`), cancellation metadata (`cancelledAt`, `cancelReason`).
+**Mutable through explicit domain transitions (ORD-02+):** `status`, lifecycle timestamps (`confirmedAt`, `shippedAt`, `deliveredAt`, `returnedAt`, `deliveryAt`), cancellation metadata (`cancelledAt`, `cancelReason`).
 
 Return inspection workflow persistence belongs to ORD-07 — do not model full return semantics on `Order` in ORD-01/ORD-02/ORD-03.
 
@@ -377,7 +428,7 @@ When profile/address support lands, Orders must snapshot address at creation —
 
 ## Module layout
 
-`src/modules/orders/` — domain types, money helpers, `OrderCreationService` (`createOrder`), `OrderReadService` (customer and Admin list/detail), `OrdersController` (customer HTTP), `AdminOrdersController` (permissioned Admin list/detail/confirm/cancel/ship/deliver), `OrderTransitionService` (confirm/cancel/ship/deliver), and `OrderRepository` (`createWithTrustedSnapshots`, Admin/owner reads, idempotency lookup/lock, closed conditional status updates). Orders imports Pricing + Inventory application contracts; Inventory must not import Orders.
+`src/modules/orders/` — domain types, money helpers, `OrderCreationService` (`createOrder`), `OrderReadService` (customer and Admin list/detail), `OrdersController` (customer HTTP), `AdminOrdersController` (permissioned Admin list/detail/confirm/cancel/ship/deliver), `OrderTransitionService` (confirm/cancel/ship/deliver), `OrderRepository` (`createWithTrustedSnapshots`, Admin/owner reads, idempotency lookup/lock, closed conditional status updates), and `OrderReturnRepository` (durable return aggregate, idempotency proof, cumulative quantity read, and transaction-compatible lock primitives). Orders imports Pricing + Inventory application contracts; Inventory must not import Orders.
 
 ## Related ADRs
 
@@ -389,3 +440,4 @@ When profile/address support lands, Orders must snapshot address at creation —
 - [0016 — Commerce order-acceptance policy](../docs/adr/0016-commerce-order-acceptance-policy.md)
 - [0017 — Per-customer lifetime discounted-quantity limit](../docs/adr/0017-discount-lifetime-quantity-limit.md)
 - [0018 — Deferred-settlement lifecycle](../docs/adr/0018-deferred-settlement-lifecycle.md)
+- [0024 — Order returns, bulk transitions, and dispatch board](../docs/adr/0024-order-returns-bulk-transitions-and-dispatch-board.md)

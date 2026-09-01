@@ -89,7 +89,7 @@ Rules:
 - Never use bare string literals for permissions in application code; use the `Permission` constant.
 - A permission that no endpoint requires grants nothing. Adding a permission is safe; granting it is the decision.
 - Granularity inside a domain stays coarse until the owning roadmap task has evidence for finer actions. The owning task extends the catalog and the role policy in the same change.
-- **`ORDER_TRANSITION` stays coarse for V1** (ORD-02A / [ADR 0014](../docs/adr/0014-order-state-machine-and-transition-authorization.md)): one permission covers confirm, cancel, ship, and deliver. Do not introduce `ORDER_CANCEL`, `ORDER_SHIP`, or `ORDER_DELIVER` until a later task has evidence for finer admin actions.
+- **`ORDER_TRANSITION` stays coarse for V1** (ORD-02A / [ADR 0014](../docs/adr/0014-order-state-machine-and-transition-authorization.md), ORD-07 / [ADR 0024](../docs/adr/0024-order-returns-bulk-transitions-and-dispatch-board.md)): one permission covers confirm, cancel, ship, deliver, return recording, and return-process completion. Do not introduce `ORDER_CANCEL`, `ORDER_SHIP`, `ORDER_DELIVER`, or `ORDER_RETURN` until a later task has evidence for finer admin actions.
 - Role policy is code, so a policy change requires a deployment. That is the accepted trade-off (ADR 0007); do not add a database-driven permission editor without an approved requirement.
 
 ### SUPER_ADMIN

@@ -8,7 +8,9 @@ import { AuditLogService } from './audit-log.service';
 import type {
   AuditLogRepository,
   AuditLogRecord,
+  AuditLogReadRecord,
 } from '../infrastructure/audit-log.repository';
+import { AuditLogNotFoundError } from '../domain/audit-log-errors';
 
 function createRepository(): {
   repository: AuditLogRepository;
@@ -71,5 +73,70 @@ describe('AuditLogService', () => {
       requestId: 'req_real',
       correlationId: 'corr_real',
     });
+  });
+
+  it('translates the allowlisted Admin query and returns canonical pagination', async () => {
+    const row = {
+      id: '11111111-1111-4111-8111-111111111111',
+      occurredAt: new Date('2026-08-21T12:00:00.000Z'),
+      actorType: 'ADMIN',
+      actorId: null,
+      action: AuditAction.ORDER_CREATED,
+      entityType: 'ORDER',
+      entityId: '22222222-2222-4222-8222-222222222222',
+      requestId: 'req_1',
+      correlationId: 'corr_1',
+      metadata: null,
+    } satisfies AuditLogReadRecord;
+    const list = jest.fn().mockResolvedValue({ items: [row], total: 3 });
+    const repository = {
+      list,
+    } as unknown as AuditLogRepository;
+    const service = new AuditLogService(
+      repository,
+      new RequestContextService(),
+    );
+
+    const result = await service.listAdmin({
+      page: 2,
+      pageSize: 1,
+      action: AuditAction.ORDER_CREATED,
+      entityId: row.entityId,
+      occurredFrom: '2026-08-01T00:00:00.000Z',
+      sortBy: 'occurredAt',
+      sortOrder: 'desc',
+    });
+
+    expect(list).toHaveBeenCalledWith(
+      expect.objectContaining({
+        page: 2,
+        pageSize: 1,
+        action: AuditAction.ORDER_CREATED,
+        entityId: row.entityId,
+        occurredFrom: new Date('2026-08-01T00:00:00.000Z'),
+        sortBy: 'occurredAt',
+        sortOrder: 'desc',
+      }),
+    );
+    expect(result.meta).toEqual({
+      page: 2,
+      pageSize: 1,
+      total: 3,
+      totalPages: 3,
+    });
+  });
+
+  it('returns a stable not-found error for an absent Admin detail record', async () => {
+    const repository = {
+      findById: jest.fn().mockResolvedValue(null),
+    } as unknown as AuditLogRepository;
+    const service = new AuditLogService(
+      repository,
+      new RequestContextService(),
+    );
+
+    await expect(
+      service.getAdminById('11111111-1111-4111-8111-111111111111'),
+    ).rejects.toBeInstanceOf(AuditLogNotFoundError);
   });
 });

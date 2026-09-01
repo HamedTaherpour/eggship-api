@@ -26,6 +26,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { VisitorsModule } from './modules/visitors/visitors.module';
 import { BlogsModule } from './modules/blogs/blogs.module';
 import { AuditModule } from './modules/audit/audit.module';
+import { AdminAuditModule } from './modules/audit/admin-audit.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { AuditModule } from './modules/audit/audit.module';
     VisitorsModule,
     BlogsModule,
     AuditModule,
+    AdminAuditModule,
   ],
   controllers: [HealthController],
 })

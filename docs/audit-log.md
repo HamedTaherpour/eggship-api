@@ -29,7 +29,7 @@ Metadata limits are 2,048 UTF-8 bytes, depth 3, 12 keys per object, 256 characte
 
 `normalizeAuditEvent()` validates the caller event only and always leaves `requestId`/`correlationId` null. `AuditLogService.append()` derives request/correlation linkage exclusively from `RequestContextService`; callers cannot provide or spoof those values through the public append API.
 
-It accepts an opaque caller-owned `TransactionContext`, and `AuditLogRepository` performs only one INSERT through that connection. It does not read or lock actor/entity tables and exposes no update/delete/upsert methods. AUD-02 integrated all approved mutation and security paths that exist in production; registry actions whose underlying feature does not yet exist remain deferred. AuditLog read APIs remain AUD-03, retention and lifecycle deletion remain DATA-01/DATA-03, and this contract makes no WORM or tamper-proof claim.
+It accepts an opaque caller-owned `TransactionContext`, and `AuditLogRepository` performs only one INSERT through that connection. It does not read or lock actor/entity tables and exposes no update/delete/upsert methods. AUD-02 integrated all approved mutation and security paths that exist in production; registry actions whose underlying feature does not yet exist remain deferred. AUD-03 delivered the permissioned Admin AuditLog list/detail read surface; retention and lifecycle deletion remain DATA-01/DATA-03, and this contract makes no WORM or tamper-proof claim.
 
 ## AUD-02 Media deletion integration
 
@@ -45,3 +45,21 @@ Because object storage is external to PostgreSQL, the event proves only the
 durable PostgreSQL Media deletion transition. If the object delete succeeds
 but the PostgreSQL transaction (including AuditLog insertion) rolls back, the
 Media row remains while the object may be missing and requires reconciliation.
+
+## AUD-03 Admin read surface
+
+AuditLog has a read-only Admin HTTP surface:
+
+- `GET /api/v1/admin/audit-logs`
+- `GET /api/v1/admin/audit-logs/:id`
+
+Both routes require the explicit `AUDIT_READ` permission. They use pagination,
+stable `occurredAt`/`id` ordering, and explicit filters for indexed action,
+actor, entity, request/correlation, and occurred-at fields. Unknown query
+parameters and unsupported sort/filter values are rejected. There is no free
+text or arbitrary metadata search, and no export endpoint.
+
+Responses are explicit safe DTOs. List items omit metadata; detail returns only
+the bounded action-specific metadata permitted by this contract. Reads do not
+append durable AuditLog events recursively. AUD-03 does not change retention,
+deletion, or append/write semantics.

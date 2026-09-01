@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   109 |
-| DONE        |    77 |
+| DONE        |    78 |
 | IN_PROGRESS |     0 |
 | READY       |     0 |
 | BLOCKED     |     0 |
-| PLANNED     |    32 |
+| PLANNED     |    31 |
 
-- Current task: `AUD-02` (Domain audit integration) is **DONE**. All approved AuditLog actions with existing production mutation paths are wired; registry actions for not-yet-implemented features remain deferred. AuditLog read APIs remain AUD-03; retention and lifecycle deletion remain DATA-01/DATA-03. No task remains BLOCKED.
+- Current task: `AUD-03` (Admin audit access) is **DONE**. Permissioned Admin AuditLog list/detail read APIs are delivered with `AUDIT_READ`-only authorization, explicit safe DTOs, allowlisted indexed filters, and deterministic `occurredAt`/`id` ordering; no recursive read auditing, export, or arbitrary metadata search. Retention and lifecycle deletion remain DATA-01/DATA-03. No task remains BLOCKED.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate.
 
 ## Status model
@@ -1081,7 +1081,7 @@ Acceptance criteria: Sensitive fields are excluded/redacted by construction per 
 
 Explicitly out of scope: Logging every read, raw payload capture, retention periods, legal hold, and lifecycle deletion (deferred to DATA-01/DATA-03).
 
-Delivered: Additive append-only `AuditLog` PostgreSQL model and migration; closed action/entity registries and action-specific metadata validation with bounded safe JSON per ADR 0023; context-derived `requestId`/`correlationId` linkage; transaction-aware `AuditLogService.append()` writer with INSERT-only repository boundary; [audit-log.md](audit-log.md) implementation contract; unit and PostgreSQL integration coverage. Domain event integration delivered in AUD-02; read APIs remain AUD-03; retention and lifecycle deletion remain DATA-01/DATA-03.
+Delivered: Additive append-only `AuditLog` PostgreSQL model and migration; closed action/entity registries and action-specific metadata validation with bounded safe JSON per ADR 0023; context-derived `requestId`/`correlationId` linkage; transaction-aware `AuditLogService.append()` writer with INSERT-only repository boundary; [audit-log.md](audit-log.md) implementation contract; unit and PostgreSQL integration coverage. Domain event integration delivered in AUD-02; read APIs delivered in AUD-03; retention and lifecycle deletion remain DATA-01/DATA-03.
 
 ### AUD-02 — Domain audit integration
 
@@ -1093,17 +1093,19 @@ Acceptance criteria: Audit creation follows transaction/durability decisions per
 
 Explicitly out of scope: Retrofitting unimplemented domains and external SIEM delivery.
 
-Delivered: Integrated approved AuditLog events into existing production mutation and security paths via transaction-aware `AuditLogService.append()` on caller-owned PostgreSQL connections: Admin identity/auth security; Product/Category/Region; Pricing/Discount; Inventory receive/adjust; Order create and transitions; Settlement lifecycle; Commerce Policy; Blog publish/unpublish; Media deletion. Transaction atomicity, replay/idempotency, privacy, actor provenance, and concurrency verified. Registry actions for not-yet-implemented features remain deferred. AuditLog read APIs remain AUD-03. Retention and lifecycle deletion remain DATA-01/DATA-03. Media audit represents the durable PostgreSQL Media deletion transition, not distributed object-storage atomicity.
+Delivered: Integrated approved AuditLog events into existing production mutation and security paths via transaction-aware `AuditLogService.append()` on caller-owned PostgreSQL connections: Admin identity/auth security; Product/Category/Region; Pricing/Discount; Inventory receive/adjust; Order create and transitions; Settlement lifecycle; Commerce Policy; Blog publish/unpublish; Media deletion. Transaction atomicity, replay/idempotency, privacy, actor provenance, and concurrency verified. Registry actions for not-yet-implemented features remain deferred. AuditLog read APIs delivered in AUD-03. Retention and lifecycle deletion remain DATA-01/DATA-03. Media audit represents the durable PostgreSQL Media deletion transition, not distributed object-storage atomicity.
 
 ### AUD-03 — Admin audit access
 
-Status: PLANNED | Depends on: AUD-02 | Primary: Codex | Review: Claude/Cursor privacy/security review
+Status: DONE | Depends on: AUD-02 | Primary: Codex | Review: Claude/Cursor privacy/security review
 
 Scope: Implement tightly permissioned audit list/detail search with allowlisted filters and safe output DTOs.
 
 Acceptance criteria: Sensitive before/after data cannot leak; access itself is auditable; pagination/index/query plans and OpenAPI are verified.
 
 Explicitly out of scope: Audit mutation/deletion and broad export without approval.
+
+Delivered: Permissioned Admin AuditLog list/detail APIs (`GET /api/v1/admin/audit-logs`, `GET /api/v1/admin/audit-logs/:id`) with `AUDIT_READ`-only authorization; explicit safe DTOs (list omits metadata, detail returns bounded action-specific metadata only); allowlisted indexed filters with deterministic `occurredAt`/`id` ordering; no arbitrary metadata or free-text search; ordinary AuditLog reads do not append durable AuditLog events; existing AUD-01 indexes were sufficient with no schema/index migration required; export/bulk export remains out of scope; retention/deletion remains DATA lifecycle ownership.
 
 ### AUD-04 — Safe diagnostic bundle
 

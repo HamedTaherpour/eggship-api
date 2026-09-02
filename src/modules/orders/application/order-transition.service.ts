@@ -1,4 +1,4 @@
-import { Injectable, Optional } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ApplicationError } from '../../../common/errors/application-error';
 import { ApplicationLogger } from '../../../common/observability/application-logger.service';
 import { TransactionRunner } from '../../../infrastructure/database/transaction';
@@ -48,6 +48,7 @@ import type { OrderStatusNotificationInput } from '../../notifications/applicati
 import type {
   CancelOrderByAdminCommand,
   CancelPendingOrderByCustomerCommand,
+  CompleteReturnProcessCommand,
   ConfirmOrderCommand,
   DeliverOrderCommand,
   OrderTransitionResult,
@@ -68,7 +69,7 @@ export class OrderTransitionService {
     private readonly inventory: InventoryService,
     private readonly logger: ApplicationLogger,
     private readonly orderStatusNotifications: OrderStatusNotificationService,
-    @Optional() private readonly audit?: AuditLogService,
+    private readonly audit: AuditLogService,
   ) {}
 
   async confirmOrder(
@@ -239,6 +240,35 @@ export class OrderTransitionService {
         actor,
         'order.delivered',
         OrderStatus.SHIPPED,
+        ctx,
+      );
+    });
+  }
+
+  /** ORD-07 operation B: explicit DELIVERED → RETURNED completion only. */
+  async completeReturnProcess(
+    input: CompleteReturnProcessCommand,
+    tx?: TransactionContext,
+  ): Promise<OrderTransitionResult> {
+    const orderId = this.requireOrderId(input.orderId);
+    const actor = assertAdminActor(input.actor);
+
+    return this.transactions.runIn(tx, async (ctx) => {
+      const won = await this.orders.transitionDeliveredToReturned(orderId, ctx);
+      if (won === null) {
+        return this.classifyUnscopedZeroRow({
+          orderId,
+          target: OrderStatus.RETURNED,
+          actor,
+          operation: 'order.returned',
+          ctx,
+        });
+      }
+      return this.succeeded(
+        won,
+        actor,
+        'order.returned',
+        OrderStatus.DELIVERED,
         ctx,
       );
     });
@@ -459,8 +489,9 @@ export class OrderTransitionService {
       'order.confirmed': AuditAction.ORDER_CONFIRMED,
       'order.shipped': AuditAction.ORDER_SHIPPED,
       'order.delivered': AuditAction.ORDER_DELIVERED,
+      'order.returned': AuditAction.ORDER_RETURNED,
     };
-    await this.audit?.append(
+    await this.audit.append(
       {
         action: actionByOperation[operation]!,
         actorType: actor.type,

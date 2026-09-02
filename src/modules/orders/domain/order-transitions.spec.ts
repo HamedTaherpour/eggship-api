@@ -15,6 +15,7 @@ describe('order transition graph', () => {
     [OrderStatus.CONFIRMED, OrderStatus.SHIPPED],
     [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
     [OrderStatus.SHIPPED, OrderStatus.DELIVERED],
+    [OrderStatus.DELIVERED, OrderStatus.RETURNED],
   ];
 
   it.each(allowed)('allows %s → %s', (from, to) => {
@@ -39,7 +40,6 @@ describe('order transition graph', () => {
         [OrderStatus.CONFIRMED, OrderStatus.DELIVERED],
         [OrderStatus.SHIPPED, OrderStatus.CANCELLED],
         [OrderStatus.DELIVERED, OrderStatus.CANCELLED],
-        [OrderStatus.DELIVERED, OrderStatus.RETURNED],
         [OrderStatus.CANCELLED, OrderStatus.CONFIRMED],
         [OrderStatus.RETURNED, OrderStatus.DELIVERED],
         [OrderStatus.CONFIRMED, OrderStatus.PENDING_REVIEW],
@@ -53,8 +53,10 @@ describe('order transition graph', () => {
     }
   });
 
-  it('does not expose a RETURNED runtime edge from DELIVERED', () => {
-    expect(ORDER_TRANSITIONS[OrderStatus.DELIVERED]).toEqual([]);
+  it('exposes only the explicit return completion edge from DELIVERED', () => {
+    expect(ORDER_TRANSITIONS[OrderStatus.DELIVERED]).toEqual([
+      OrderStatus.RETURNED,
+    ]);
     expect(ORDER_TRANSITIONS[OrderStatus.RETURNED]).toEqual([]);
     expect(ORDER_TRANSITIONS[OrderStatus.CANCELLED]).toEqual([]);
   });

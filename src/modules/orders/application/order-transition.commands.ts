@@ -32,3 +32,9 @@ export interface DeliverOrderCommand {
   orderId: string;
   actor: OrderAdminActor;
 }
+
+/** Explicit ORD-07 completion command; it does not record a return event. */
+export interface CompleteReturnProcessCommand {
+  orderId: string;
+  actor: OrderAdminActor;
+}

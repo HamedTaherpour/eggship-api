@@ -2,14 +2,14 @@ import { OrderStatus } from './order-status';
 
 /**
  * Canonical V1 transition graph (ADR 0014).
- * `DELIVERED → RETURNED` is intentionally absent — ORD-07 owns that edge.
+ * `DELIVERED → RETURNED` is the explicit ORD-07 return-process completion edge.
  * Commands remain explicit; this table is not a public generic transition API.
  */
 export const ORDER_TRANSITIONS = {
   [OrderStatus.PENDING_REVIEW]: [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
   [OrderStatus.CONFIRMED]: [OrderStatus.SHIPPED, OrderStatus.CANCELLED],
   [OrderStatus.SHIPPED]: [OrderStatus.DELIVERED],
-  [OrderStatus.DELIVERED]: [],
+  [OrderStatus.DELIVERED]: [OrderStatus.RETURNED],
   [OrderStatus.CANCELLED]: [],
   [OrderStatus.RETURNED]: [],
 } as const satisfies Record<OrderStatus, readonly OrderStatus[]>;

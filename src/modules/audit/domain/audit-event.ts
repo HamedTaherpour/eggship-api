@@ -59,6 +59,7 @@ export const AuditAction = {
   ORDER_CONFIRMED: 'order.confirmed',
   ORDER_SHIPPED: 'order.shipped',
   ORDER_DELIVERED: 'order.delivered',
+  ORDER_RETURNED: 'order.returned',
   SETTLEMENT_UPDATED: 'settlement.updated',
   SETTLEMENT_SETTLED: 'settlement.settled',
   COMMERCE_POLICY_UPDATED: 'commerce_policy.updated',
@@ -179,6 +180,7 @@ export const AUDIT_ACTION_SPECS: Record<AuditAction, ActionSpec> = {
   [AuditAction.ORDER_CONFIRMED]: identified(AuditEntityType.ORDER),
   [AuditAction.ORDER_SHIPPED]: identified(AuditEntityType.ORDER),
   [AuditAction.ORDER_DELIVERED]: identified(AuditEntityType.ORDER),
+  [AuditAction.ORDER_RETURNED]: identified(AuditEntityType.ORDER),
   [AuditAction.SETTLEMENT_UPDATED]: changed(AuditEntityType.SETTLEMENT),
   [AuditAction.SETTLEMENT_SETTLED]: identified(AuditEntityType.SETTLEMENT),
   [AuditAction.COMMERCE_POLICY_UPDATED]: {

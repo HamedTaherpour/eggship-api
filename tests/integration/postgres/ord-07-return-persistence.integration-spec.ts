@@ -15,6 +15,9 @@ import { UsersModule } from '../../../src/modules/users/users.module';
 import { OrderRepository } from '../../../src/modules/orders/infrastructure/order.repository';
 import { OrderReturnRepository } from '../../../src/modules/orders/infrastructure/order-return.repository';
 import { OrderReturnService } from '../../../src/modules/orders/application/order-return.service';
+import { OrderTransitionService } from '../../../src/modules/orders/application/order-transition.service';
+import { AuditAction } from '../../../src/modules/audit/domain/audit-event';
+import { AuditLogService } from '../../../src/modules/audit/application/audit-log.service';
 import type { RecordOrderReturnCommand } from '../../../src/modules/orders/application/order-return.commands';
 import {
   InventoryService,
@@ -40,7 +43,7 @@ import type { OrderReturnRecord } from '../../../src/modules/orders/domain/order
 async function truncateTables(prisma: PrismaService): Promise<void> {
   assertDestructiveOperationsAllowed();
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "OrderReturnLine", "OrderReturn", "OrderLine", "Order", "InventoryLedger", "InventoryReservation", "Inventory", "Admin", "Product", "Category", "Region", "User" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "AuditLog", "OrderReturnLine", "OrderReturn", "OrderLine", "Order", "InventoryLedger", "InventoryReservation", "Inventory", "Admin", "Product", "Category", "Region", "User" RESTART IDENTITY CASCADE',
   );
 }
 
@@ -55,6 +58,8 @@ describe('ORD-07 return persistence (PostgreSQL integration)', () => {
   let returns: OrderReturnRepository;
   let transactions: TransactionRunner;
   let returnService: OrderReturnService;
+  let transitions: OrderTransitionService;
+  let audit: AuditLogService;
   let inventory: InventoryService;
   let phoneCounter = 0;
 
@@ -73,6 +78,8 @@ describe('ORD-07 return persistence (PostgreSQL integration)', () => {
     returns = moduleRef.get(OrderReturnRepository);
     transactions = moduleRef.get(TransactionRunner);
     returnService = moduleRef.get(OrderReturnService);
+    transitions = moduleRef.get(OrderTransitionService);
+    audit = moduleRef.get(AuditLogService);
     inventory = moduleRef.get(InventoryService);
     await app.init();
   });
@@ -83,7 +90,12 @@ describe('ORD-07 return persistence (PostgreSQL integration)', () => {
     const seeded = await context();
     await prisma.order.update({
       where: { id: seeded.order.id },
-      data: { status: OrderStatus.DELIVERED, deliveredAt: new Date() },
+      data: {
+        status: OrderStatus.DELIVERED,
+        confirmedAt: new Date('2026-08-30T10:00:00.000Z'),
+        shippedAt: new Date('2026-08-31T10:00:00.000Z'),
+        deliveredAt: new Date('2026-09-01T10:00:00.000Z'),
+      },
     });
     await inventory.ensureForProduct(seeded.line.productId);
     await inventory.receiveOnHand({
@@ -618,6 +630,153 @@ describe('ORD-07 return persistence (PostgreSQL integration)', () => {
     expect(balance).toMatchObject({ onHand: 17, reserved: 0 });
     expect(returnCount).toBe(1);
     expect(ledgerCount).toBe(1);
+  });
+
+  it('explicitly completes a delivered return process without a recorded return or Inventory effects', async () => {
+    const { admin, order, line } = await deliveredContext();
+    const beforeBalance = await inventory.getBalance(line.productId);
+    const beforeLedgerCount = await prisma.inventoryLedger.count();
+
+    const first = await transitions.completeReturnProcess({
+      orderId: order.id,
+      actor: { type: 'ADMIN', id: admin.id },
+    });
+    const replay = await transitions.completeReturnProcess({
+      orderId: order.id,
+      actor: { type: 'ADMIN', id: admin.id },
+    });
+
+    expect(first).toMatchObject({
+      replay: false,
+      order: { status: 'RETURNED' },
+    });
+    expect(first.order.returnedAt).toBeInstanceOf(Date);
+    expect(replay).toMatchObject({
+      replay: true,
+      order: { status: 'RETURNED' },
+    });
+    expect(replay.order.returnedAt).toEqual(first.order.returnedAt);
+    expect(
+      await prisma.orderReturn.count({ where: { orderId: order.id } }),
+    ).toBe(0);
+    expect(await prisma.orderReturnLine.count()).toBe(0);
+    expect(await inventory.getBalance(line.productId)).toEqual(beforeBalance);
+    expect(await prisma.inventoryLedger.count()).toBe(beforeLedgerCount);
+    expect(
+      await prisma.auditLog.count({
+        where: { action: AuditAction.ORDER_RETURNED, entityId: order.id },
+      }),
+    ).toBe(1);
+  });
+
+  it('rolls back return completion when the required audit append fails', async () => {
+    const { admin, order } = await deliveredContext();
+    jest
+      .spyOn(audit, 'append')
+      .mockRejectedValueOnce(new Error('audit failure'));
+
+    await expect(
+      transitions.completeReturnProcess({
+        orderId: order.id,
+        actor: { type: 'ADMIN', id: admin.id },
+      }),
+    ).rejects.toThrow('audit failure');
+
+    expect(await orders.findById(order.id)).toMatchObject({
+      status: OrderStatus.DELIVERED,
+      returnedAt: null,
+    });
+    expect(
+      await prisma.auditLog.count({
+        where: { action: AuditAction.ORDER_RETURNED, entityId: order.id },
+      }),
+    ).toBe(0);
+    jest.restoreAllMocks();
+  });
+
+  it('serializes concurrent completion attempts to one transition and one audit fact', async () => {
+    const { admin, order, line } = await deliveredContext();
+    const beforeBalance = await inventory.getBalance(line.productId);
+    const beforeReturns = await prisma.orderReturn.count({
+      where: { orderId: order.id },
+    });
+    const callers = await Promise.allSettled(
+      Array.from({ length: 8 }, () =>
+        transitions.completeReturnProcess({
+          orderId: order.id,
+          actor: { type: 'ADMIN', id: admin.id },
+        }),
+      ),
+    );
+    const fulfilled = callers.filter(
+      (
+        result,
+      ): result is PromiseFulfilledResult<
+        Awaited<ReturnType<typeof transitions.completeReturnProcess>>
+      > => result.status === 'fulfilled',
+    );
+    const final = await orders.findById(order.id);
+
+    expect(fulfilled).toHaveLength(8);
+    expect(fulfilled.filter((result) => !result.value.replay)).toHaveLength(1);
+    expect(fulfilled.filter((result) => result.value.replay)).toHaveLength(7);
+    expect(final).toMatchObject({ status: OrderStatus.RETURNED });
+    expect(final?.returnedAt).toEqual(fulfilled[0]?.value.order.returnedAt);
+    expect(
+      await prisma.auditLog.count({
+        where: { action: AuditAction.ORDER_RETURNED, entityId: order.id },
+      }),
+    ).toBe(1);
+    expect(await inventory.getBalance(line.productId)).toEqual(beforeBalance);
+    expect(
+      await prisma.orderReturn.count({ where: { orderId: order.id } }),
+    ).toBe(beforeReturns);
+  });
+
+  it('serializes return recording against completion without a post-completion return', async () => {
+    const { admin, order, line } = await deliveredContext();
+    const beforeBalance = await inventory.getBalance(line.productId);
+    if (beforeBalance === null)
+      throw new Error('Expected seeded Inventory balance.');
+    const outcomes = await Promise.allSettled([
+      returnService.recordReturn(
+        recordCommand({
+          orderId: order.id,
+          adminId: admin.id,
+          lineId: line.id,
+          key: randomUUID(),
+          sellableQuantity: 2,
+        }),
+      ),
+      transitions.completeReturnProcess({
+        orderId: order.id,
+        actor: { type: 'ADMIN', id: admin.id },
+      }),
+    ]);
+    const final = await orders.findById(order.id);
+    const returnCount = await prisma.orderReturn.count({
+      where: { orderId: order.id },
+    });
+    const returnLineCount = await prisma.orderReturnLine.count();
+    const ledgerCount = await prisma.inventoryLedger.count({
+      where: { type: InventoryLedgerType.RETURN_TO_STOCK },
+    });
+
+    expect(final).toMatchObject({ status: OrderStatus.RETURNED });
+    expect(final?.returnedAt).toBeInstanceOf(Date);
+    expect(
+      await prisma.auditLog.count({
+        where: { action: AuditAction.ORDER_RETURNED, entityId: order.id },
+      }),
+    ).toBe(1);
+    expect(returnCount).toBeLessThanOrEqual(1);
+    expect(returnLineCount).toBe(returnCount);
+    expect(ledgerCount).toBe(returnCount);
+    expect(outcomes.some((result) => result.status === 'fulfilled')).toBe(true);
+    expect(await inventory.getBalance(line.productId)).toMatchObject({
+      onHand: beforeBalance.onHand + returnCount * 2,
+      reserved: beforeBalance.reserved,
+    });
   });
 
   it('restricts deletion of referenced order, line, and admin history', async () => {

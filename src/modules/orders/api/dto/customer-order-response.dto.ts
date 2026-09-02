@@ -249,6 +249,13 @@ export class CustomerOrderDetailDto extends CustomerOrderDto {
   @ApiPropertyOptional({
     format: 'date-time',
     nullable: true,
+    description: 'First explicit return-process completion instant.',
+  })
+  returnedAt!: string | null;
+
+  @ApiPropertyOptional({
+    format: 'date-time',
+    nullable: true,
     description: 'First cancellation instant.',
   })
   cancelledAt!: string | null;
@@ -339,6 +346,7 @@ export function toCustomerOrderDetailDto(
     confirmedAt: toOptionalInstant(order.confirmedAt),
     shippedAt: toOptionalInstant(order.shippedAt),
     deliveredAt: toOptionalInstant(order.deliveredAt),
+    returnedAt: toOptionalInstant(order.returnedAt ?? null),
     cancelledAt: toOptionalInstant(order.cancelledAt),
   };
 }

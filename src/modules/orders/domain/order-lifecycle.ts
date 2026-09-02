@@ -19,11 +19,16 @@ export function assertLifecycleTimestamps(order: OrderRecord): void {
       requireTimestamp(order, 'shippedAt');
       requireTimestamp(order, 'deliveredAt');
       return;
+    case OrderStatus.RETURNED:
+      requireTimestamp(order, 'confirmedAt');
+      requireTimestamp(order, 'shippedAt');
+      requireTimestamp(order, 'deliveredAt');
+      requireTimestamp(order, 'returnedAt');
+      return;
     case OrderStatus.CANCELLED:
       requireTimestamp(order, 'cancelledAt');
       return;
     case OrderStatus.PENDING_REVIEW:
-    case OrderStatus.RETURNED:
       return;
     default: {
       const exhaustive: never = order.status;
@@ -34,9 +39,10 @@ export function assertLifecycleTimestamps(order: OrderRecord): void {
 
 function requireTimestamp(
   order: OrderRecord,
-  field: 'confirmedAt' | 'shippedAt' | 'deliveredAt' | 'cancelledAt',
+  field:
+    'confirmedAt' | 'shippedAt' | 'deliveredAt' | 'returnedAt' | 'cancelledAt',
 ): void {
-  if (order[field] === null) {
+  if (order[field] === null || order[field] === undefined) {
     throw new Error(`Order ${order.status} requires ${field}.`);
   }
 }

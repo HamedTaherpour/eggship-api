@@ -232,6 +232,34 @@ export class AdminOrdersController {
     return { data: toAdminOrderDetailDto(result.order) };
   }
 
+  @Post(':id/complete-return')
+  @Header('Cache-Control', ADMIN_ORDER_CACHE_CONTROL)
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions(Permission.ORDER_TRANSITION)
+  @ApiOperation({
+    operationId: 'AdminOrders_completeReturn',
+    summary: 'Complete an order return process (Admin)',
+    description:
+      'Explicitly completes return processing with DELIVERED → RETURNED. This does not create return records, restock Inventory, or change financial state; replay preserves returnedAt.',
+  })
+  @ApiOkResponse({ type: AdminOrderDetailResponseDto })
+  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  @ApiNotFoundResponse({ type: ApiErrorResponseDto })
+  @ApiConflictResponse({ type: ApiErrorResponseDto })
+  async completeReturn(
+    @Req() request: Request,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<AdminOrderDetailResponseDto> {
+    const principal = requireAdminPrincipal(request);
+    const result = await this.transitions.completeReturnProcess({
+      orderId: id,
+      actor: { type: OrderActorType.ADMIN, id: principal.subjectId },
+    });
+    return { data: toAdminOrderDetailDto(result.order) };
+  }
+
   @Post(':id/returns')
   @Header('Cache-Control', ADMIN_ORDER_CACHE_CONTROL)
   @HttpCode(HttpStatus.OK)

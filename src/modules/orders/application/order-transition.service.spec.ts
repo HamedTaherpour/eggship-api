@@ -13,6 +13,7 @@ import {
 import { InventoryLedgerActorType } from '../../inventory/domain/inventory-ledger';
 import type { DiscountUsageService } from '../../pricing/application/discount-usage.service';
 import type { OrderStatusNotificationService } from '../../notifications/application/order-status-notification.service';
+import type { AuditLogService } from '../../audit/application/audit-log.service';
 import { OrderActorType } from '../domain/order-actor';
 import type { OrderRecord } from '../domain/order';
 import {
@@ -118,6 +119,7 @@ describe('OrderTransitionService', () => {
       | 'transitionConfirmedToCancelled'
       | 'transitionConfirmedToShipped'
       | 'transitionShippedToDelivered'
+      | 'transitionDeliveredToReturned'
     >
   >;
   let discountUsage: jest.Mocked<
@@ -133,6 +135,7 @@ describe('OrderTransitionService', () => {
   let orderStatusNotifications: jest.Mocked<
     Pick<OrderStatusNotificationService, 'generate'>
   >;
+  let audit: jest.Mocked<Pick<AuditLogService, 'append'>>;
   let service: OrderTransitionService;
 
   const admin = { type: OrderActorType.ADMIN, id: ADMIN_ID } as const;
@@ -148,6 +151,7 @@ describe('OrderTransitionService', () => {
       transitionConfirmedToCancelled: jest.fn(),
       transitionConfirmedToShipped: jest.fn(),
       transitionShippedToDelivered: jest.fn(),
+      transitionDeliveredToReturned: jest.fn(),
     };
     discountUsage = {
       lockRemainingForPricing: jest.fn().mockResolvedValue(new Map()),
@@ -160,6 +164,7 @@ describe('OrderTransitionService', () => {
     };
     logger = { info: jest.fn(), warn: jest.fn() };
     orderStatusNotifications = { generate: jest.fn() };
+    audit = { append: jest.fn() };
     service = new OrderTransitionService(
       new ImmediateTransactionRunner(),
       repository as unknown as OrderRepository,
@@ -167,6 +172,7 @@ describe('OrderTransitionService', () => {
       inventory as unknown as InventoryService,
       logger as unknown as ApplicationLogger,
       orderStatusNotifications as unknown as OrderStatusNotificationService,
+      audit as unknown as AuditLogService,
     );
   });
 
@@ -648,6 +654,75 @@ describe('OrderTransitionService', () => {
       await expect(
         service.deliverOrder({ orderId: ORDER_ID, actor: admin }),
       ).rejects.toBeInstanceOf(OrderInvalidTransitionError);
+    });
+  });
+
+  describe('completeReturnProcess', () => {
+    it('completes DELIVERED without Inventory, discount, or notification work', async () => {
+      const returned = order({
+        status: OrderStatus.RETURNED,
+        confirmedAt: CONFIRMED_AT,
+        shippedAt: NOW,
+        deliveredAt: NOW,
+        returnedAt: NOW,
+      });
+      repository.transitionDeliveredToReturned.mockResolvedValue(returned);
+
+      const result = await service.completeReturnProcess({
+        orderId: ORDER_ID,
+        actor: admin,
+      });
+
+      expect(result).toEqual({ order: returned, replay: false });
+      expect(inventory.releaseForOrder).not.toHaveBeenCalled();
+      expect(inventory.shipForOrder).not.toHaveBeenCalled();
+      expect(discountUsage.releaseForOrder).not.toHaveBeenCalled();
+      expect(orderStatusNotifications.generate).not.toHaveBeenCalled();
+      expect(audit.append).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'order.returned',
+          entityId: ORDER_ID,
+        }),
+        expect.anything(),
+      );
+    });
+
+    it('replays RETURNED without rewriting returnedAt or appending another audit', async () => {
+      const returnedAt = new Date('2026-08-22T11:00:00.000Z');
+      const existing = order({
+        status: OrderStatus.RETURNED,
+        confirmedAt: CONFIRMED_AT,
+        shippedAt: NOW,
+        deliveredAt: NOW,
+        returnedAt,
+      });
+      repository.transitionDeliveredToReturned.mockResolvedValue(null);
+      repository.findById.mockResolvedValue(existing);
+
+      const result = await service.completeReturnProcess({
+        orderId: ORDER_ID,
+        actor: admin,
+      });
+
+      expect(result).toEqual({ order: existing, replay: true });
+      expect(result.order.returnedAt).toEqual(returnedAt);
+      expect(audit.append).not.toHaveBeenCalled();
+    });
+
+    it('rejects a non-DELIVERED source state', async () => {
+      repository.transitionDeliveredToReturned.mockResolvedValue(null);
+      repository.findById.mockResolvedValue(
+        order({
+          status: OrderStatus.SHIPPED,
+          confirmedAt: CONFIRMED_AT,
+          shippedAt: NOW,
+        }),
+      );
+
+      await expect(
+        service.completeReturnProcess({ orderId: ORDER_ID, actor: admin }),
+      ).rejects.toBeInstanceOf(OrderInvalidTransitionError);
+      expect(audit.append).not.toHaveBeenCalled();
     });
   });
 

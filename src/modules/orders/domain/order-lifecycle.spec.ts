@@ -81,4 +81,28 @@ describe('order lifecycle timestamps', () => {
       ),
     ).not.toThrow();
   });
+
+  it('requires the complete prior lifecycle and returnedAt for RETURNED', () => {
+    expect(() =>
+      assertLifecycleTimestamps(
+        order({
+          status: OrderStatus.RETURNED,
+          confirmedAt: NOW,
+          shippedAt: NOW,
+          deliveredAt: NOW,
+        }),
+      ),
+    ).toThrow('returnedAt');
+    expect(() =>
+      assertLifecycleTimestamps(
+        order({
+          status: OrderStatus.RETURNED,
+          confirmedAt: NOW,
+          shippedAt: NOW,
+          deliveredAt: NOW,
+          returnedAt: NOW,
+        }),
+      ),
+    ).not.toThrow();
+  });
 });

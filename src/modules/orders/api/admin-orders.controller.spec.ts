@@ -60,7 +60,11 @@ describe('AdminOrdersController', () => {
   let transitions: jest.Mocked<
     Pick<
       OrderTransitionService,
-      'confirmOrder' | 'cancelOrderByAdmin' | 'shipOrder' | 'deliverOrder'
+      | 'confirmOrder'
+      | 'cancelOrderByAdmin'
+      | 'shipOrder'
+      | 'deliverOrder'
+      | 'completeReturnProcess'
     >
   >;
   let returns: jest.Mocked<Pick<OrderReturnService, 'recordReturn'>>;
@@ -73,6 +77,7 @@ describe('AdminOrdersController', () => {
       cancelOrderByAdmin: jest.fn(),
       shipOrder: jest.fn(),
       deliverOrder: jest.fn(),
+      completeReturnProcess: jest.fn(),
     };
     returns = { recordReturn: jest.fn() };
     controller = new AdminOrdersController(
@@ -149,6 +154,20 @@ describe('AdminOrdersController', () => {
     expect(transitions.confirmOrder).toHaveBeenCalledWith({
       orderId: ORDER_ID,
       deliveryAt: '2026-08-29T10:00:00.000Z',
+      actor: { type: OrderActorType.ADMIN, id: ADMIN_ID },
+    });
+  });
+
+  it('binds the authenticated Admin actor for explicit return completion', async () => {
+    transitions.completeReturnProcess.mockResolvedValue({
+      order: order({ status: OrderStatus.RETURNED, returnedAt: NOW }),
+      replay: false,
+    });
+
+    await controller.completeReturn(request(), ORDER_ID);
+
+    expect(transitions.completeReturnProcess).toHaveBeenCalledWith({
+      orderId: ORDER_ID,
       actor: { type: OrderActorType.ADMIN, id: ADMIN_ID },
     });
   });

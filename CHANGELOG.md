@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- ORD-07 Slice 3: explicit Admin `DELIVERED → RETURNED` completion command/API using the established conditional transition/replay path; first completion persists `returnedAt` and one atomic `order.returned` AuditLog fact, without return-record, Inventory, discount-usage, pricing, or Settlement effects. ORD-07 remains PLANNED pending bulk transitions and dispatch board work.
+
 - ORD-07 Slice 2: Admin return-recording command/API with server-derived actor, canonical idempotency replay/conflict behavior, Orders-first transactional cumulative eligibility enforcement, sellable-only Inventory restocking with `RETURN_TO_STOCK` return references, and focused PostgreSQL concurrency coverage. Return completion, `returnedAt`, audit, financial, DLU, and Settlement mutation remain deferred.
 
 - ORD-07 Slice 1 return persistence/domain foundation: durable `OrderReturn` and `OrderReturnLine` history with Admin provenance, idempotency payload proof, PostgreSQL quantity/reason constraints, restrictive history-preserving FKs, deterministic repository reads, cumulative-quantity and Orders-first lock primitives, and nullable `Order.returnedAt`. No HTTP, restocking, completion transition, audit action, settlement, DLU, or bulk/dispatch behavior.

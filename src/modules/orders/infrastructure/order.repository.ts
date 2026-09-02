@@ -123,6 +123,10 @@ type ClosedOrderTransition =
   | {
       kind: 'shipped_to_delivered';
       orderId: string;
+    }
+  | {
+      kind: 'delivered_to_returned';
+      orderId: string;
     };
 
 /**
@@ -370,6 +374,13 @@ export class OrderRepository {
     tx?: TransactionContext,
   ): Promise<OrderRecord | null> {
     return this.transition({ kind: 'shipped_to_delivered', orderId }, tx);
+  }
+
+  async transitionDeliveredToReturned(
+    orderId: string,
+    tx?: TransactionContext,
+  ): Promise<OrderRecord | null> {
+    return this.transition({ kind: 'delivered_to_returned', orderId }, tx);
   }
 
   /**
@@ -771,6 +782,17 @@ function buildTransitionSql(
           "updatedAt" = now()
         WHERE "id" = ${orderId}::uuid
           AND "status" = ${OrderStatus.SHIPPED}::"OrderStatus"
+        RETURNING "id"
+      `;
+    case 'delivered_to_returned':
+      return Prisma.sql`
+        UPDATE "Order"
+        SET
+          "status" = ${OrderStatus.RETURNED}::"OrderStatus",
+          "returnedAt" = COALESCE("returnedAt", now()),
+          "updatedAt" = now()
+        WHERE "id" = ${orderId}::uuid
+          AND "status" = ${OrderStatus.DELIVERED}::"OrderStatus"
         RETURNING "id"
       `;
     default: {

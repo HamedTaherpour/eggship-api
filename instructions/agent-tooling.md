@@ -1,6 +1,6 @@
 # Agent tooling
 
-This policy governs Cursor, Claude Code, Codex, Qoder, and future coding-agent adapters. Host-specific directories are adapters around canonical EggShip policy; they must not become competing rule systems.
+This policy governs Cursor, Claude Code, Codex, Qoder, TRAE, and future coding-agent adapters. Host-specific directories are adapters around canonical EggShip policy; they must not become competing rule systems.
 
 ## Canonical ownership
 
@@ -17,26 +17,62 @@ Policy changes belong in the canonical sources above. Do not copy policy, ADRs, 
 
 ## Verified host capability matrix
 
-| Host        | Durable project guidance                     | Project skill discovery                                | EggShip adapter                                                                 |
-| ----------- | -------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------- |
-| Cursor      | `AGENTS.md` and `.cursor/rules`              | `.agents/skills` (also recognizes compatibility paths) | `.cursor/rules` only for Cursor scoping/tool hints; shared skills are canonical |
-| Codex       | `AGENTS.md` and trusted `.codex/config.toml` | `.agents/skills`                                       | `.codex/config.toml` plus justified lifecycle hooks; no `.codex/skills` mirror  |
-| Claude Code | root `CLAUDE.md` / project guidance          | `.claude/skills`                                       | Thin `CLAUDE.md` redirect and thin native skill adapters                        |
-| Qoder       | `AGENTS.md`                                  | `.qoder/skills`                                        | Thin native skill adapters and host rules                                       |
+| Host        | Durable project guidance                     | Project skill discovery                                | EggShip adapter                                                                     |
+| ----------- | -------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| Cursor      | `AGENTS.md` and `.cursor/rules`              | `.agents/skills` (also recognizes compatibility paths) | `.cursor/rules` only for Cursor scoping/tool hints; shared skills are canonical     |
+| Codex       | `AGENTS.md` and trusted `.codex/config.toml` | `.agents/skills`                                       | `.codex/config.toml` plus justified lifecycle hooks; no `.codex/skills` mirror      |
+| Claude Code | root `CLAUDE.md` / project guidance          | `.claude/skills`                                       | Thin `CLAUDE.md` redirect and thin native skill adapters                            |
+| Qoder       | `AGENTS.md`                                  | `.qoder/skills`                                        | Thin native skill adapters and host rules                                           |
+| TRAE        | `AGENTS.md` (import toggle) + `.trae/rules`  | `.agents/skills` (enable `.agents` Skills Directory)   | Thin `.trae/rules/project_rules.md` only; do not mirror skills under `.trae/skills` |
 
-This matrix was checked against current official host documentation on 2026-08-28: [Codex skills](https://developers.openai.com/codex/skills), [Cursor Agent Skills](https://cursor.com/docs/skills), [Claude Code skills](https://code.claude.com/docs/en/slash-commands), [Claude Code memory](https://code.claude.com/docs/en/memory), and [Qoder CLI skills](https://docs.qoder.com/cli/Skills). Documentation describes `.agents/skills` as the shared Agent Skills location for Codex/Cursor, while Claude Code and Qoder document their own project skill roots. Do not infer support for an undocumented host path.
+This matrix was checked against current official host documentation on 2026-08-28 for Cursor/Codex/Claude/Qoder, and on 2026-09-03 for TRAE ([Rules](https://docs.trae.ai/ide/rules), [Skills](https://docs.trae.ai/ide/skills), [Auto-run & security](https://docs.trae.ai/ide/auto-run-and-security)). Documentation describes `.agents/skills` as the shared Agent Skills location for Codex/Cursor/TRAE (TRAE requires enabling the `.agents` Skills Directory in Import Settings). Claude Code and Qoder document their own project skill roots. Do not infer support for an undocumented host path.
 
 ## Shared skills
 
-The authoritative skills are `implement-roadmap-task`, `review-eggship-change`, `review-prisma-migration`, and `review-concurrency-sensitive-change`. Each canonical `SKILL.md` has standard YAML frontmatter and points to the relevant detailed workflow. Claude and Qoder wrappers are retained only because their documented project discovery roots differ; wrappers must point to `.agents/skills/<name>/SKILL.md` and the shared workflow. Cursor and Codex consume `.agents/skills` directly.
+The authoritative skills are:
 
-Add a shared skill only when a repeated workflow justifies it. Keep the entrypoint concise and load detailed references progressively.
+| Skill                                 | Purpose                                                      |
+| ------------------------------------- | ------------------------------------------------------------ |
+| `implement-roadmap-task`              | Start and implement a bounded roadmap task                   |
+| `verify-postgres-integration`         | Focused real-PostgreSQL integration proof with TEST DB gates |
+| `review-prisma-migration`             | Prisma/migration work and review                             |
+| `close-roadmap-task`                  | Slice/task closure and focused commit preparation            |
+| `review-eggship-change`               | Adversarial implementation/diff review                       |
+| `review-concurrency-sensitive-change` | Concurrent mutation path review                              |
+
+Each canonical `SKILL.md` has standard YAML frontmatter and points to the relevant detailed workflow. Claude and Qoder wrappers are retained only because their documented project discovery roots differ; wrappers must point to `.agents/skills/<name>/SKILL.md` and the shared workflow. Cursor, Codex, and TRAE consume `.agents/skills` directly (TRAE: enable Import Settings → Enable `.agents` Skills Directory).
+
+Add a shared skill only when a repeated workflow justifies it. Keep the entrypoint concise and load detailed references progressively. Skills encode **procedure**; domain knowledge stays in `instructions/*` and ADRs.
+
+## TRAE adapter
+
+- Project rules: `.trae/rules/project_rules.md` (`alwaysApply: true`). Concise guardrails only; `AGENTS.md` remains authoritative.
+- Skills: use `.agents/skills` (do **not** duplicate under `.trae/skills`).
+- Nested `AGENTS.md`: root only unless a real subdomain needs local governance.
+- Custom TRAE Agent: not required while Rules + Skills cover repeated workflows.
+- Short prompts should name the task and skills, for example: `Implement ORD-07 Slice 6. Use implement-roadmap-task and verify-postgres-integration. Do not commit.`
+
+### Recommended TRAE command safety
+
+Prefer **Sandbox with Allowlist** (or Manual Run). Do **not** enable unrestricted Auto Run for EggShip backend work initially.
+
+Reasonable allowlist candidates (after human review): `pnpm`, `node`, `npx`, `jest` test runners used by this repo.
+
+Never auto-approve:
+
+- destructive git (`reset --hard`, `clean -fd`, force push, rewrite history)
+- `git push` / tagging / release / deploy
+- production or shared-infrastructure database/Redis commands
+- destructive Prisma migrate/reset/seed outside the dedicated TEST DB flow
+- secret file edits (`.env`, credentials)
+
+Keep MCP Auto-Run off unless a reviewed MCP is explicitly approved (none are project-configured today).
 
 ## Adapter responsibilities
 
 Host directories may point agents to canonical sources, describe host-specific invocation/scoping, and run deterministic mechanical guardrails where supported. They must not redefine architecture, API, security, database, testing, release, or business policy; store secrets; silently install MCP servers; or make autonomous release/deploy decisions.
 
-`.cursor/rules` and `.qoder/rules` are host activation/scoping adapters only. `CLAUDE.md` redirects to `AGENTS.md`; `AGENTS.md` remains authoritative. `.codex/config.toml` contains only trusted-repository settings supported by the installed Codex release. No project-scoped MCP is enabled.
+`.cursor/rules`, `.qoder/rules`, and `.trae/rules` are host activation/scoping adapters only. `CLAUDE.md` redirects to `AGENTS.md`; `AGENTS.md` remains authoritative. `.codex/config.toml` contains only trusted-repository settings supported by the installed Codex release. No project-scoped MCP is enabled.
 
 ## Hooks and safety
 
@@ -57,4 +93,4 @@ Do not encode a required commercial model name. The repository must work with Cu
 
 ## Validation
 
-`pnpm check:agent-tooling` verifies canonical files, skill frontmatter and uniqueness, workflow references, thin Claude/Qoder adapters, host-rule pointers, Codex absence of a duplicate shared skill tree, required host files, and secret-pattern absence. It does not claim that host binaries or undocumented schemas were run.
+`pnpm check:agent-tooling` verifies canonical files, skill frontmatter and uniqueness, workflow references, thin Claude/Qoder adapters, host-rule pointers (including `.trae/rules`), Codex/TRAE absence of a duplicate shared skill tree, required host files, and secret-pattern absence. It does not claim that host binaries or undocumented schemas were run.

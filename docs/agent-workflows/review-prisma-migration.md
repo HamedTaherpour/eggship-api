@@ -9,6 +9,17 @@ Use when reviewing Prisma schema or migration changes. Do not invent or apply bu
 3. The migration files and related Prisma schema diff
 4. Any roadmap task or ADR that justifies the schema change
 
+## When performing migration work (not only review)
+
+Follow `instructions/database.md`. Prefer additive-first schema changes. After generating a migration:
+
+1. Inspect the generated SQL (FK/delete semantics, constraints, indexes).
+2. Avoid speculative indexes; justify each new index from a real access path.
+3. Run `prisma validate` / `prisma generate` as applicable.
+4. Apply to the dedicated TEST DB via migrate deploy against `TEST_DATABASE_URL`.
+5. Prove with focused real PostgreSQL integration (`docs/agent-workflows/verify-postgres-integration.md`).
+6. Record rollback/failure considerations; stop for destructive or data-rewriting steps until a human reviews.
+
 ## Review focus
 
 Issue-first. Order findings by severity. Cover at least:

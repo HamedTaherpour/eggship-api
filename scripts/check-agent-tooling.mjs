@@ -3,7 +3,7 @@
 
 /**
  * Static drift checks for canonical Agent Skills and host adapters.
- * This intentionally does not require Cursor, Codex, Claude, or Qoder binaries.
+ * This intentionally does not require Cursor, Codex, Claude, Qoder, or TRAE binaries.
  */
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -13,10 +13,13 @@ const root = process.cwd();
 const errors = [];
 const MAX_WRAPPER_BYTES = 4_000;
 const MAX_RULE_BYTES = 3_000;
+const MAX_TRAE_RULE_BYTES = 6_000;
 const sharedSkills = [
   'implement-roadmap-task',
-  'review-eggship-change',
+  'verify-postgres-integration',
   'review-prisma-migration',
+  'close-roadmap-task',
+  'review-eggship-change',
   'review-concurrency-sensitive-change',
 ];
 
@@ -74,6 +77,9 @@ for (const path of [
   'docs/agent-workflows/review-eggship-change.md',
   'docs/agent-workflows/review-prisma-migration.md',
   'docs/agent-workflows/review-concurrency-sensitive-change.md',
+  'docs/agent-workflows/verify-postgres-integration.md',
+  'docs/agent-workflows/close-roadmap-task.md',
+  '.trae/rules/project_rules.md',
   '.codex/config.toml',
   '.codex/hooks.json',
   '.codex/hooks/session-start.js',
@@ -85,6 +91,12 @@ for (const path of [
 const agents = read('AGENTS.md');
 if (!agents.includes('instructions/agent-tooling.md')) {
   errors.push('AGENTS.md must link instructions/agent-tooling.md');
+}
+const tooling = read('instructions/agent-tooling.md');
+if (!tooling.includes('TRAE') || !tooling.includes('.trae/rules')) {
+  errors.push(
+    'instructions/agent-tooling.md must document TRAE and .trae/rules',
+  );
 }
 const claude = read('CLAUDE.md');
 if (!claude.includes('AGENTS.md') || Buffer.byteLength(claude) > 1_000) {
@@ -136,7 +148,7 @@ for (const host of ['.claude/skills', '.qoder/skills']) {
   }
 }
 
-for (const host of ['.cursor/skills', '.codex/skills']) {
+for (const host of ['.cursor/skills', '.codex/skills', '.trae/skills']) {
   for (const path of listFiles(host, (candidate) =>
     candidate.endsWith('SKILL.md'),
   )) {
@@ -166,6 +178,15 @@ for (const path of listFiles('.qoder/rules', (candidate) =>
   if (!text.includes('instructions/') && !text.includes('AGENTS.md'))
     errors.push(`${rel(path)} must point to canonical policy`);
 }
+for (const path of listFiles('.trae/rules', (candidate) =>
+  candidate.endsWith('.md'),
+)) {
+  const text = readFileSync(path, 'utf8');
+  if (Buffer.byteLength(text) > MAX_TRAE_RULE_BYTES)
+    errors.push(`${rel(path)} exceeds ${MAX_TRAE_RULE_BYTES} bytes`);
+  if (!text.includes('instructions/') && !text.includes('AGENTS.md'))
+    errors.push(`${rel(path)} must point to canonical policy`);
+}
 
 for (const path of listFiles('.claude/agents', (candidate) =>
   candidate.endsWith('.md'),
@@ -187,7 +208,14 @@ const secretPatterns = [
   /password\s*[:=]\s*['"][^'"]+['"]/i,
   /BEGIN (RSA |OPENSSH )?PRIVATE KEY/,
 ];
-for (const dir of ['.agents', '.cursor', '.claude', '.codex', '.qoder']) {
+for (const dir of [
+  '.agents',
+  '.cursor',
+  '.claude',
+  '.codex',
+  '.qoder',
+  '.trae',
+]) {
   for (const path of listFiles(dir)) {
     const text = readFileSync(path, 'utf8');
     if (secretPatterns.some((pattern) => pattern.test(text)))

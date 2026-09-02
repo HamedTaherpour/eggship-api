@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { OrderInvalidInputError } from './order-errors';
 
 export const ORDER_RETURN_REASON_MAX_LENGTH = 500;
@@ -70,7 +71,34 @@ export function assertOrderReturnInput(input: CreateOrderReturnInput): void {
   if (input.lines.length === 0) {
     throw new OrderInvalidInputError('At least one return line is required.');
   }
+  const seenOrderLineIds = new Set<string>();
   for (const line of input.lines) {
+    if (seenOrderLineIds.has(line.orderLineId)) {
+      throw new OrderInvalidInputError(
+        'Each order line may appear only once in a return.',
+      );
+    }
+    seenOrderLineIds.add(line.orderLineId);
     assertOrderReturnLineQuantities(line);
   }
+}
+
+/** Stable proof over only the caller-supplied return command fields. */
+export function hashOrderReturnPayload(input: {
+  orderId: string;
+  reason: string;
+  lines: readonly OrderReturnLineInput[];
+}): string {
+  const canonical = JSON.stringify({
+    orderId: input.orderId.toLowerCase(),
+    reason: normalizeOrderReturnReason(input.reason),
+    lines: [...input.lines]
+      .map((line) => ({
+        orderLineId: line.orderLineId.toLowerCase(),
+        sellableQuantity: line.sellableQuantity,
+        damagedQuantity: line.damagedQuantity,
+      }))
+      .sort((left, right) => left.orderLineId.localeCompare(right.orderLineId)),
+  });
+  return createHash('sha256').update(canonical).digest('hex');
 }

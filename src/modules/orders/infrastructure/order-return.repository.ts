@@ -14,6 +14,8 @@ import {
   type OrderReturnRecord,
 } from '../domain/order-return';
 
+const ORDER_RETURN_IDEMPOTENCY_LOCK_CLASS = 120_401;
+
 type ReturnWithLines = Prisma.OrderReturnGetPayload<{
   include: { lines: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] } };
 }>;
@@ -54,6 +56,22 @@ export class OrderReturnRepository {
       Prisma.sql`SELECT "id" FROM "OrderReturn" WHERE "idempotencyKey" = ${idempotencyKey}::uuid FOR UPDATE`,
     );
     return rows.length === 0 ? null : this.findById(rows[0]!.id, tx);
+  }
+
+  /**
+   * Serializes same-key requests before side effects; unique constraint remains
+   * a persistence backstop rather than the concurrency mechanism.
+   */
+  async lockIdempotencyScope(
+    idempotencyKey: string,
+    tx: TransactionContext,
+  ): Promise<void> {
+    await this.db(tx).$executeRaw(Prisma.sql`
+      SELECT pg_advisory_xact_lock(
+        ${ORDER_RETURN_IDEMPOTENCY_LOCK_CLASS},
+        hashtext(${idempotencyKey.toLowerCase()})
+      )
+    `);
   }
 
   /**

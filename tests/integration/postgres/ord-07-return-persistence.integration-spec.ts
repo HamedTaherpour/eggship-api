@@ -14,6 +14,21 @@ import { OrdersModule } from '../../../src/modules/orders/orders.module';
 import { UsersModule } from '../../../src/modules/users/users.module';
 import { OrderRepository } from '../../../src/modules/orders/infrastructure/order.repository';
 import { OrderReturnRepository } from '../../../src/modules/orders/infrastructure/order-return.repository';
+import { OrderReturnService } from '../../../src/modules/orders/application/order-return.service';
+import type { RecordOrderReturnCommand } from '../../../src/modules/orders/application/order-return.commands';
+import {
+  InventoryService,
+  SYSTEM_ACTOR,
+} from '../../../src/modules/inventory/application/inventory.service';
+import {
+  InventoryLedgerReferenceType,
+  InventoryLedgerType,
+} from '../../../src/modules/inventory/domain/inventory-ledger';
+import { OrderStatus } from '../../../src/modules/orders/domain/order-status';
+import {
+  OrderInvalidInputError,
+  OrderReturnQuantityExceededError,
+} from '../../../src/modules/orders/domain/order-errors';
 import { hashOrderCreatePayload } from '../../../src/modules/orders/domain/order-create-idempotency';
 import type {
   TrustedCreateOrderInput,
@@ -25,7 +40,7 @@ import type { OrderReturnRecord } from '../../../src/modules/orders/domain/order
 async function truncateTables(prisma: PrismaService): Promise<void> {
   assertDestructiveOperationsAllowed();
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "OrderReturnLine", "OrderReturn", "OrderLine", "Order", "Admin", "Product", "Category", "Region", "User" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "OrderReturnLine", "OrderReturn", "OrderLine", "Order", "InventoryLedger", "InventoryReservation", "Inventory", "Admin", "Product", "Category", "Region", "User" RESTART IDENTITY CASCADE',
   );
 }
 
@@ -39,6 +54,8 @@ describe('ORD-07 return persistence (PostgreSQL integration)', () => {
   let orders: OrderRepository;
   let returns: OrderReturnRepository;
   let transactions: TransactionRunner;
+  let returnService: OrderReturnService;
+  let inventory: InventoryService;
   let phoneCounter = 0;
 
   beforeAll(async () => {
@@ -55,11 +72,100 @@ describe('ORD-07 return persistence (PostgreSQL integration)', () => {
     orders = moduleRef.get(OrderRepository);
     returns = moduleRef.get(OrderReturnRepository);
     transactions = moduleRef.get(TransactionRunner);
+    returnService = moduleRef.get(OrderReturnService);
+    inventory = moduleRef.get(InventoryService);
     await app.init();
   });
 
+  async function deliveredContext(): Promise<
+    Awaited<ReturnType<typeof context>>
+  > {
+    const seeded = await context();
+    await prisma.order.update({
+      where: { id: seeded.order.id },
+      data: { status: OrderStatus.DELIVERED, deliveredAt: new Date() },
+    });
+    await inventory.ensureForProduct(seeded.line.productId);
+    await inventory.receiveOnHand({
+      productId: seeded.line.productId,
+      quantity: 10,
+      referenceType: InventoryLedgerReferenceType.RECEIVE,
+      referenceId: null,
+      actor: SYSTEM_ACTOR,
+    });
+    return seeded;
+  }
+
+  function recordCommand(input: {
+    orderId: string;
+    adminId: string;
+    lineId: string;
+    key: string;
+    sellableQuantity: number;
+    damagedQuantity?: number;
+  }): RecordOrderReturnCommand {
+    return {
+      orderId: input.orderId,
+      idempotencyKey: input.key,
+      reason: 'inspection complete',
+      lines: [
+        {
+          orderLineId: input.lineId,
+          sellableQuantity: input.sellableQuantity,
+          damagedQuantity: input.damagedQuantity ?? 0,
+        },
+      ],
+      actor: { type: 'ADMIN' as const, id: input.adminId },
+    };
+  }
+
   beforeEach(() => truncateTables(prisma));
   afterAll(() => app.close());
+
+  async function addSecondDeliveredLine(input: {
+    order: OrderRecord;
+    firstLine: OrderLineRecord;
+  }): Promise<OrderLineRecord> {
+    const firstProduct = await prisma.product.findUniqueOrThrow({
+      where: { id: input.firstLine.productId },
+    });
+    const product = await products.create({
+      name: 'Duck eggs',
+      price: 1200,
+      categoryId: firstProduct.categoryId,
+    });
+    const quantity = 10;
+    const total = BigInt(quantity * product.price);
+    const line = await prisma.orderLine.create({
+      data: {
+        id: randomUUID(),
+        orderId: input.order.id,
+        productId: product.id,
+        productName: product.name,
+        unitPrice: product.price,
+        quantity,
+        discountedQuantity: 0,
+        grossLineTotal: total,
+        lineDiscountAmount: 0n,
+        finalLineTotal: total,
+      },
+    });
+    await inventory.ensureForProduct(product.id);
+    await inventory.receiveOnHand({
+      productId: product.id,
+      quantity: 10,
+      referenceType: InventoryLedgerReferenceType.RECEIVE,
+      referenceId: null,
+      actor: SYSTEM_ACTOR,
+    });
+    return {
+      ...line,
+      grossLineTotal: BigInt(line.grossLineTotal),
+      lineDiscountAmount: BigInt(line.lineDiscountAmount),
+      finalLineTotal: BigInt(line.finalLineTotal),
+      appliedLineDiscount: null,
+    };
+  }
 
   async function context(): Promise<{
     admin: { id: string };
@@ -235,6 +341,283 @@ describe('ORD-07 return persistence (PostgreSQL integration)', () => {
       lineId: line.id,
     });
     expect((await orders.findById(order.id))?.returnedAt).toBeNull();
+  });
+
+  it('records a delivered return atomically, replays once, and leaves the order delivered', async () => {
+    const { admin, order, line } = await deliveredContext();
+    const key = randomUUID();
+    const command = recordCommand({
+      orderId: order.id,
+      adminId: admin.id,
+      lineId: line.id,
+      key,
+      sellableQuantity: 2,
+      damagedQuantity: 1,
+    });
+    const first = await returnService.recordReturn(command);
+    const replay = await returnService.recordReturn(command);
+    const balance = await inventory.getBalance(line.productId);
+    const ledgers = await prisma.inventoryLedger.findMany({
+      where: { type: InventoryLedgerType.RETURN_TO_STOCK },
+    });
+
+    expect(first.replay).toBe(false);
+    expect(replay).toEqual({ orderReturn: first.orderReturn, replay: true });
+    expect(balance).toMatchObject({ onHand: 12, reserved: 0 });
+    expect(ledgers).toHaveLength(1);
+    expect(ledgers[0]).toMatchObject({
+      referenceType: InventoryLedgerReferenceType.RETURN,
+      referenceId: first.orderReturn.id,
+      quantity: 2,
+      onHandDelta: 2,
+      reservedDelta: 0,
+    });
+    expect(await orders.findById(order.id)).toMatchObject({
+      status: OrderStatus.DELIVERED,
+      returnedAt: null,
+      total: order.total,
+    });
+  });
+
+  it('serializes a same-key PostgreSQL race to one logical return and one restock', async () => {
+    const { admin, order, line } = await deliveredContext();
+    const command = recordCommand({
+      orderId: order.id,
+      adminId: admin.id,
+      lineId: line.id,
+      key: randomUUID(),
+      sellableQuantity: 3,
+    });
+    const callers = await Promise.allSettled([
+      returnService.recordReturn(command),
+      returnService.recordReturn(command),
+    ]);
+    const fulfilled = callers.filter(
+      (
+        result,
+      ): result is PromiseFulfilledResult<
+        Awaited<ReturnType<typeof returnService.recordReturn>>
+      > => result.status === 'fulfilled',
+    );
+    const returnCount = await prisma.orderReturn.count({
+      where: { orderId: order.id },
+    });
+    const returnLineCount = await prisma.orderReturnLine.count();
+    const returned = await transactions.run((tx) =>
+      returns.sumReturnedQuantityByOrderLine(line.id, tx),
+    );
+    const balance = await inventory.getBalance(line.productId);
+    const ledgerCount = await prisma.inventoryLedger.count({
+      where: { type: InventoryLedgerType.RETURN_TO_STOCK },
+    });
+
+    expect(fulfilled).toHaveLength(2);
+    expect(fulfilled.filter((result) => !result.value.replay)).toHaveLength(1);
+    expect(fulfilled.filter((result) => result.value.replay)).toHaveLength(1);
+    expect(returnCount).toBe(1);
+    expect(returnLineCount).toBe(1);
+    expect(returned).toBe(3);
+    expect(balance).toMatchObject({ onHand: 13, reserved: 0 });
+    expect(ledgerCount).toBe(1);
+  });
+
+  it('rejects a changed same-key payload without a second business effect', async () => {
+    const { admin, order, line } = await deliveredContext();
+    const key = randomUUID();
+    await returnService.recordReturn(
+      recordCommand({
+        orderId: order.id,
+        adminId: admin.id,
+        lineId: line.id,
+        key,
+        sellableQuantity: 2,
+      }),
+    );
+    await expect(
+      returnService.recordReturn(
+        recordCommand({
+          orderId: order.id,
+          adminId: admin.id,
+          lineId: line.id,
+          key,
+          sellableQuantity: 3,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'ORDER_IDEMPOTENCY_CONFLICT' });
+    expect(await prisma.orderReturn.count()).toBe(1);
+    expect(
+      await transactions.run((tx) =>
+        returns.sumReturnedQuantityByOrderLine(line.id, tx),
+      ),
+    ).toBe(2);
+    expect(await inventory.getBalance(line.productId)).toMatchObject({
+      onHand: 12,
+      reserved: 0,
+    });
+    expect(
+      await prisma.inventoryLedger.count({
+        where: { type: InventoryLedgerType.RETURN_TO_STOCK },
+      }),
+    ).toBe(1);
+  });
+
+  it('persists one multi-SKU return event with durable RETURN ledger references', async () => {
+    const { admin, order, line } = await deliveredContext();
+    const secondLine = await addSecondDeliveredLine({ order, firstLine: line });
+    const result = await returnService.recordReturn({
+      orderId: order.id,
+      idempotencyKey: randomUUID(),
+      reason: 'multi sku inspection',
+      actor: { type: 'ADMIN', id: admin.id },
+      lines: [
+        { orderLineId: secondLine.id, sellableQuantity: 0, damagedQuantity: 2 },
+        { orderLineId: line.id, sellableQuantity: 3, damagedQuantity: 1 },
+      ],
+    });
+    const [firstBalance, secondBalance, persisted, ledgers] = await Promise.all(
+      [
+        inventory.getBalance(line.productId),
+        inventory.getBalance(secondLine.productId),
+        prisma.orderReturn.findMany({
+          where: { orderId: order.id },
+          include: { lines: true },
+        }),
+        prisma.inventoryLedger.findMany({
+          where: { type: InventoryLedgerType.RETURN_TO_STOCK },
+        }),
+      ],
+    );
+
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0]?.lines).toHaveLength(2);
+    expect(firstBalance).toMatchObject({ onHand: 13, reserved: 0 });
+    expect(secondBalance).toMatchObject({ onHand: 10, reserved: 0 });
+    expect(ledgers).toHaveLength(1);
+    expect(ledgers[0]).toMatchObject({
+      productId: line.productId,
+      referenceType: InventoryLedgerReferenceType.RETURN,
+      referenceId: result.orderReturn.id,
+      quantity: 3,
+      onHandDelta: 3,
+      reservedDelta: 0,
+    });
+  });
+
+  it('allows sequential returns up to the cap and rejects an over-return without effects', async () => {
+    const { admin, order, line } = await deliveredContext();
+    for (const quantity of [6, 4]) {
+      await returnService.recordReturn(
+        recordCommand({
+          orderId: order.id,
+          adminId: admin.id,
+          lineId: line.id,
+          key: randomUUID(),
+          sellableQuantity: quantity,
+        }),
+      );
+    }
+    await expect(
+      returnService.recordReturn(
+        recordCommand({
+          orderId: order.id,
+          adminId: admin.id,
+          lineId: line.id,
+          key: randomUUID(),
+          sellableQuantity: 1,
+        }),
+      ),
+    ).rejects.toThrow(OrderReturnQuantityExceededError);
+    expect(
+      await transactions.run((tx) =>
+        returns.sumReturnedQuantityByOrderLine(line.id, tx),
+      ),
+    ).toBe(10);
+    expect(await inventory.getBalance(line.productId)).toMatchObject({
+      onHand: 20,
+      reserved: 0,
+    });
+    expect(
+      await prisma.inventoryLedger.count({
+        where: { type: InventoryLedgerType.RETURN_TO_STOCK },
+      }),
+    ).toBe(2);
+  });
+
+  it('rolls back an event containing a valid and a foreign line with no partial effects', async () => {
+    const target = await deliveredContext();
+    const foreign = await context();
+    const before = await inventory.getBalance(target.line.productId);
+    await expect(
+      returnService.recordReturn({
+        orderId: target.order.id,
+        idempotencyKey: randomUUID(),
+        reason: 'mixed validity',
+        actor: { type: 'ADMIN', id: target.admin.id },
+        lines: [
+          {
+            orderLineId: target.line.id,
+            sellableQuantity: 2,
+            damagedQuantity: 0,
+          },
+          {
+            orderLineId: foreign.line.id,
+            sellableQuantity: 1,
+            damagedQuantity: 0,
+          },
+        ],
+      }),
+    ).rejects.toThrow(OrderInvalidInputError);
+    expect(await prisma.orderReturn.count()).toBe(0);
+    expect(await prisma.orderReturnLine.count()).toBe(0);
+    expect(await inventory.getBalance(target.line.productId)).toEqual(before);
+    expect(
+      await prisma.inventoryLedger.count({
+        where: { type: InventoryLedgerType.RETURN_TO_STOCK },
+      }),
+    ).toBe(0);
+  });
+
+  it('serializes different-key over-return attempts with final state evidence', async () => {
+    const { admin, order, line } = await deliveredContext();
+    const [left, right] = await Promise.allSettled([
+      returnService.recordReturn(
+        recordCommand({
+          orderId: order.id,
+          adminId: admin.id,
+          lineId: line.id,
+          key: randomUUID(),
+          sellableQuantity: 7,
+        }),
+      ),
+      returnService.recordReturn(
+        recordCommand({
+          orderId: order.id,
+          adminId: admin.id,
+          lineId: line.id,
+          key: randomUUID(),
+          sellableQuantity: 7,
+        }),
+      ),
+    ]);
+    const fulfilled = [left, right].filter(
+      (result) => result.status === 'fulfilled',
+    );
+    const returned = await transactions.run((tx) =>
+      returns.sumReturnedQuantityByOrderLine(line.id, tx),
+    );
+    const balance = await inventory.getBalance(line.productId);
+    const returnCount = await prisma.orderReturn.count({
+      where: { orderId: order.id },
+    });
+    const ledgerCount = await prisma.inventoryLedger.count({
+      where: { type: InventoryLedgerType.RETURN_TO_STOCK },
+    });
+
+    expect(fulfilled).toHaveLength(1);
+    expect(returned).toBe(7);
+    expect(balance).toMatchObject({ onHand: 17, reserved: 0 });
+    expect(returnCount).toBe(1);
+    expect(ledgerCount).toBe(1);
   });
 
   it('restricts deletion of referenced order, line, and admin history', async () => {

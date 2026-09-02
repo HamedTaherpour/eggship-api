@@ -5,6 +5,7 @@ import { OrderStatus } from '../domain/order-status';
 import type { OrderRecord } from '../domain/order';
 import type { OrderReadService } from '../application/order-read.service';
 import type { OrderTransitionService } from '../application/order-transition.service';
+import type { OrderReturnService } from '../application/order-return.service';
 import { AdminOrdersController } from './admin-orders.controller';
 import type { Request } from 'express';
 
@@ -62,6 +63,7 @@ describe('AdminOrdersController', () => {
       'confirmOrder' | 'cancelOrderByAdmin' | 'shipOrder' | 'deliverOrder'
     >
   >;
+  let returns: jest.Mocked<Pick<OrderReturnService, 'recordReturn'>>;
   let controller: AdminOrdersController;
 
   beforeEach(() => {
@@ -72,10 +74,41 @@ describe('AdminOrdersController', () => {
       shipOrder: jest.fn(),
       deliverOrder: jest.fn(),
     };
+    returns = { recordReturn: jest.fn() };
     controller = new AdminOrdersController(
       reads as unknown as OrderReadService,
       transitions as unknown as OrderTransitionService,
+      returns as unknown as OrderReturnService,
     );
+  });
+
+  it('derives the Admin actor and passes the required idempotency key for a return', async () => {
+    returns.recordReturn.mockResolvedValue({
+      replay: false,
+      orderReturn: {
+        id: '77777777-7777-4777-8777-777777777777',
+        orderId: ORDER_ID,
+        recordedByAdminId: ADMIN_ID,
+        reason: 'Inspection complete',
+        idempotencyKey: '88888888-8888-4888-8888-888888888888',
+        idempotencyPayloadHash: 'a'.repeat(64),
+        createdAt: NOW,
+        lines: [],
+      },
+    });
+    await controller.recordReturn(
+      request(),
+      ORDER_ID,
+      '88888888-8888-4888-8888-888888888888',
+      { reason: 'Inspection complete', lines: [] },
+    );
+    expect(returns.recordReturn).toHaveBeenCalledWith({
+      orderId: ORDER_ID,
+      idempotencyKey: '88888888-8888-4888-8888-888888888888',
+      reason: 'Inspection complete',
+      lines: [],
+      actor: { type: OrderActorType.ADMIN, id: ADMIN_ID },
+    });
   });
 
   it('maps Admin list rows and keeps list rows free of lines/internal fields', async () => {

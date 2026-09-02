@@ -1,6 +1,7 @@
 import {
   assertOrderReturnInput,
   assertOrderReturnLineQuantities,
+  hashOrderReturnPayload,
   normalizeOrderReturnReason,
 } from './order-return';
 import { OrderInvalidInputError } from './order-errors';
@@ -9,6 +10,42 @@ describe('Order return domain primitives', () => {
   it('trims and accepts a required reason', () => {
     expect(normalizeOrderReturnReason('  damaged carton  ')).toBe(
       'damaged carton',
+    );
+  });
+
+  it('rejects duplicate order-line ids and canonicalizes payload line order', () => {
+    expect(() =>
+      assertOrderReturnInput({
+        orderId: 'order',
+        recordedByAdminId: 'admin',
+        reason: 'inspection',
+        idempotencyKey: 'key',
+        idempotencyPayloadHash: 'a'.repeat(64),
+        lines: [
+          { orderLineId: 'line', sellableQuantity: 1, damagedQuantity: 0 },
+          { orderLineId: 'line', sellableQuantity: 0, damagedQuantity: 1 },
+        ],
+      }),
+    ).toThrow(OrderInvalidInputError);
+
+    expect(
+      hashOrderReturnPayload({
+        orderId: 'ORDER',
+        reason: ' inspection ',
+        lines: [
+          { orderLineId: 'b', sellableQuantity: 0, damagedQuantity: 1 },
+          { orderLineId: 'a', sellableQuantity: 1, damagedQuantity: 0 },
+        ],
+      }),
+    ).toBe(
+      hashOrderReturnPayload({
+        orderId: 'order',
+        reason: 'inspection',
+        lines: [
+          { orderLineId: 'a', sellableQuantity: 1, damagedQuantity: 0 },
+          { orderLineId: 'b', sellableQuantity: 0, damagedQuantity: 1 },
+        ],
+      }),
     );
   });
 

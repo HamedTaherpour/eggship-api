@@ -11,6 +11,7 @@ export const OrderErrorCode = {
   INVALID_REGION: 'ORDER_INVALID_REGION',
   INVALID_PRODUCT: 'ORDER_INVALID_PRODUCT',
   IDEMPOTENCY_CONFLICT: 'ORDER_IDEMPOTENCY_CONFLICT',
+  RETURN_QUANTITY_EXCEEDED: 'ORDER_RETURN_QUANTITY_EXCEEDED',
   INVALID_TRANSITION: 'ORDER_INVALID_TRANSITION',
   CANCELLATION_REASON_REQUIRED: 'ORDER_CANCELLATION_REASON_REQUIRED',
 } as const;
@@ -86,5 +87,16 @@ export class OrderIdempotencyConflictError extends ApplicationError {
   constructor(message = OrderMessage.IDEMPOTENCY_CONFLICT) {
     super(OrderErrorCode.IDEMPOTENCY_CONFLICT, message, HttpStatus.CONFLICT);
     this.name = 'OrderIdempotencyConflictError';
+  }
+}
+
+export class OrderReturnQuantityExceededError extends ApplicationError {
+  constructor() {
+    super(
+      OrderErrorCode.RETURN_QUANTITY_EXCEEDED,
+      'Return quantity exceeds the eligible order-line quantity.',
+      HttpStatus.CONFLICT,
+    );
+    this.name = 'OrderReturnQuantityExceededError';
   }
 }

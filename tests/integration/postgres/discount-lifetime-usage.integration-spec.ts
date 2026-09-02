@@ -13,12 +13,17 @@ import {
   SYSTEM_ACTOR,
 } from '../../../src/modules/inventory/application/inventory.service';
 import { InventoryInsufficientStockError } from '../../../src/modules/inventory/domain/inventory-errors';
-import { InventoryLedgerReferenceType } from '../../../src/modules/inventory/domain/inventory-ledger';
+import {
+  InventoryLedgerReferenceType,
+  InventoryLedgerType,
+} from '../../../src/modules/inventory/domain/inventory-ledger';
 import { InventoryModule } from '../../../src/modules/inventory/inventory.module';
 import { OrderCreationService } from '../../../src/modules/orders/application/order-creation.service';
 import type { CreateOrderResult } from '../../../src/modules/orders/application/order-creation.commands';
 import type { OrderTransitionResult } from '../../../src/modules/orders/application/order-transition.commands';
 import { OrderTransitionService } from '../../../src/modules/orders/application/order-transition.service';
+import { OrderReturnService } from '../../../src/modules/orders/application/order-return.service';
+import { OrderRepository } from '../../../src/modules/orders/infrastructure/order.repository';
 import { OrderActorType } from '../../../src/modules/orders/domain/order-actor';
 import {
   OrderInvalidInputError,
@@ -55,7 +60,7 @@ function uniquePhone(suffix: number): string {
 async function truncateTables(prisma: PrismaService): Promise<void> {
   assertDestructiveOperationsAllowed();
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "AuditLog", "DiscountUsageRecord", "DiscountCustomerUsage", "InventoryLedger", "InventoryReservation", "Inventory", "Discount", "PriceHistory", "OrderLine", "Order", "Product", "Category", "Region", "User", "CommerceScheduleOverride", "CommerceSettings" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "AuditLog", "DiscountUsageRecord", "DiscountCustomerUsage", "InventoryLedger", "InventoryReservation", "Inventory", "Discount", "PriceHistory", "OrderReturnLine", "OrderReturn", "OrderLine", "Order", "Product", "Category", "Region", "User", "CommerceScheduleOverride", "CommerceSettings" RESTART IDENTITY CASCADE',
   );
 }
 
@@ -72,6 +77,8 @@ describe('Discount lifetime usage (DLU-02 integration)', () => {
   let usageRepo: DiscountUsageRepository;
   let creation: OrderCreationService;
   let transitions: OrderTransitionService;
+  let returns: OrderReturnService;
+  let orders: OrderRepository;
   let commercePolicy: CommercePolicyService;
   let transactions: TransactionRunner;
   let phoneCounter = 0;
@@ -109,6 +116,8 @@ describe('Discount lifetime usage (DLU-02 integration)', () => {
     usageRepo = moduleRef.get(DiscountUsageRepository);
     creation = moduleRef.get(OrderCreationService);
     transitions = moduleRef.get(OrderTransitionService);
+    returns = moduleRef.get(OrderReturnService);
+    orders = moduleRef.get(OrderRepository);
     commercePolicy = moduleRef.get(CommercePolicyService);
     transactions = moduleRef.get(TransactionRunner);
     await app.init();
@@ -621,7 +630,7 @@ describe('Discount lifetime usage (DLU-02 integration)', () => {
 
   it('ship then deliver leaves usage consumed (ORD-07 must not restore; no RETURNED in V1)', async () => {
     // DLU-02 / ADR 0017: returns must not restore lifetime entitlement.
-    // RETURNED is out of scope here (ORD-07); assert post-ship lifecycle keeps usage.
+    // Post-ship lifecycle keeps usage; ORD-07 recordReturn proof is the next case.
     const { user, regionId, productId, discount } = await seedBase({
       maxQuantityPerCustomer: 4,
     });
@@ -648,6 +657,136 @@ describe('Discount lifetime usage (DLU-02 integration)', () => {
         (row) => row.kind === DiscountUsageRecordKind.RELEASE,
       ),
     ).toHaveLength(0);
+  });
+
+  it('ORD-07 sellable return after deliver does not restore DiscountCustomerUsage', async () => {
+    // ADR 0017 / ADR 0024: inventory restock may occur; lifetime entitlement must not.
+    const sellableQuantity = 2;
+    const orderQuantity = 3;
+    const { user, regionId, productId, discount } = await seedBase({
+      maxQuantityPerCustomer: 5,
+      onHand: 50,
+    });
+
+    const created = await createOrder({
+      userId: user.id,
+      regionId,
+      productId,
+      quantity: orderQuantity,
+    });
+    expect(created.created).toBe(true);
+    const line = created.order.lines[0]!;
+    expect(line.discountedQuantity).toBe(orderQuantity);
+    expect(line.appliedLineDiscount?.discountId).toBe(discount.id);
+
+    const usageAfterCreate = await usageRepo.findUsage(discount.id, user.id);
+    expect(usageAfterCreate?.consumedQuantity).toBe(orderQuantity);
+    const consumeRecords = await usageRepo.listRecordsForOrder(
+      created.order.id,
+    );
+    expect(consumeRecords).toEqual([
+      expect.objectContaining({
+        discountId: discount.id,
+        userId: user.id,
+        kind: DiscountUsageRecordKind.CONSUME,
+        quantity: orderQuantity,
+      }),
+    ]);
+
+    await transitions.confirmOrder({ orderId: created.order.id, actor: admin });
+    await transitions.shipOrder({ orderId: created.order.id, actor: admin });
+    const delivered = await transitions.deliverOrder({
+      orderId: created.order.id,
+      actor: admin,
+    });
+    expect(delivered.order.status).toBe(OrderStatus.DELIVERED);
+    expect(delivered.order.returnedAt).toBeNull();
+
+    const usageAfterDeliver = await usageRepo.findUsage(discount.id, user.id);
+    expect(usageAfterDeliver?.consumedQuantity).toBe(orderQuantity);
+    expect(
+      (await usageRepo.listRecordsForOrder(created.order.id)).filter(
+        (row) => row.kind === DiscountUsageRecordKind.RELEASE,
+      ),
+    ).toHaveLength(0);
+
+    const balanceBeforeReturn = await inventory.getBalance(productId);
+    const totalBeforeReturn = delivered.order.total;
+    const discountedQuantityBeforeReturn = line.discountedQuantity;
+
+    const recorded = await returns.recordReturn({
+      orderId: created.order.id,
+      idempotencyKey: randomUUID(),
+      reason: 'sellable DLU non-interaction proof',
+      lines: [
+        {
+          orderLineId: line.id,
+          sellableQuantity,
+          damagedQuantity: 0,
+        },
+      ],
+      actor: { type: OrderActorType.ADMIN, id: adminActorId },
+    });
+
+    expect(recorded.replay).toBe(false);
+    expect(recorded.orderReturn.orderId).toBe(created.order.id);
+    expect(recorded.orderReturn.lines).toEqual([
+      expect.objectContaining({
+        orderLineId: line.id,
+        sellableQuantity,
+        damagedQuantity: 0,
+      }),
+    ]);
+
+    const usageAfterReturn = await usageRepo.findUsage(discount.id, user.id);
+    expect(usageAfterReturn?.consumedQuantity).toBe(orderQuantity);
+    expect(usageAfterReturn?.consumedQuantity).toBe(
+      usageAfterDeliver?.consumedQuantity,
+    );
+
+    const recordsAfterReturn = await usageRepo.listRecordsForOrder(
+      created.order.id,
+    );
+    expect(recordsAfterReturn).toHaveLength(1);
+    expect(recordsAfterReturn[0]).toMatchObject({
+      kind: DiscountUsageRecordKind.CONSUME,
+      quantity: orderQuantity,
+    });
+    expect(
+      recordsAfterReturn.filter(
+        (row) => row.kind === DiscountUsageRecordKind.RELEASE,
+      ),
+    ).toHaveLength(0);
+
+    const balanceAfterReturn = await inventory.getBalance(productId);
+    expect(balanceBeforeReturn).not.toBeNull();
+    expect(balanceAfterReturn).not.toBeNull();
+    expect(balanceAfterReturn!.onHand).toBe(
+      balanceBeforeReturn!.onHand + sellableQuantity,
+    );
+    const returnLedgers = await prisma.inventoryLedger.findMany({
+      where: {
+        type: InventoryLedgerType.RETURN_TO_STOCK,
+        referenceId: recorded.orderReturn.id,
+      },
+    });
+    expect(returnLedgers).toHaveLength(1);
+    expect(returnLedgers[0]).toMatchObject({
+      referenceType: InventoryLedgerReferenceType.RETURN,
+      quantity: sellableQuantity,
+      onHandDelta: sellableQuantity,
+      reservedDelta: 0,
+    });
+
+    const orderAfterReturn = await orders.findById(created.order.id);
+    expect(orderAfterReturn).toMatchObject({
+      status: OrderStatus.DELIVERED,
+      returnedAt: null,
+      total: totalBeforeReturn,
+    });
+    expect(orderAfterReturn?.lines[0]?.discountedQuantity).toBe(
+      discountedQuantityBeforeReturn,
+    );
   });
 
   it('concurrent same-user/same-discount Orders never exceed the cap', async () => {

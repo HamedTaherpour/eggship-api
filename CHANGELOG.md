@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- ORD-07 Slice 2: Admin return-recording command/API with server-derived actor, canonical idempotency replay/conflict behavior, Orders-first transactional cumulative eligibility enforcement, sellable-only Inventory restocking with `RETURN_TO_STOCK` return references, and focused PostgreSQL concurrency coverage. Return completion, `returnedAt`, audit, financial, DLU, and Settlement mutation remain deferred.
+
 - ORD-07 Slice 1 return persistence/domain foundation: durable `OrderReturn` and `OrderReturnLine` history with Admin provenance, idempotency payload proof, PostgreSQL quantity/reason constraints, restrictive history-preserving FKs, deterministic repository reads, cumulative-quantity and Orders-first lock primitives, and nullable `Order.returnedAt`. No HTTP, restocking, completion transition, audit action, settlement, DLU, or bulk/dispatch behavior.
 
 - ORD-07 architecture (ADR 0024): Human-approved return aggregate semantics (partial line-level returns, sellable/damaged quantities, multiple events), explicit `DELIVERED -> RETURNED` completion separate from return recording, `returnedAt`, `order.returned` audit on completion only, inventory restock via `returnToStock` for sellable qty only, no DLU/settlement/pricing mutation, bulk SHIP/DELIVER partial success, dispatch read model grouped by Region with `ORDER_READ`, and explicit financial/refund deferral. Durable policy in `instructions/orders.md`, `instructions/inventory.md`, and `instructions/authorization.md`. ORD-07 remains PLANNED; architecture gate closed. No production code, schema, migrations, HTTP, tests, or AuditAction registry changes.

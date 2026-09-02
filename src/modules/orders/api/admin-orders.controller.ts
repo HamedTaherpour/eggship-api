@@ -39,6 +39,7 @@ import { AuthSubjectType } from '../../auth/domain/subject-type';
 import type { AuthenticatedPrincipal } from '../../auth/domain/authenticated-principal';
 import { OrderReadService } from '../application/order-read.service';
 import { OrderTransitionService } from '../application/order-transition.service';
+import { OrderReturnService } from '../application/order-return.service';
 import { OrderActorType } from '../domain/order-actor';
 import { AdminOrderListQueryDto } from './dto/admin-order-list-query.dto';
 import {
@@ -51,6 +52,12 @@ import {
   AdminCancelOrderBodyDto,
   ConfirmOrderBodyDto,
 } from './dto/admin-order-transition.dto';
+import { IdempotencyKey } from './idempotency-key.decorator';
+import {
+  RecordOrderReturnBodyDto,
+  RecordOrderReturnResponseDto,
+  toOrderReturnResponseDto,
+} from './dto/record-order-return.dto';
 
 const ADMIN_ORDER_CACHE_CONTROL = 'no-store';
 
@@ -63,6 +70,7 @@ export class AdminOrdersController {
   constructor(
     private readonly reads: OrderReadService,
     private readonly transitions: OrderTransitionService,
+    private readonly returns: OrderReturnService,
   ) {}
 
   @Get()
@@ -222,6 +230,40 @@ export class AdminOrdersController {
       actor: { type: OrderActorType.ADMIN, id: principal.subjectId },
     });
     return { data: toAdminOrderDetailDto(result.order) };
+  }
+
+  @Post(':id/returns')
+  @Header('Cache-Control', ADMIN_ORDER_CACHE_CONTROL)
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions(Permission.ORDER_TRANSITION)
+  @ApiBody({ type: RecordOrderReturnBodyDto })
+  @ApiOperation({
+    operationId: 'AdminOrders_recordReturn',
+    summary: 'Record an inspected return (Admin)',
+    description:
+      'Records sellable and damaged returned quantities for a DELIVERED order. An Idempotency-Key is required; only sellable quantity is restocked. This does not complete DELIVERED → RETURNED.',
+  })
+  @ApiOkResponse({ type: RecordOrderReturnResponseDto })
+  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  @ApiNotFoundResponse({ type: ApiErrorResponseDto })
+  @ApiConflictResponse({ type: ApiErrorResponseDto })
+  async recordReturn(
+    @Req() request: Request,
+    @Param('id', ParseUUIDPipe) id: string,
+    @IdempotencyKey() idempotencyKey: string,
+    @Body() body: RecordOrderReturnBodyDto,
+  ): Promise<RecordOrderReturnResponseDto> {
+    const principal = requireAdminPrincipal(request);
+    const result = await this.returns.recordReturn({
+      orderId: id,
+      idempotencyKey,
+      reason: body.reason,
+      lines: body.lines,
+      actor: { type: OrderActorType.ADMIN, id: principal.subjectId },
+    });
+    return { data: toOrderReturnResponseDto(result.orderReturn) };
   }
 }
 

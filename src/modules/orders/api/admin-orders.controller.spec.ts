@@ -1,16 +1,24 @@
+import { Permission } from '../../../common/authz/permission';
+import { REQUIRED_PERMISSIONS_METADATA_KEY } from '../../../common/authz/require-permissions.decorator';
 import { AuthSubjectType } from '../../auth/domain/subject-type';
 import { AUTHENTICATED_PRINCIPAL_REQUEST_KEY } from '../../auth/api/access-token.guard';
 import { OrderActorType } from '../domain/order-actor';
 import { OrderStatus } from '../domain/order-status';
+import { OrderMessage } from '../domain/order-messages';
 import type { OrderRecord } from '../domain/order';
 import type { OrderReadService } from '../application/order-read.service';
 import type { OrderTransitionService } from '../application/order-transition.service';
 import type { OrderReturnService } from '../application/order-return.service';
+import {
+  BulkOrderTransitionAction,
+  type BulkOrderTransitionService,
+} from '../application/bulk-order-transition.service';
 import { AdminOrdersController } from './admin-orders.controller';
 import type { Request } from 'express';
 
 const ADMIN_ID = '11111111-1111-4111-8111-111111111111';
 const ORDER_ID = '22222222-2222-4222-8222-222222222222';
+const ORDER_B = '77777777-7777-4777-8777-777777777777';
 const REGION_ID = '33333333-3333-4333-8333-333333333333';
 const NOW = new Date('2026-08-28T10:00:00.000Z');
 
@@ -67,6 +75,7 @@ describe('AdminOrdersController', () => {
       | 'completeReturnProcess'
     >
   >;
+  let bulkTransitions: jest.Mocked<Pick<BulkOrderTransitionService, 'execute'>>;
   let returns: jest.Mocked<Pick<OrderReturnService, 'recordReturn'>>;
   let controller: AdminOrdersController;
 
@@ -79,10 +88,12 @@ describe('AdminOrdersController', () => {
       deliverOrder: jest.fn(),
       completeReturnProcess: jest.fn(),
     };
+    bulkTransitions = { execute: jest.fn() };
     returns = { recordReturn: jest.fn() };
     controller = new AdminOrdersController(
       reads as unknown as OrderReadService,
       transitions as unknown as OrderTransitionService,
+      bulkTransitions as unknown as BulkOrderTransitionService,
       returns as unknown as OrderReturnService,
     );
   });
@@ -183,6 +194,101 @@ describe('AdminOrdersController', () => {
     expect(transitions.cancelOrderByAdmin).toHaveBeenCalledWith({
       orderId: ORDER_ID,
       cancelReason: ' No stock ',
+      actor: { type: OrderActorType.ADMIN, id: ADMIN_ID },
+    });
+  });
+
+  it('requires ORDER_TRANSITION for bulk-transition', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      AdminOrdersController.prototype,
+      'bulkTransition',
+    );
+    expect(typeof descriptor?.value).toBe('function');
+    const required = Reflect.getMetadata(
+      REQUIRED_PERMISSIONS_METADATA_KEY,
+      descriptor!.value as object,
+    ) as Permission[] | undefined;
+    expect(required).toEqual([Permission.ORDER_TRANSITION]);
+  });
+
+  it('derives the Admin actor for bulk SHIP and maps the partial-success contract', async () => {
+    bulkTransitions.execute.mockResolvedValue({
+      action: BulkOrderTransitionAction.SHIP,
+      summary: { requested: 2, succeeded: 1, failed: 1 },
+      results: [
+        {
+          orderId: ORDER_ID,
+          success: true,
+          replay: false,
+          order: order({ status: OrderStatus.SHIPPED, shippedAt: NOW }),
+        },
+        {
+          orderId: ORDER_B,
+          success: false,
+          error: {
+            code: 'ORDER_NOT_FOUND',
+            message: OrderMessage.NOT_FOUND,
+            details: {},
+          },
+        },
+      ],
+    });
+
+    const result = await controller.bulkTransition(request(), {
+      action: BulkOrderTransitionAction.SHIP,
+      orderIds: [ORDER_ID, ORDER_B],
+    });
+
+    expect(bulkTransitions.execute).toHaveBeenCalledWith({
+      action: BulkOrderTransitionAction.SHIP,
+      orderIds: [ORDER_ID, ORDER_B],
+      actor: { type: OrderActorType.ADMIN, id: ADMIN_ID },
+    });
+    expect(result.data.summary).toEqual({
+      requested: 2,
+      succeeded: 1,
+      failed: 1,
+    });
+    const first = result.data.results[0];
+    expect(first?.success).toBe(true);
+    if (first?.success === true) {
+      expect(first.replay).toBe(false);
+      expect(first.order.id).toBe(ORDER_ID);
+      expect(first.order.status).toBe(OrderStatus.SHIPPED);
+    }
+    expect(result.data.results[1]).toEqual({
+      orderId: ORDER_B,
+      success: false,
+      error: {
+        code: 'ORDER_NOT_FOUND',
+        message: OrderMessage.NOT_FOUND,
+        details: {},
+      },
+    });
+  });
+
+  it('derives the Admin actor for bulk DELIVER', async () => {
+    bulkTransitions.execute.mockResolvedValue({
+      action: BulkOrderTransitionAction.DELIVER,
+      summary: { requested: 1, succeeded: 1, failed: 0 },
+      results: [
+        {
+          orderId: ORDER_ID,
+          success: true,
+          replay: false,
+          order: order({ status: OrderStatus.DELIVERED, deliveredAt: NOW }),
+        },
+      ],
+    });
+
+    await controller.bulkTransition(request(), {
+      action: BulkOrderTransitionAction.DELIVER,
+      orderIds: [ORDER_ID],
+    });
+
+    expect(bulkTransitions.execute).toHaveBeenCalledWith({
+      action: BulkOrderTransitionAction.DELIVER,
+      orderIds: [ORDER_ID],
       actor: { type: OrderActorType.ADMIN, id: ADMIN_ID },
     });
   });

@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- ORD-07 Slice 4: Admin `POST /api/v1/admin/orders/bulk-transition` for bounded (50), request-ordered, partial-success `SHIP` and `DELIVER` commands. Every item delegates to the existing single-order transactional transition, preserving Inventory, lifecycle timestamp, notification, AuditLog, replay, and concurrency semantics; no batch transaction or bulk AuditLog action is introduced. ORD-07 remains PLANNED; dispatch remains deferred.
+
 - ORD-07 Slice 3: explicit Admin `DELIVERED → RETURNED` completion command/API using the established conditional transition/replay path; first completion persists `returnedAt` and one atomic `order.returned` AuditLog fact, without return-record, Inventory, discount-usage, pricing, or Settlement effects. ORD-07 remains PLANNED pending bulk transitions and dispatch board work.
 
 - ORD-07 Slice 2: Admin return-recording command/API with server-derived actor, canonical idempotency replay/conflict behavior, Orders-first transactional cumulative eligibility enforcement, sellable-only Inventory restocking with `RETURN_TO_STOCK` return references, and focused PostgreSQL concurrency coverage. Return completion, `returnedAt`, audit, financial, DLU, and Settlement mutation remain deferred.

@@ -14,6 +14,7 @@ import { OrderCreationService } from './application/order-creation.service';
 import { OrderReadService } from './application/order-read.service';
 import { OrderTransitionService } from './application/order-transition.service';
 import { OrderReturnService } from './application/order-return.service';
+import { BulkOrderTransitionService } from './application/bulk-order-transition.service';
 import { OrderRepository } from './infrastructure/order.repository';
 import { OrderReturnRepository } from './infrastructure/order-return.repository';
 
@@ -44,6 +45,7 @@ import { OrderReturnRepository } from './infrastructure/order-return.repository'
     OrderCreationService,
     OrderReadService,
     OrderTransitionService,
+    BulkOrderTransitionService,
     OrderReturnService,
   ],
   exports: [
@@ -52,6 +54,7 @@ import { OrderReturnRepository } from './infrastructure/order-return.repository'
     OrderCreationService,
     OrderReadService,
     OrderTransitionService,
+    BulkOrderTransitionService,
     OrderReturnService,
   ],
 })

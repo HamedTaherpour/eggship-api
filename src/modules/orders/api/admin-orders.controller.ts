@@ -39,6 +39,7 @@ import { AuthSubjectType } from '../../auth/domain/subject-type';
 import type { AuthenticatedPrincipal } from '../../auth/domain/authenticated-principal';
 import { OrderReadService } from '../application/order-read.service';
 import { OrderTransitionService } from '../application/order-transition.service';
+import { BulkOrderTransitionService } from '../application/bulk-order-transition.service';
 import { OrderReturnService } from '../application/order-return.service';
 import { OrderActorType } from '../domain/order-actor';
 import { AdminOrderListQueryDto } from './dto/admin-order-list-query.dto';
@@ -52,6 +53,11 @@ import {
   AdminCancelOrderBodyDto,
   ConfirmOrderBodyDto,
 } from './dto/admin-order-transition.dto';
+import {
+  AdminBulkOrderTransitionBodyDto,
+  AdminBulkOrderTransitionResponseDto,
+  toAdminBulkOrderTransitionDto,
+} from './dto/admin-bulk-order-transition.dto';
 import { IdempotencyKey } from './idempotency-key.decorator';
 import {
   RecordOrderReturnBodyDto,
@@ -70,6 +76,7 @@ export class AdminOrdersController {
   constructor(
     private readonly reads: OrderReadService,
     private readonly transitions: OrderTransitionService,
+    private readonly bulkTransitions: BulkOrderTransitionService,
     private readonly returns: OrderReturnService,
   ) {}
 
@@ -112,6 +119,35 @@ export class AdminOrdersController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<AdminOrderDetailResponseDto> {
     return { data: toAdminOrderDetailDto(await this.reads.getAdmin(id)) };
+  }
+
+  @Post('bulk-transition')
+  @Header('Cache-Control', ADMIN_ORDER_CACHE_CONTROL)
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions(Permission.ORDER_TRANSITION)
+  @ApiBody({ type: AdminBulkOrderTransitionBodyDto })
+  @ApiOperation({
+    operationId: 'AdminOrders_bulkTransition',
+    summary: 'Bulk ship or deliver orders (Admin)',
+    description:
+      'Executes up to 50 SHIP or DELIVER commands independently and returns HTTP 200 with request-ordered per-order success, replay, or safe failure results. Each item reuses the authoritative single-order transition transaction.',
+  })
+  @ApiOkResponse({ type: AdminBulkOrderTransitionResponseDto })
+  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  async bulkTransition(
+    @Req() request: Request,
+    @Body() body: AdminBulkOrderTransitionBodyDto,
+  ): Promise<AdminBulkOrderTransitionResponseDto> {
+    const principal = requireAdminPrincipal(request);
+    return toAdminBulkOrderTransitionDto(
+      await this.bulkTransitions.execute({
+        action: body.action,
+        orderIds: body.orderIds,
+        actor: { type: OrderActorType.ADMIN, id: principal.subjectId },
+      }),
+    );
   }
 
   @Post(':id/confirm')

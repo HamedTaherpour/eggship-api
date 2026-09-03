@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- DEP-01 deployment runtime architecture (ADR 0025): Human + ChatGPT-approved conceptual API/Worker topology, immutable shared release artifact, environment-scoped PostgreSQL/Redis/object-storage isolation, explicit release metadata and single migration-owner boundary, failure isolation, and documented Liara provider-verification follow-ups. No provisioning or deployment.
+
 - ADM-01 implementation: permissioned Admin list/detail/create/role-change/disable/enable endpoints with minimized responses, no-store caching, canonical role validation, actor-attributed audit events, atomic role/activation mutation, Admin refresh-session revocation, and a concurrency-safe last-active-SUPER_ADMIN invariant. No schema migration; password changes, deletion, bootstrap, and role expansion remain out of scope.
 
 - REF-04: read-only Admin visitor administration with `GET /api/v1/admin/visitors`, visitor detail, and bounded immutable referral-evidence views over existing `Visitor`, `ReferralAttribution`, and `User` records. Uses dedicated `VISITOR_READ` authorization, minimized DTOs, stable pagination/search/filter/sort semantics, `Cache-Control: no-store`, OpenAPI, unit/E2E/PostgreSQL coverage, and no schema change. Rewards, attribution mutation, deletion, export, tracking, and a Store entity remain out of scope.

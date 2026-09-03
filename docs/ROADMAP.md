@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   109 |
-| DONE        |    82 |
+| DONE        |    83 |
 | IN_PROGRESS |     0 |
-| READY       |     0 |
+| READY       |     1 |
 | BLOCKED     |     0 |
-| PLANNED     |    27 |
+| PLANNED     |    25 |
 
-- Current task: `ADM-01` (Admin account management) is **DONE**. Permissioned Admin list/detail/create/role-change/disable/enable endpoints use minimized responses, SUPER_ADMIN-only account permissions, actor-attributed audit events, atomic Admin mutation/session-revocation/audit transactions, and a concurrency-safe last-active-SUPER_ADMIN invariant. No credential/session secret leakage, deletion, password reset/change, custom-role, bootstrap, or CSRF architecture scope was added.
+- Current task: `DEP-01` (Liara runtime architecture and configuration) is **DONE**. The conceptual modular-monolith runtime architecture, immutable shared release artifact, independent API/Worker processes, environment isolation, PostgreSQL/Redis authority boundaries, single migration owner, and provider-verification deferrals are recorded in ADR 0025. No provisioning or deployment was added.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate. `M4 — Ordering complete` requirements are now all DONE (PRC-01 through PRC-05, ORD-01 through ORD-08 including ORD-03A, COM-01 through COM-03, DLU-01/DLU-02, SET-01/SET-02); milestone closure remains subject to the normal review/approval gates.
 
 ## Status model
@@ -1233,17 +1233,23 @@ Explicitly out of scope: Unapproved retention numbers and casual hard deletion.
 
 ### DEP-01 — Liara runtime architecture and configuration
 
-Status: PLANNED | Depends on: FND-08, ASY-03 | Primary: Human + ChatGPT architecture process, then Codex | Review: Claude/Cursor operations review, Human approval
+Status: DONE | Depends on: FND-08, ASY-03 | Primary: Human + ChatGPT architecture process, then Codex | Review: Claude/Cursor operations review, Human approval
 
 Scope: Define Liara API and worker processes, scaling/resource assumptions, network dependencies, environment separation, and configuration ownership.
 
 Acceptance criteria: API/worker commands and required PostgreSQL/Redis/object-storage connections are explicit; Docker remains optional locally; no business state uses ephemeral disk.
 
+Architecture evidence: [ADR 0025](adr/0025-deployment-runtime-architecture.md) records the Human + ChatGPT-approved conceptual architecture. API and Worker are independent processes built from one immutable release artifact, using `node dist/main.js` and `node dist/worker.js`; both use the same environment-scoped PostgreSQL, and API Redis capabilities, BullMQ producers, and BullMQ Workers start with one shared environment-scoped Redis. Staging and production isolate PostgreSQL, Redis, object storage, and configuration. `APP_VERSION`, `GIT_SHA`, and release identity are shared and observable. Production migration ownership is one explicit `prisma migrate deploy` step; startup migration is prohibited. Local disk is not authoritative, the empty Worker remains fail-closed, and no replica/concurrency values are selected here.
+
+Provider boundary: Liara-specific facts are intentionally not assumed. Separate application/process modeling, non-HTTP Worker support, custom commands, migration/release-job execution, probes, signals/draining, private networking, TLS/connectivity, secret management, proxy topology/trust-proxy hops, and structured log collection are verification requirements for DEP-02/DEP-03 planning as assigned in ADR 0025. No provisioning or deployment is part of DEP-01.
+
+Delivered: ADR 0025 and the environment policy record the approved conceptual runtime architecture, explicit API/Worker commands and shared release metadata, independent scaling and failure boundaries, environment-scoped durable/ephemeral services, single-owner production migration boundary, and Liara provider-verification deferrals. DEP-01 is documentation-only; no provisioning, deployment, or provider-specific capability claim was added.
+
 Explicitly out of scope: Production cutover.
 
 ### DEP-02 — PostgreSQL, Redis, object storage, and secrets
 
-Status: PLANNED | Depends on: DEP-01, MED-01 | Primary: Human infrastructure process | Review: Claude/Cursor security review, Human approval
+Status: READY | Depends on: DEP-01, MED-01 | Primary: Human infrastructure process | Review: Claude/Cursor security review, Human approval
 
 Scope: Provision and document environment-scoped services, least-privilege credentials, TLS/network controls, rotation, capacity, and production/development isolation.
 

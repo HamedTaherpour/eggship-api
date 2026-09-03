@@ -2,6 +2,8 @@
 
 This policy defines EggShip API runtime environments, local configuration, infrastructure safety, and developer setup. Deployment automation for Liara is out of scope until an explicit roadmap task.
 
+DEP-01 runtime architecture is recorded in [ADR 0025](../docs/adr/0025-deployment-runtime-architecture.md). It defines one immutable release artifact with independent API (`node dist/main.js`) and Worker (`node dist/worker.js`) processes, environment-scoped PostgreSQL and Redis, isolated staging/production resources, shared release metadata, and no authoritative application-local disk. Liara capabilities remain provider-verification work in DEP-02/DEP-03; this instruction does not assert that Liara supports any particular process, probe, signal, networking, secret, proxy, migration, or logging mechanism.
+
 ## Environment model
 
 EggShip distinguishes **Node runtime environment** from **deployment tier**.

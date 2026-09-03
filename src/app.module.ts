@@ -25,6 +25,7 @@ import { SettlementsModule } from './modules/settlements/settlements.module';
 import { OutboxModule } from './modules/outbox/outbox.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { VisitorsModule } from './modules/visitors/visitors.module';
+import { AdminVisitorsModule } from './modules/visitors/admin-visitors.module';
 import { BlogsModule } from './modules/blogs/blogs.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AdminAuditModule } from './modules/audit/admin-audit.module';
@@ -60,6 +61,7 @@ import { AdminAuditModule } from './modules/audit/admin-audit.module';
     OutboxModule,
     NotificationsModule,
     VisitorsModule,
+    AdminVisitorsModule,
     BlogsModule,
     AuditModule,
     AdminAuditModule,

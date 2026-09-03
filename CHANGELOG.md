@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- REF-04: read-only Admin visitor administration with `GET /api/v1/admin/visitors`, visitor detail, and bounded immutable referral-evidence views over existing `Visitor`, `ReferralAttribution`, and `User` records. Uses dedicated `VISITOR_READ` authorization, minimized DTOs, stable pagination/search/filter/sort semantics, `Cache-Control: no-store`, OpenAPI, unit/E2E/PostgreSQL coverage, and no schema change. Rewards, attribution mutation, deletion, export, tracking, and a Store entity remain out of scope.
+
 - ADM-02: Admin `GET /api/v1/admin/customers` and `GET /api/v1/admin/customers/:id` read-only store/customer views over the existing User identity (no separate Store entity, no schema migration). Paginated list with phone-substring search, `createdAt`/`updatedAt` sort allowlist with stable `id` tie-break, explicit `isActive`/`hasReferral` filters, and single-query immutable REF-02 referral evidence; minimized detail with `CUSTOMER_NOT_FOUND`. `CUSTOMER_READ`-only (SUPER_ADMIN + ORDER_OPS), `Cache-Control: no-store`, OpenAPI `AdminCustomers_*`, and unit/e2e/PostgreSQL coverage. No credential editing or new business-profile semantics (MIG-01 pending).
 
 - ORD-07 Slice 5: Admin `GET /api/v1/admin/orders/dispatch` specialized read-only board for CONFIRMED/SHIPPED Orders grouped by Region snapshot, with ORDER_READ authorization, optional `regionId`/`status` filters, deterministic nulls-last `deliveryAt`/`createdAt`/`id` ordering, summary + explicit 100-order truncation metadata, and focused PostgreSQL/E2E coverage. No Dispatch persistence, mutations, address/GPS/carrier fields, or schema/index changes. ORD-07 is DONE (Slices 1–5 delivered and verified).

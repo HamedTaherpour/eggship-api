@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   109 |
-| DONE        |    80 |
+| DONE        |    81 |
 | IN_PROGRESS |     0 |
 | READY       |     0 |
 | BLOCKED     |     0 |
-| PLANNED     |    29 |
+| PLANNED     |    28 |
 
-- Current task: `ADM-02` (Store and customer administration) is **DONE**. Read-only Admin customer/store list and detail views over the existing User identity are delivered with explicit CUSTOMER_READ authorization, bounded search/filter/sort semantics, immutable REF-02 attribution evidence, minimized responses, no-store caching, OpenAPI, unit, E2E, and real-PostgreSQL coverage. No credential editing or unapproved store business-profile semantics were added. No task remains BLOCKED.
+- Current task: `REF-04` (Visitor administration and referred-store views) is **DONE**. Read-only Admin visitor and referral-evidence views over existing Visitor, immutable ReferralAttribution, and User records are delivered with dedicated VISITOR_READ authorization, bounded deterministic query semantics, minimized responses, no-store caching, OpenAPI, unit, E2E, and real-PostgreSQL coverage. No rewards, attribution mutation, deletion, export, tracking, fingerprinting, or new Store entity were added. No task remains BLOCKED.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate. `M4 — Ordering complete` requirements are now all DONE (PRC-01 through PRC-05, ORD-01 through ORD-08 including ORD-03A, COM-01 through COM-03, DLU-01/DLU-02, SET-01/SET-02); milestone closure remains subject to the normal review/approval gates.
 
 ## Status model
@@ -779,15 +779,17 @@ Acceptance criteria: Focused Auth contract tests cover referral input and existi
 
 Explicitly out of scope: Reimplementing referral capture or persistence, schema/migrations, standalone referral-link resolution, rewards, marketing automation, click tracking, Admin Visitor APIs/reporting, User-to-user referrals, analytics aggregates, and richer Store profile semantics deferred to MIG-01.
 
-### REF-04 — Visitor administration, referred-store views, and optional rewards
+### REF-04 — Visitor administration and referred-store views
 
-Status: PLANNED | Depends on: REF-03, AUTH-08, ASY-01 | Primary: Codex after Human approval | Review: Claude/Cursor, Human privacy/business review
+Status: DONE | Depends on: REF-03, AUTH-08, ASY-01 | Primary: Codex after Human approval | Review: Claude/Cursor, Human privacy/business review
 
-Scope: Add authorized visitor/referral administration and referred-store views; add idempotent reward processing only if a separate reward policy is approved.
+Scope: Add authorized read-only visitor/referral administration and referred-store views over existing durable data.
 
-Acceptance criteria: Views enforce permissions and data minimization; any reward uses durable idempotency/outbox semantics and cannot self-award or duplicate.
+Acceptance criteria: Views enforce `VISITOR_READ`, minimized DTOs, bounded deterministic list semantics, no-store caching, OpenAPI, unit/E2E/PostgreSQL coverage, and immutable PostgreSQL-authoritative attribution evidence.
 
-Explicitly out of scope: Defining monetary rewards in this roadmap.
+Explicitly out of scope: Rewards, commissions, credits, payouts, settlement, eligibility/reversal/idempotency, attribution mutation/reassignment, visitor deletion, bulk mutation, export, tracking/fingerprinting, and a new Store entity.
+
+Delivered: `GET /api/v1/admin/visitors`, `GET /api/v1/admin/visitors/:id`, and bounded `GET /api/v1/admin/visitors/:id/referrals`, all read-only and gated by dedicated `VISITOR_READ` (SUPER_ADMIN in V1). Existing Visitor, immutable ReferralAttribution, and User/customer records are joined without N+1 reads or schema changes. REF-04 does not define or implement rewards.
 
 ## Phase 7 — Notifications
 

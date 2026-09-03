@@ -47,6 +47,26 @@ of a link, and the link has no attribution effect. Temporary code transport is
 a frontend concern unless the existing registration flow proves a backend
 handoff is necessary; server-side click/session attribution is not approved.
 
+## REF-04 Admin read contract
+
+REF-04 is read-only Admin visitor and referral administration. It uses the
+dedicated `VISITOR_READ` permission; `CUSTOMER_READ` is not reused merely
+because referred Users are displayed. V1 grants `VISITOR_READ` only to
+`SUPER_ADMIN` pending legacy capability evidence.
+
+The surface is `GET /api/v1/admin/visitors` (bounded pagination, search by
+visitor name/referral code, explicit `isActive`/`hasAttributions` filters, and
+allowlisted sorting), `GET /api/v1/admin/visitors/:id` (minimized visitor
+identity, state, timestamps, and durable attribution count), and
+`GET /api/v1/admin/visitors/:id/referrals` (bounded immutable attribution
+evidence joined to the existing User/customer identity). Evidence contains
+only attribution id, visitor id, referred customer id/phone/active state,
+source, historical referral code, and attribution timestamp. All responses are
+`Cache-Control: no-store`, explicit DTOs, and OpenAPI-documented. No route
+mutates/reassigns attribution, deletes visitors, exports data, exposes
+credentials/session data, tracks clicks, fingerprints devices, or introduces a
+Store entity or reward semantics.
+
 Only the new-registration path may accept a referral code. After registration,
 the customer cannot add or change a referrer, opening another link has no
 effect, and Admin cannot reassign attribution. Any future correction requires

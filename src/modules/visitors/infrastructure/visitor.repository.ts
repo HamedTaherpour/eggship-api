@@ -2,10 +2,17 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../infrastructure/database/prisma/prisma.service';
 import type {
+  AdminReferralEvidenceListQuery,
+  AdminReferralEvidenceRecord,
+  AdminVisitorListQuery,
+  AdminVisitorRecord,
+  AdminVisitorSortField,
+  AdminReferralEvidenceSortField,
   ReferralAttributionRecord,
   CreateVisitorInput,
   VisitorRecord,
 } from '../domain/visitor';
+import { toSkipTake, type PageResult } from '../../../common/list';
 import {
   generateReferralCode,
   normalizeReferralCode,
@@ -144,6 +151,111 @@ export class VisitorRepository {
       throw error;
     }
   }
+
+  async listAdmin(
+    query: AdminVisitorListQuery,
+  ): Promise<PageResult<AdminVisitorRecord>> {
+    const where = buildAdminVisitorWhere(query);
+    const { skip, take } = toSkipTake(query);
+    const orderField: AdminVisitorSortField = query.sortBy;
+    const [total, rows] = await this.prisma.$transaction([
+      this.prisma.visitor.count({ where }),
+      this.prisma.visitor.findMany({
+        where,
+        orderBy: [{ [orderField]: query.sortOrder }, { id: query.sortOrder }],
+        include: { _count: { select: { attributions: true } } },
+        skip,
+        take,
+      }),
+    ]);
+    return {
+      total,
+      items: rows.map((row) => ({
+        ...mapVisitor(row),
+        attributionCount: row._count.attributions,
+      })),
+    };
+  }
+
+  async findAdminById(id: string): Promise<AdminVisitorRecord | null> {
+    const row = await this.prisma.visitor.findUnique({
+      where: { id },
+      include: { _count: { select: { attributions: true } } },
+    });
+    return row === null
+      ? null
+      : { ...mapVisitor(row), attributionCount: row._count.attributions };
+  }
+
+  async listAdminReferrals(
+    query: AdminReferralEvidenceListQuery,
+  ): Promise<PageResult<AdminReferralEvidenceRecord>> {
+    const where: Prisma.ReferralAttributionWhereInput = {
+      visitorId: query.visitorId,
+      ...(query.search === undefined
+        ? {}
+        : {
+            OR: [
+              { referralCode: { contains: query.search, mode: 'insensitive' } },
+              {
+                user: {
+                  phone: { contains: query.search, mode: 'insensitive' },
+                },
+              },
+            ],
+          }),
+    };
+    const { skip, take } = toSkipTake(query);
+    const orderField: AdminReferralEvidenceSortField = query.sortBy;
+    const [total, rows] = await this.prisma.$transaction([
+      this.prisma.referralAttribution.count({ where }),
+      this.prisma.referralAttribution.findMany({
+        where,
+        orderBy: [{ [orderField]: query.sortOrder }, { id: query.sortOrder }],
+        select: {
+          id: true,
+          visitorId: true,
+          userId: true,
+          source: true,
+          referralCode: true,
+          attributedAt: true,
+          user: { select: { id: true, phone: true, isActive: true } },
+        },
+        skip,
+        take,
+      }),
+    ]);
+    return {
+      total,
+      items: rows.map((row) => ({
+        attributionId: row.id,
+        visitorId: row.visitorId,
+        customerId: row.user.id,
+        customerPhone: row.user.phone,
+        customerIsActive: row.user.isActive,
+        source: row.source,
+        referralCode: row.referralCode,
+        attributedAt: row.attributedAt,
+      })),
+    };
+  }
+}
+
+export function buildAdminVisitorWhere(
+  query: Pick<AdminVisitorListQuery, 'search' | 'isActive' | 'hasAttributions'>,
+): Prisma.VisitorWhereInput {
+  const where: Prisma.VisitorWhereInput = {};
+  if (query.search !== undefined) {
+    where.OR = [
+      { name: { contains: query.search, mode: 'insensitive' } },
+      { referralCode: { contains: query.search, mode: 'insensitive' } },
+    ];
+  }
+  if (query.isActive !== undefined) where.isActive = query.isActive;
+  if (query.hasAttributions !== undefined) {
+    where.attributions = query.hasAttributions ? { some: {} } : { none: {} };
+  }
+  return where;
 }
 
 function isUniqueConstraintError(error: unknown): boolean {

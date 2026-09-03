@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- ADM-02: Admin `GET /api/v1/admin/customers` and `GET /api/v1/admin/customers/:id` read-only store/customer views over the existing User identity (no separate Store entity, no schema migration). Paginated list with phone-substring search, `createdAt`/`updatedAt` sort allowlist with stable `id` tie-break, explicit `isActive`/`hasReferral` filters, and single-query immutable REF-02 referral evidence; minimized detail with `CUSTOMER_NOT_FOUND`. `CUSTOMER_READ`-only (SUPER_ADMIN + ORDER_OPS), `Cache-Control: no-store`, OpenAPI `AdminCustomers_*`, and unit/e2e/PostgreSQL coverage. No credential editing or new business-profile semantics (MIG-01 pending).
+
 - ORD-07 Slice 5: Admin `GET /api/v1/admin/orders/dispatch` specialized read-only board for CONFIRMED/SHIPPED Orders grouped by Region snapshot, with ORDER_READ authorization, optional `regionId`/`status` filters, deterministic nulls-last `deliveryAt`/`createdAt`/`id` ordering, summary + explicit 100-order truncation metadata, and focused PostgreSQL/E2E coverage. No Dispatch persistence, mutations, address/GPS/carrier fields, or schema/index changes. ORD-07 is DONE (Slices 1–5 delivered and verified).
 
 - ORD-07 Slice 4: Admin `POST /api/v1/admin/orders/bulk-transition` for bounded (50), request-ordered, partial-success `SHIP` and `DELIVER` commands. Every item delegates to the existing single-order transactional transition, preserving Inventory, lifecycle timestamp, notification, AuditLog, replay, and concurrency semantics; no batch transaction or bulk AuditLog action is introduced. ORD-07 remains PLANNED; dispatch remains deferred.

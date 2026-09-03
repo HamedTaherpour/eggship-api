@@ -18,6 +18,7 @@ import { MediaModule } from './modules/media/media.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { RegionsModule } from './modules/regions/regions.module';
 import { UsersModule } from './modules/users/users.module';
+import { AdminCustomersModule } from './modules/users/admin-customers.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { CommercePolicyModule } from './modules/commerce-policy/commerce-policy.module';
 import { SettlementsModule } from './modules/settlements/settlements.module';
@@ -45,6 +46,7 @@ import { AdminAuditModule } from './modules/audit/admin-audit.module';
     RedisModule,
     QueueInfrastructureModule,
     UsersModule,
+    AdminCustomersModule,
     AuthModule,
     CategoriesModule,
     ProductsModule,

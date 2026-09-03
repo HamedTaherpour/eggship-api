@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   109 |
-| DONE        |    79 |
+| DONE        |    80 |
 | IN_PROGRESS |     0 |
 | READY       |     0 |
 | BLOCKED     |     0 |
-| PLANNED     |    30 |
+| PLANNED     |    29 |
 
-- Current task: `ORD-07` (Returns, bulk transitions, and dispatch board) is **DONE**. Return persistence/recording/completion, bounded partial-success bulk SHIP/DELIVER, and the Admin Dispatch read model are delivered with focused unit, real-PostgreSQL, E2E, and OpenAPI coverage; no DLU/settlement/pricing mutation and no refund/carrier scope was added. No task remains BLOCKED.
+- Current task: `ADM-02` (Store and customer administration) is **DONE**. Read-only Admin customer/store list and detail views over the existing User identity are delivered with explicit CUSTOMER_READ authorization, bounded search/filter/sort semantics, immutable REF-02 attribution evidence, minimized responses, no-store caching, OpenAPI, unit, E2E, and real-PostgreSQL coverage. No credential editing or unapproved store business-profile semantics were added. No task remains BLOCKED.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate. `M4 — Ordering complete` requirements are now all DONE (PRC-01 through PRC-05, ORD-01 through ORD-08 including ORD-03A, COM-01 through COM-03, DLU-01/DLU-02, SET-01/SET-02); milestone closure remains subject to the normal review/approval gates.
 
 ## Status model
@@ -939,11 +939,13 @@ Explicitly out of scope: Impersonation and autonomous superuser creation. Admin 
 
 ### ADM-02 — Store and customer administration
 
-Status: PLANNED | Depends on: AUTH-07, AUTH-08, REF-02 | Primary: Codex | Review: Claude/Cursor privacy/security review
+Status: DONE | Depends on: AUTH-07, AUTH-08, REF-02 | Primary: Codex | Review: Claude/Cursor privacy/security review
 
 Scope: Implement legacy-compatible store/customer list and detail views with explicit permissions, filters, referral relationships, and data minimization.
 
 Acceptance criteria: Sensitive fields are purpose-limited; N+1/index behavior is reviewed; cross-record ownership and admin scopes are tested and documented.
+
+Delivered: Read-only `GET /api/v1/admin/customers` and `GET /api/v1/admin/customers/:id` over the existing `User` identity, with `CUSTOMER_READ` authorization (`SUPER_ADMIN`/`ORDER_OPS`), phone-substring search, explicit `isActive`/`hasReferral` filters, allowlisted `createdAt`/`updatedAt` sorting with stable `id` tie-breaks, minimized DTOs, immutable REF-02 Visitor attribution evidence, `CUSTOMER_NOT_FOUND`, `Cache-Control: no-store`, OpenAPI, unit/E2E/PostgreSQL coverage, and a joined referral read avoiding N+1 fan-out. No credential mutation, separate Store entity, schema migration, referral mutation, or unapproved business-profile semantics.
 
 Explicitly out of scope: Editing identity credentials and defining store business semantics not evidenced by legacy behavior.
 

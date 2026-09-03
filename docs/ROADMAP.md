@@ -7,14 +7,14 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   109 |
-| DONE        |    78 |
+| DONE        |    79 |
 | IN_PROGRESS |     0 |
 | READY       |     0 |
 | BLOCKED     |     0 |
-| PLANNED     |    31 |
+| PLANNED     |    30 |
 
-- Current task: `AUD-03` (Admin audit access) is **DONE**. Permissioned Admin AuditLog list/detail read APIs are delivered with `AUDIT_READ`-only authorization, explicit safe DTOs, allowlisted indexed filters, and deterministic `occurredAt`/`id` ordering; no recursive read auditing, export, or arbitrary metadata search. Retention and lifecycle deletion remain DATA-01/DATA-03. No task remains BLOCKED.
-- Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate.
+- Current task: `ORD-07` (Returns, bulk transitions, and dispatch board) is **DONE**. Return persistence/recording/completion, bounded partial-success bulk SHIP/DELIVER, and the Admin Dispatch read model are delivered with focused unit, real-PostgreSQL, E2E, and OpenAPI coverage; no DLU/settlement/pricing mutation and no refund/carrier scope was added. No task remains BLOCKED.
+- Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate. `M4 — Ordering complete` requirements are now all DONE (PRC-01 through PRC-05, ORD-01 through ORD-08 including ORD-03A, COM-01 through COM-03, DLU-01/DLU-02, SET-01/SET-02); milestone closure remains subject to the normal review/approval gates.
 
 ## Status model
 
@@ -569,7 +569,7 @@ Delivered: Permissioned `GET /api/v1/admin/orders` and `GET /api/v1/admin/orders
 
 ### ORD-07 — Returns, bulk transitions, and dispatch board
 
-Status: PLANNED | Depends on: ORD-05, ORD-06, DLU-02 | Primary: Codex | Review: Claude/Cursor concurrency review, Human approval
+Status: DONE | Depends on: ORD-05, ORD-06, DLU-02 | Primary: Codex | Review: Claude/Cursor concurrency review, Human approval
 
 Architecture gate: **Closed** ([ADR 0024](adr/0024-order-returns-bulk-transitions-and-dispatch-board.md)). Human-approved ORD-07 business and architecture decisions are recorded; dependencies (ORD-05, ORD-06, DLU-02) are DONE and implementation is dependency-ready. Do not treat this gate closure as implementation DONE.
 
@@ -579,7 +579,7 @@ Acceptance criteria: Partial/batch failure semantics and authorization are expli
 
 Explicitly out of scope: Inventing refund, carrier, or physical-return rules; inventing discount-entitlement restoration; customer return initiation; RETURNED customer notifications; settlement mutation; `ORDER_RETURN` / `DISPATCH_READ` permissions; bulk CONFIRM/CANCEL/RETURN; persisted Dispatch domain.
 
-Delivered (architecture only): Accepted [ADR 0024](adr/0024-order-returns-bulk-transitions-and-dispatch-board.md); durable policy in `instructions/orders.md`, `instructions/inventory.md`, and authorization notes. Partial line-level returns with sellable/damaged quantities; multiple return events; dedicated return aggregate; `returnToStock` for sellable only; explicit completion transition with `returnedAt` and `order.returned`; bulk SHIP/DELIVER partial success; dispatch grouped by Region. No production code, schema, migrations, HTTP, tests, or AuditAction registry changes in this gate.
+Delivered (Slices 1–5, verified): Accepted [ADR 0024](adr/0024-order-returns-bulk-transitions-and-dispatch-board.md); durable policy in `instructions/orders.md`, `instructions/inventory.md`, and authorization notes. Slice 1 return persistence (`OrderReturn`/`OrderReturnLine`, sellable/damaged quantities, idempotency payload proof, cumulative-quantity primitives, nullable `Order.returnedAt`); Slice 2 transactional Admin return recording (DELIVERED-only, cumulative cap, sellable-only `returnToStock`, idempotent replay/conflict); Slice 3 explicit `DELIVERED → RETURNED` completion (first-writer `returnedAt` plus one atomic `order.returned` AuditLog fact, replay-safe); Slice 4 bounded (50) partial-success bulk SHIP/DELIVER with per-order transactions over HTTP 200 and no bulk AuditLog action; Slice 5 Admin Dispatch read model (`GET /api/v1/admin/orders/dispatch`, `ORDER_READ` only, CONFIRMED/SHIPPED, Region grouping, deterministic nulls-last ordering, 100-order bound with explicit truncation metadata). No DLU/settlement/pricing mutation, no `ORDER_RETURN`/`DISPATCH_READ` permissions, no refund/carrier/customer-initiation logic. Unit, focused real-PostgreSQL, E2E, and OpenAPI/typecheck/lint/build gates verified.
 
 ### ORD-08 — Order audit, concurrency, and load verification
 
@@ -1414,7 +1414,7 @@ The following are not implementation assumptions:
 - Customer/store business profile fields required at registration vs later completion (store name, manager name, address, region, coordinates): no in-repo legacy inventory yet (`MIG-01`); AUTH-07 shipped Pattern A phone-only identity with empty profile update allowlist. Region **reference** rows exist (CAT-02); profile `regionId` FK remains deferred.
 - Category/Region legacy parity gaps (MIG-01): name uniqueness, public slug, sortOrder, category hierarchy/parent, shipping-related Region fields, and whether hard delete is ever allowed after Product/profile FKs land.
 - Product legacy parity gaps (MIG-01): SKU/code uniqueness, description, unit/package semantics, whether zero-price products should be allowed, and whether product name uniqueness is ever required. Product image attachment is decided in ADR 0022 (exactly one optional `imageMediaId`; no gallery); MED-01 implements it.
-- Order transition runtime (ORD-02), customer create/read HTTP (`ORD-03A`/`ORD-04`), customer cancellation HTTP (`ORD-05`), and Admin Orders HTTP (`ORD-06`) are DONE. V1 state machine, actors, concurrency, and Inventory orchestration rules are settled in ADR 0014 / [instructions/orders.md](../instructions/orders.md). Return/bulk/dispatch architecture is decided in [ADR 0024](adr/0024-order-returns-bulk-transitions-and-dispatch-board.md) / ORD-07 (Human gate closed; implementation PLANNED). Shipping/address snapshot fields and payment/refund semantics remain deferred. Deferred settlement is separately planned in SET-01/SET-02 and must not become Order state.
+- Order transition runtime (ORD-02), customer create/read HTTP (`ORD-03A`/`ORD-04`), customer cancellation HTTP (`ORD-05`), and Admin Orders HTTP (`ORD-06`) are DONE. V1 state machine, actors, concurrency, and Inventory orchestration rules are settled in ADR 0014 / [instructions/orders.md](../instructions/orders.md). Return/bulk/dispatch architecture is decided in [ADR 0024](adr/0024-order-returns-bulk-transitions-and-dispatch-board.md) / ORD-07 (Human gate closed; implementation DONE). Shipping/address snapshot fields and payment/refund semantics remain deferred. Deferred settlement is separately planned in SET-01/SET-02 and must not become Order state.
 - Whether a future `PACKED`/`PICKED` state should move the physical `onHand` decrement earlier than `SHIPPED`.
 - Whether partial fulfillment or split shipment is ever allowed after V1.
 - Public exposure of exact inventory `available`, and any preferred-customer allocation/fairness policy under contention.

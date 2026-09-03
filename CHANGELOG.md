@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- ORD-07 Slice 5: Admin `GET /api/v1/admin/orders/dispatch` specialized read-only board for CONFIRMED/SHIPPED Orders grouped by Region snapshot, with ORDER_READ authorization, optional `regionId`/`status` filters, deterministic nulls-last `deliveryAt`/`createdAt`/`id` ordering, summary + explicit 100-order truncation metadata, and focused PostgreSQL/E2E coverage. No Dispatch persistence, mutations, address/GPS/carrier fields, or schema/index changes. ORD-07 remains PLANNED pending final verification/closure.
+- ORD-07 Slice 5: Admin `GET /api/v1/admin/orders/dispatch` specialized read-only board for CONFIRMED/SHIPPED Orders grouped by Region snapshot, with ORDER_READ authorization, optional `regionId`/`status` filters, deterministic nulls-last `deliveryAt`/`createdAt`/`id` ordering, summary + explicit 100-order truncation metadata, and focused PostgreSQL/E2E coverage. No Dispatch persistence, mutations, address/GPS/carrier fields, or schema/index changes. ORD-07 is DONE (Slices 1–5 delivered and verified).
 
 - ORD-07 Slice 4: Admin `POST /api/v1/admin/orders/bulk-transition` for bounded (50), request-ordered, partial-success `SHIP` and `DELIVER` commands. Every item delegates to the existing single-order transactional transition, preserving Inventory, lifecycle timestamp, notification, AuditLog, replay, and concurrency semantics; no batch transaction or bulk AuditLog action is introduced. ORD-07 remains PLANNED; dispatch remains deferred.
 

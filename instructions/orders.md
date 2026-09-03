@@ -361,9 +361,13 @@ Bulk supports **SHIP** and **DELIVER** only — not CONFIRM, CANCEL, or RETURN.
 
 ### Dispatch board (V1 read model)
 
-- Dedicated Admin read contract (conceptual: `GET /api/v1/admin/orders/dispatch`) — **not** a persisted Dispatch domain.
-- **`ORDER_READ`** only; no `DISPATCH_READ`.
-- Includes **`CONFIRMED`** and **`SHIPPED`** only; grouped by Region; deterministic within-group ordering (recommended: `deliveryAt`, `createdAt`, `id`).
+- Dedicated Admin read contract: `GET /api/v1/admin/orders/dispatch` — **not** a persisted Dispatch domain and **not** a proxy of the generic Admin Order list.
+- **`ORDER_READ`** only; no `DISPATCH_READ`. Ordinary reads do not write AuditLog.
+- Includes **`CONFIRMED`** and **`SHIPPED`** only; optional filters are `regionId` and pipeline `status` (`CONFIRMED` | `SHIPPED`). Unknown query keys are rejected.
+- Results are **grouped by Order Region snapshot** (`regionId` / `regionName`). Groups are ordered by `regionName` ASC, then `regionId` ASC.
+- Within each group (and for the bounded global fetch): `deliveryAt` ASC with **nulls last**, then `createdAt` ASC, then `id` ASC.
+- Response includes a small operational **summary** (`ordersCount`, `confirmedCount`, `shippedCount`, `regionCount`) plus explicit bound metadata (`limit`, `truncated`, `matchedCount`).
+- V1 bound: **100** Orders (`ADMIN_DISPATCH_ORDER_LIMIT`, aligned with CAT-01 `MAX_PAGE_SIZE`). Truncation is never silent.
 - No carrier/GPS/route optimization; no new address fields. Shipping address snapshots remain deferred (MIG-01).
 
 ## `RETURNED` (canonical summary)
@@ -428,7 +432,7 @@ When profile/address support lands, Orders must snapshot address at creation —
 
 ## Module layout
 
-`src/modules/orders/` — domain types, money helpers, `OrderCreationService` (`createOrder`), `OrderReadService` (customer and Admin list/detail), `OrdersController` (customer HTTP), `AdminOrdersController` (permissioned Admin list/detail/confirm/cancel/ship/deliver), `OrderTransitionService` (confirm/cancel/ship/deliver), `OrderRepository` (`createWithTrustedSnapshots`, Admin/owner reads, idempotency lookup/lock, closed conditional status updates), and `OrderReturnRepository` (durable return aggregate, idempotency proof, cumulative quantity read, and transaction-compatible lock primitives). Orders imports Pricing + Inventory application contracts; Inventory must not import Orders.
+`src/modules/orders/` — domain types, money helpers, `OrderCreationService` (`createOrder`), `OrderReadService` (customer and Admin list/detail plus Admin Dispatch board), `OrdersController` (customer HTTP), `AdminOrdersController` (permissioned Admin list/detail/dispatch/confirm/cancel/ship/deliver/bulk-transition/returns), `OrderTransitionService` (confirm/cancel/ship/deliver/complete-return), `BulkOrderTransitionService`, `OrderReturnService`, `OrderRepository` (`createWithTrustedSnapshots`, Admin/owner reads, dispatch list, idempotency lookup/lock, closed conditional status updates), and `OrderReturnRepository` (durable return aggregate, idempotency proof, cumulative quantity read, and transaction-compatible lock primitives). Orders imports Pricing + Inventory application contracts; Inventory must not import Orders.
 
 ## Related ADRs
 

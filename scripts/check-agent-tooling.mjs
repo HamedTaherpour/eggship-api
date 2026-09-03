@@ -98,6 +98,11 @@ if (!tooling.includes('TRAE') || !tooling.includes('.trae/rules')) {
     'instructions/agent-tooling.md must document TRAE and .trae/rules',
   );
 }
+if (!tooling.includes('OpenCode') || !tooling.includes('opencode.json')) {
+  errors.push(
+    'instructions/agent-tooling.md must document OpenCode and opencode.json',
+  );
+}
 const claude = read('CLAUDE.md');
 if (!claude.includes('AGENTS.md') || Buffer.byteLength(claude) > 1_000) {
   errors.push('CLAUDE.md must point to AGENTS.md and stay under 1000 bytes');
@@ -148,13 +153,61 @@ for (const host of ['.claude/skills', '.qoder/skills']) {
   }
 }
 
-for (const host of ['.cursor/skills', '.codex/skills', '.trae/skills']) {
+for (const host of [
+  '.cursor/skills',
+  '.codex/skills',
+  '.trae/skills',
+  '.opencode/skills',
+]) {
   for (const path of listFiles(host, (candidate) =>
     candidate.endsWith('SKILL.md'),
   )) {
     if (sharedSkills.some((name) => path.includes(`${host}/${name}/`))) {
       errors.push(
         `${rel(path)} is a duplicate shared skill; use .agents/skills`,
+      );
+    }
+  }
+}
+
+if (mustExist('opencode.json')) {
+  let config = null;
+  try {
+    config = JSON.parse(read('opencode.json'));
+  } catch {
+    errors.push('opencode.json must be valid JSON');
+  }
+  if (config) {
+    if (config.$schema !== 'https://opencode.ai/config.json') {
+      errors.push(
+        'opencode.json must set $schema to https://opencode.ai/config.json',
+      );
+    }
+    if (config.instructions) {
+      errors.push(
+        'opencode.json must not duplicate policy via instructions; AGENTS.md remains canonical',
+      );
+    }
+    const bash = config.permission?.bash;
+    if (!bash || typeof bash !== 'object') {
+      errors.push('opencode.json must define permission.bash guardrails');
+    } else {
+      for (const denied of ['git push*', 'git reset --hard*', 'git clean*']) {
+        if (bash[denied] !== 'deny') {
+          errors.push(`opencode.json must deny bash ${denied}`);
+        }
+      }
+    }
+    const edit = config.permission?.edit;
+    if (!edit || typeof edit !== 'object') {
+      errors.push('opencode.json must define permission.edit guardrails');
+    } else if (
+      !Object.entries(edit).some(
+        ([pattern, action]) => action === 'deny' && pattern.includes('.env'),
+      )
+    ) {
+      errors.push(
+        'opencode.json must deny secret file edits via permission.edit',
       );
     }
   }
@@ -215,6 +268,7 @@ for (const dir of [
   '.codex',
   '.qoder',
   '.trae',
+  '.opencode',
 ]) {
   for (const path of listFiles(dir)) {
     const text = readFileSync(path, 'utf8');

@@ -53,14 +53,17 @@ function sampleOrder(): OrderRecord {
 describe('OrderReadService', () => {
   let listOwned: jest.MockedFunction<OrderRepository['listOwned']>;
   let findOwnedById: jest.MockedFunction<OrderRepository['findOwnedById']>;
+  let listDispatch: jest.MockedFunction<OrderRepository['listDispatch']>;
   let service: OrderReadService;
 
   beforeEach(() => {
     listOwned = jest.fn();
     findOwnedById = jest.fn();
+    listDispatch = jest.fn();
     service = new OrderReadService({
       listOwned,
       findOwnedById,
+      listDispatch,
     } as unknown as OrderRepository);
   });
 
@@ -110,5 +113,45 @@ describe('OrderReadService', () => {
     await expect(service.getOwned(OWNER_ID, ORDER_ID)).rejects.toBeInstanceOf(
       OrderNotFoundError,
     );
+  });
+
+  it('builds the dispatch board from a bounded repository page', async () => {
+    const regionId = '33333333-3333-4333-8333-333333333333';
+    listDispatch.mockResolvedValue({
+      matchedCount: 1,
+      items: [
+        {
+          id: ORDER_ID,
+          status: OrderStatus.CONFIRMED,
+          customerPhone: '+989121234567',
+          regionId,
+          regionName: 'Tehran',
+          total: 20_000n,
+          lineCount: 1,
+          deliveryAt: null,
+          confirmedAt: new Date('2026-08-22T10:00:00.000Z'),
+          shippedAt: null,
+          createdAt: new Date('2026-08-22T10:00:00.000Z'),
+        },
+      ],
+    });
+
+    const board = await service.getDispatchBoard({
+      regionId,
+      status: OrderStatus.CONFIRMED,
+    });
+
+    expect(listDispatch).toHaveBeenCalledWith({
+      regionId,
+      status: OrderStatus.CONFIRMED,
+    });
+    expect(board.summary).toMatchObject({
+      ordersCount: 1,
+      confirmedCount: 1,
+      regionCount: 1,
+      truncated: false,
+      matchedCount: 1,
+    });
+    expect(board.groups[0]!.region.name).toBe('Tehran');
   });
 });

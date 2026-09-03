@@ -50,6 +50,11 @@ import {
   toAdminOrderListItemDto,
 } from './dto/admin-order-response.dto';
 import {
+  AdminDispatchQueryDto,
+  AdminDispatchResponseDto,
+  toAdminDispatchBoardDto,
+} from './dto/admin-dispatch.dto';
+import {
   AdminCancelOrderBodyDto,
   ConfirmOrderBodyDto,
 } from './dto/admin-order-transition.dto';
@@ -98,6 +103,27 @@ export class AdminOrdersController {
   ): Promise<InstanceType<typeof AdminOrderListResponseDto>> {
     const page = await this.reads.listAdmin(query);
     return { data: page.data.map(toAdminOrderListItemDto), meta: page.meta };
+  }
+
+  @Get('dispatch')
+  @Header('Cache-Control', ADMIN_ORDER_CACHE_CONTROL)
+  @RequirePermissions(Permission.ORDER_READ)
+  @ApiOperation({
+    operationId: 'AdminOrders_dispatch',
+    summary: 'Dispatch board (Admin)',
+    description:
+      'Specialized read-only board of CONFIRMED and SHIPPED Orders grouped by Region snapshot. Optional filters: regionId, status (CONFIRMED|SHIPPED). Bounded to 100 Orders with explicit truncation metadata. Requires ORDER_READ only; response is no-store. Not a persisted Dispatch domain.',
+  })
+  @ApiOkResponse({ type: AdminDispatchResponseDto })
+  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  async dispatch(
+    @Query() query: AdminDispatchQueryDto,
+  ): Promise<AdminDispatchResponseDto> {
+    return {
+      data: toAdminDispatchBoardDto(await this.reads.getDispatchBoard(query)),
+    };
   }
 
   @Get(':id')

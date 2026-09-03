@@ -38,6 +38,13 @@ import type {
   OrderListQuery,
   OrderListRecord,
 } from '../domain/order-list';
+import {
+  ADMIN_DISPATCH_ORDER_LIMIT,
+  DISPATCH_PIPELINE_STATUSES,
+  isDispatchPipelineStatus,
+  type AdminDispatchOrderRecord,
+  type AdminDispatchQuery,
+} from '../domain/order-dispatch';
 
 /** Advisory lock class for ORD-03 create idempotency (distinct from Inventory). */
 const ORDER_CREATE_IDEMPOTENCY_LOCK_CLASS = 120_400;
@@ -253,6 +260,45 @@ export class OrderRepository {
       }),
     ]);
     return { items: rows.map(mapAdminOrderListRecord), total };
+  }
+
+  /**
+   * Bounded Admin Dispatch read: CONFIRMED/SHIPPED only, deterministic order.
+   * One count + one findMany (with line `_count`); grouping is application-side.
+   */
+  async listDispatch(
+    query: AdminDispatchQuery,
+  ): Promise<{ items: AdminDispatchOrderRecord[]; matchedCount: number }> {
+    const where = buildDispatchWhere(query);
+    const [matchedCount, rows] = await this.prisma.$transaction([
+      this.prisma.order.count({ where }),
+      this.prisma.order.findMany({
+        where,
+        take: ADMIN_DISPATCH_ORDER_LIMIT,
+        orderBy: [
+          { deliveryAt: { sort: 'asc', nulls: 'last' } },
+          { createdAt: 'asc' },
+          { id: 'asc' },
+        ],
+        select: {
+          id: true,
+          status: true,
+          customerPhone: true,
+          regionId: true,
+          regionName: true,
+          total: true,
+          deliveryAt: true,
+          confirmedAt: true,
+          shippedAt: true,
+          createdAt: true,
+          _count: { select: { lines: true } },
+        },
+      }),
+    ]);
+    return {
+      items: rows.map(mapAdminDispatchOrderRecord),
+      matchedCount,
+    };
   }
 
   async findByUserIdAndIdempotencyKey(
@@ -868,6 +914,51 @@ function buildAdminListWhere(
             ...(query.createdTo === undefined ? {} : { lte: query.createdTo }),
           },
         }),
+  };
+}
+
+function buildDispatchWhere(query: AdminDispatchQuery): Prisma.OrderWhereInput {
+  return {
+    status:
+      query.status === undefined
+        ? { in: [...DISPATCH_PIPELINE_STATUSES] }
+        : query.status,
+    ...(query.regionId === undefined
+      ? {}
+      : { regionId: assertOrderUuid(query.regionId, 'regionId') }),
+  };
+}
+
+function mapAdminDispatchOrderRecord(row: {
+  id: string;
+  status: string;
+  customerPhone: string;
+  regionId: string;
+  regionName: string;
+  total: bigint;
+  deliveryAt: Date | null;
+  confirmedAt: Date | null;
+  shippedAt: Date | null;
+  createdAt: Date;
+  _count: { lines: number };
+}): AdminDispatchOrderRecord {
+  if (!isDispatchPipelineStatus(row.status)) {
+    throw new Error(
+      'Dispatch query returned non-pipeline Order status: ' + row.status,
+    );
+  }
+  return {
+    id: row.id,
+    status: row.status,
+    customerPhone: row.customerPhone,
+    regionId: row.regionId,
+    regionName: row.regionName,
+    total: row.total,
+    lineCount: row._count.lines,
+    deliveryAt: row.deliveryAt,
+    confirmedAt: row.confirmedAt,
+    shippedAt: row.shippedAt,
+    createdAt: row.createdAt,
   };
 }
 

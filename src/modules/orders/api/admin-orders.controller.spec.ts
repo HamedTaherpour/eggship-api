@@ -64,7 +64,9 @@ function order(overrides: Partial<OrderRecord> = {}): OrderRecord {
 }
 
 describe('AdminOrdersController', () => {
-  let reads: jest.Mocked<Pick<OrderReadService, 'listAdmin' | 'getAdmin'>>;
+  let reads: jest.Mocked<
+    Pick<OrderReadService, 'listAdmin' | 'getAdmin' | 'getDispatchBoard'>
+  >;
   let transitions: jest.Mocked<
     Pick<
       OrderTransitionService,
@@ -80,7 +82,11 @@ describe('AdminOrdersController', () => {
   let controller: AdminOrdersController;
 
   beforeEach(() => {
-    reads = { listAdmin: jest.fn(), getAdmin: jest.fn() };
+    reads = {
+      listAdmin: jest.fn(),
+      getAdmin: jest.fn(),
+      getDispatchBoard: jest.fn(),
+    };
     transitions = {
       confirmOrder: jest.fn(),
       cancelOrderByAdmin: jest.fn(),
@@ -195,6 +201,64 @@ describe('AdminOrdersController', () => {
       orderId: ORDER_ID,
       cancelReason: ' No stock ',
       actor: { type: OrderActorType.ADMIN, id: ADMIN_ID },
+    });
+  });
+
+  it('requires ORDER_READ for dispatch and maps the grouped board', async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      AdminOrdersController.prototype,
+      'dispatch',
+    );
+    expect(typeof descriptor?.value).toBe('function');
+    const required = Reflect.getMetadata(
+      REQUIRED_PERMISSIONS_METADATA_KEY,
+      descriptor!.value as object,
+    ) as Permission[] | undefined;
+    expect(required).toEqual([Permission.ORDER_READ]);
+
+    reads.getDispatchBoard.mockResolvedValue({
+      summary: {
+        ordersCount: 1,
+        confirmedCount: 1,
+        shippedCount: 0,
+        regionCount: 1,
+        limit: 100,
+        truncated: false,
+        matchedCount: 1,
+      },
+      groups: [
+        {
+          region: { id: REGION_ID, name: 'Tehran' },
+          ordersCount: 1,
+          orders: [
+            {
+              id: ORDER_ID,
+              status: OrderStatus.CONFIRMED,
+              customerPhone: '+989121234567',
+              regionId: REGION_ID,
+              regionName: 'Tehran',
+              total: 1000n,
+              lineCount: 2,
+              deliveryAt: null,
+              confirmedAt: NOW,
+              shippedAt: null,
+              createdAt: NOW,
+            },
+          ],
+        },
+      ],
+    });
+
+    const result = await controller.dispatch({ status: OrderStatus.CONFIRMED });
+    expect(reads.getDispatchBoard).toHaveBeenCalledWith({
+      status: OrderStatus.CONFIRMED,
+    });
+    expect(result.data.summary.ordersCount).toBe(1);
+    expect(result.data.groups[0]!.orders[0]).toMatchObject({
+      id: ORDER_ID,
+      total: 1000,
+      lineCount: 2,
+      confirmedAt: NOW.toISOString(),
     });
   });
 

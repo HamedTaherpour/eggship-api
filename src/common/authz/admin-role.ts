@@ -27,3 +27,13 @@ export function isAdminRole(value: unknown): value is AdminRole {
     (ALL_ADMIN_ROLES as readonly string[]).includes(value)
   );
 }
+
+/** The critical administrator role is policy-owned, not a scattered branch. */
+export function isCriticalAdminRole(value: AdminRole): boolean {
+  return value === AdminRole.SUPER_ADMIN;
+}
+
+/** Returns the role whose active count is protected by account management. */
+export function criticalAdminRole(): AdminRole {
+  return AdminRole.SUPER_ADMIN;
+}

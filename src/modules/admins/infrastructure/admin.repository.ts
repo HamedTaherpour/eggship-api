@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { isAdminRole } from '../../../common/authz/admin-role';
+import {
+  criticalAdminRole,
+  isAdminRole,
+  type AdminRole,
+} from '../../../common/authz/admin-role';
 import { Prisma } from '../../../generated/prisma/client';
+import { AdminRole as PrismaAdminRole } from '../../../generated/prisma/enums';
 import { PrismaService } from '../../../infrastructure/database/prisma/prisma.service';
 import {
   resolvePrismaConnection,
@@ -99,6 +104,95 @@ export class AdminRepository {
   async findById(id: string): Promise<AdminRecord | null> {
     const found = await this.prisma.admin.findUnique({ where: { id } });
     return found === null ? null : mapAdmin(found);
+  }
+
+  async findByIdInTransaction(
+    id: string,
+    tx: TransactionContext,
+  ): Promise<AdminRecord | null> {
+    const found = await resolvePrismaConnection(
+      this.prisma,
+      tx,
+    ).admin.findUnique({
+      where: { id },
+    });
+    return found === null ? null : mapAdmin(found);
+  }
+
+  async list(input: {
+    page: number;
+    pageSize: number;
+    search?: string;
+    role?: string;
+    isActive?: boolean;
+    sortBy: 'email' | 'createdAt' | 'updatedAt';
+    sortOrder: 'asc' | 'desc';
+  }): Promise<{ items: AdminRecord[]; total: number }> {
+    const where: Prisma.AdminWhereInput = {};
+    if (input.search !== undefined) {
+      where.email = { contains: input.search.trim().toLowerCase() };
+    }
+    if (input.role !== undefined) where.role = input.role as PrismaAdminRole;
+    if (input.isActive !== undefined) where.isActive = input.isActive;
+    const skip = (input.page - 1) * input.pageSize;
+    const orderBy = {
+      [input.sortBy]: input.sortOrder,
+    } as Prisma.AdminOrderByWithRelationInput;
+    const db = this.prisma;
+    const [total, rows] = await db.$transaction([
+      db.admin.count({ where }),
+      db.admin.findMany({
+        where,
+        orderBy: [orderBy, { id: input.sortOrder }],
+        skip,
+        take: input.pageSize,
+      }),
+    ]);
+    return { items: rows.map(mapAdmin), total };
+  }
+
+  async lockManagementScope(tx: TransactionContext): Promise<void> {
+    const db = resolvePrismaConnection(this.prisma, tx);
+    await db.$executeRaw(
+      Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended('eggship.admin-management', 0))`,
+    );
+    await db.$queryRaw<{ id: string }[]>(
+      Prisma.sql`SELECT id FROM "Admin" WHERE role = ${criticalAdminRole()} AND "isActive" = true FOR UPDATE`,
+    );
+  }
+
+  async countActiveSuperAdmins(tx: TransactionContext): Promise<number> {
+    const db = resolvePrismaConnection(this.prisma, tx);
+    const rows = await db.$queryRaw<{ count: bigint }[]>(
+      Prisma.sql`SELECT COUNT(*)::bigint AS count FROM "Admin" WHERE role = ${criticalAdminRole()} AND "isActive" = true`,
+    );
+    return Number(rows[0]?.count ?? 0n);
+  }
+
+  async updateRole(
+    id: string,
+    role: AdminRole,
+    tx: TransactionContext,
+  ): Promise<AdminRecord> {
+    return mapAdmin(
+      await resolvePrismaConnection(this.prisma, tx).admin.update({
+        where: { id },
+        data: { role },
+      }),
+    );
+  }
+
+  async updateActive(
+    id: string,
+    isActive: boolean,
+    tx: TransactionContext,
+  ): Promise<AdminRecord> {
+    return mapAdmin(
+      await resolvePrismaConnection(this.prisma, tx).admin.update({
+        where: { id },
+        data: { isActive },
+      }),
+    );
   }
 
   /**

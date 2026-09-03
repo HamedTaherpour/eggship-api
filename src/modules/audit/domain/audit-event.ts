@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Prisma } from '../../../generated/prisma/client';
+import { isAdminRole, type AdminRole } from '../../../common/authz/admin-role';
 
 export const AuditActorType = {
   ADMIN: 'ADMIN',
@@ -34,6 +35,7 @@ export const AuditAction = {
   ADMIN_ROLE_CHANGED: 'admin.role.changed',
   ADMIN_PERMISSION_CHANGED: 'admin.permission.changed',
   ADMIN_DISABLED: 'admin.disabled',
+  ADMIN_ENABLED: 'admin.enabled',
   ADMIN_PASSWORD_CHANGED: 'admin.password.changed',
   ADMIN_PASSWORD_RESET: 'admin.password.reset',
   ADMIN_LOGIN_SUCCEEDED: 'admin.auth.login.succeeded',
@@ -81,6 +83,11 @@ export type AdminLoginFailureReason =
   (typeof ADMIN_LOGIN_FAILURE_REASONS)[number];
 
 type ChangedMetadata = { changedFields: readonly string[] };
+type AdminRoleChangedMetadata = {
+  changedFields: readonly ['role'];
+  oldRole: AdminRole;
+  newRole: AdminRole;
+};
 type ReasonMetadata = { reason: AdminLoginFailureReason };
 type SessionMetadata = { sessionId: string };
 type MetadataActions =
@@ -104,7 +111,7 @@ type AuditMetadataForAction = {
   [AuditAction.ADMIN_LOGIN_SUCCEEDED]: SessionMetadata;
   [AuditAction.ADMIN_REFRESH_REUSE_DETECTED]: SessionMetadata;
   [AuditAction.PRICE_CHANGED]: { previousPrice: number; newPrice: number };
-  [AuditAction.ADMIN_ROLE_CHANGED]: ChangedMetadata;
+  [AuditAction.ADMIN_ROLE_CHANGED]: AdminRoleChangedMetadata;
   [AuditAction.ADMIN_PERMISSION_CHANGED]: ChangedMetadata;
   [AuditAction.PRODUCT_UPDATED]: ChangedMetadata;
   [AuditAction.CATEGORY_UPDATED]: ChangedMetadata;
@@ -139,6 +146,7 @@ export const AUDIT_ACTION_SPECS: Record<AuditAction, ActionSpec> = {
   [AuditAction.ADMIN_ROLE_CHANGED]: changed(AuditEntityType.ADMIN),
   [AuditAction.ADMIN_PERMISSION_CHANGED]: changed(AuditEntityType.ADMIN),
   [AuditAction.ADMIN_DISABLED]: identified(AuditEntityType.ADMIN),
+  [AuditAction.ADMIN_ENABLED]: identified(AuditEntityType.ADMIN),
   [AuditAction.ADMIN_PASSWORD_CHANGED]: identified(AuditEntityType.ADMIN),
   [AuditAction.ADMIN_PASSWORD_RESET]: identified(AuditEntityType.ADMIN),
   [AuditAction.ADMIN_LOGIN_SUCCEEDED]: {
@@ -299,10 +307,21 @@ function validateMetadata(
         ? ['sessionId']
         : action === AuditAction.PRICE_CHANGED
           ? ['previousPrice', 'newPrice']
-          : ['changedFields'];
+          : action === AuditAction.ADMIN_ROLE_CHANGED
+            ? ['changedFields', 'oldRole', 'newRole']
+            : ['changedFields'];
   if (
     keys.some((key) => !allowed.includes(key)) ||
     keys.length !== allowed.length
+  )
+    throw new AuditEventValidationError();
+  if (
+    action === AuditAction.ADMIN_ROLE_CHANGED &&
+    (!Array.isArray(value['changedFields']) ||
+      value['changedFields'].length !== 1 ||
+      value['changedFields'][0] !== 'role' ||
+      !isAdminRole(value['oldRole']) ||
+      !isAdminRole(value['newRole']))
   )
     throw new AuditEventValidationError();
   if (
@@ -329,7 +348,8 @@ function validateMetadata(
     action !== AuditAction.ADMIN_LOGIN_FAILED &&
     action !== AuditAction.ADMIN_LOGIN_SUCCEEDED &&
     action !== AuditAction.ADMIN_REFRESH_REUSE_DETECTED &&
-    action !== AuditAction.PRICE_CHANGED
+    action !== AuditAction.PRICE_CHANGED &&
+    action !== AuditAction.ADMIN_ROLE_CHANGED
   ) {
     const fields = value['changedFields'];
     if (

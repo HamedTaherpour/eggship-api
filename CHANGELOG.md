@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- ADM-01 implementation: permissioned Admin list/detail/create/role-change/disable/enable endpoints with minimized responses, no-store caching, canonical role validation, actor-attributed audit events, atomic role/activation mutation, Admin refresh-session revocation, and a concurrency-safe last-active-SUPER_ADMIN invariant. No schema migration; password changes, deletion, bootstrap, and role expansion remain out of scope.
+
 - REF-04: read-only Admin visitor administration with `GET /api/v1/admin/visitors`, visitor detail, and bounded immutable referral-evidence views over existing `Visitor`, `ReferralAttribution`, and `User` records. Uses dedicated `VISITOR_READ` authorization, minimized DTOs, stable pagination/search/filter/sort semantics, `Cache-Control: no-store`, OpenAPI, unit/E2E/PostgreSQL coverage, and no schema change. Rewards, attribution mutation, deletion, export, tracking, and a Store entity remain out of scope.
 
 - ADM-02: Admin `GET /api/v1/admin/customers` and `GET /api/v1/admin/customers/:id` read-only store/customer views over the existing User identity (no separate Store entity, no schema migration). Paginated list with phone-substring search, `createdAt`/`updatedAt` sort allowlist with stable `id` tie-break, explicit `isActive`/`hasReferral` filters, and single-query immutable REF-02 referral evidence; minimized detail with `CUSTOMER_NOT_FOUND`. `CUSTOMER_READ`-only (SUPER_ADMIN + ORDER_OPS), `Cache-Control: no-store`, OpenAPI `AdminCustomers_*`, and unit/e2e/PostgreSQL coverage. No credential editing or new business-profile semantics (MIG-01 pending).

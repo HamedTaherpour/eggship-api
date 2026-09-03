@@ -7,7 +7,10 @@ Owns back-office operator identity: the canonical email, the password credential
 | `domain/admin.ts`                              | `AdminRecord` (no `passwordHash`), authorization state, login credential type |
 | `domain/admin-email.ts`                        | Canonical email policy (`normalizeAdminEmail`)                                |
 | `domain/admin-password-policy.ts`              | Length-oriented password policy (min 12 / max 128)                            |
-| `domain/admin-errors.ts`                       | `AdminEmailAlreadyExistsError`, `UnknownAdminRoleError`                       |
+| `domain/admin-errors.ts`                       | Identity and management errors with stable application codes                  |
+| `api/admin-management.controller.ts`           | Permissioned Admin list/detail/create/role/disable/enable HTTP surface        |
+| `api/dto/`                                     | Minimized Admin management request/response DTOs                              |
+| `application/admin-management.service.ts`      | Atomic role/active-state mutations, session revocation, and audit             |
 | `application/admin-identity.service.ts`        | `createAdmin`, `findById`, `findLoginCredential`                              |
 | `infrastructure/admin.repository.ts`           | Persistence boundary                                                          |
 | `infrastructure/prisma-admin-role.resolver.ts` | `ADMIN_ROLE_RESOLVER` implementation                                          |
@@ -15,7 +18,7 @@ Owns back-office operator identity: the canonical email, the password credential
 
 Admin **login HTTP and sessions** live in Auth (`AdminLoginService`, `AdminAuthSession`). This module does not own cookies or tokens.
 
-Operator bootstrap is `pnpm admin:create` (never automatic, never a default credential). General Admin CRUD HTTP remains `ADM-01`.
+Operator bootstrap is `pnpm admin:create` (never automatic, never a default credential). General Admin management HTTP is the bounded `ADM-01` surface: list/detail, create, role change, disable, and re-enable. It does not include delete, password changes, bootstrap, or customer authentication.
 
 ## Boundaries worth preserving
 

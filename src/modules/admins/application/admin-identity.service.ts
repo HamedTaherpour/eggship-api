@@ -54,6 +54,7 @@ export class AdminIdentityService {
   async createAdmin(
     input: CreateAdminIdentityInput,
     existingTx?: TransactionContext,
+    actorId?: string,
   ): Promise<AdminRecord> {
     const email = normalizeAdminEmail(input.email);
     // Validate before hashing: rejecting a weak password should not pay for an
@@ -69,8 +70,11 @@ export class AdminIdentityService {
       await this.audit.append(
         {
           action: AuditAction.ADMIN_IDENTITY_CREATED,
-          actorType: AuditActorType.SYSTEM,
-          actorId: null,
+          actorType:
+            actorId === undefined
+              ? AuditActorType.SYSTEM
+              : AuditActorType.ADMIN,
+          actorId: actorId ?? null,
           entityType: AuditEntityType.ADMIN,
           entityId: created.id,
           metadata: undefined,

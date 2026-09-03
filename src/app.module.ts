@@ -9,6 +9,7 @@ import { PrismaModule } from './infrastructure/database/prisma/prisma.module';
 import { QueueInfrastructureModule } from './infrastructure/queue/queue-infrastructure.module';
 import { RedisModule } from './infrastructure/redis/redis.module';
 import { AdminsModule } from './modules/admins/admins.module';
+import { AdminManagementModule } from './modules/admins/admin-management.module';
 import { PrismaAdminRoleResolver } from './modules/admins/infrastructure/prisma-admin-role.resolver';
 import { AuthModule } from './modules/auth/auth.module';
 import { CategoriesModule } from './modules/categories/categories.module';
@@ -48,6 +49,7 @@ import { AdminAuditModule } from './modules/audit/admin-audit.module';
     QueueInfrastructureModule,
     UsersModule,
     AdminCustomersModule,
+    AdminManagementModule,
     AuthModule,
     CategoriesModule,
     ProductsModule,

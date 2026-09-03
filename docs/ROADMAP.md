@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   109 |
-| DONE        |    81 |
+| DONE        |    82 |
 | IN_PROGRESS |     0 |
 | READY       |     0 |
 | BLOCKED     |     0 |
-| PLANNED     |    28 |
+| PLANNED     |    27 |
 
-- Current task: `REF-04` (Visitor administration and referred-store views) is **DONE**. Read-only Admin visitor and referral-evidence views over existing Visitor, immutable ReferralAttribution, and User records are delivered with dedicated VISITOR_READ authorization, bounded deterministic query semantics, minimized responses, no-store caching, OpenAPI, unit, E2E, and real-PostgreSQL coverage. No rewards, attribution mutation, deletion, export, tracking, fingerprinting, or new Store entity were added. No task remains BLOCKED.
+- Current task: `ADM-01` (Admin account management) is **DONE**. Permissioned Admin list/detail/create/role-change/disable/enable endpoints use minimized responses, SUPER_ADMIN-only account permissions, actor-attributed audit events, atomic Admin mutation/session-revocation/audit transactions, and a concurrency-safe last-active-SUPER_ADMIN invariant. No credential/session secret leakage, deletion, password reset/change, custom-role, bootstrap, or CSRF architecture scope was added.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate. `M4 — Ordering complete` requirements are now all DONE (PRC-01 through PRC-05, ORD-01 through ORD-08 including ORD-03A, COM-01 through COM-03, DLU-01/DLU-02, SET-01/SET-02); milestone closure remains subject to the normal review/approval gates.
 
 ## Status model
@@ -931,11 +931,13 @@ Explicitly out of scope: Admin list/create/update/disable/reset-password HTTP, i
 
 ### ADM-01 — Admin account management
 
-Status: PLANNED | Depends on: ADM-AUTH-01, AUTH-08 | Primary: Codex after Human security approval | Review: Claude/Cursor security review
+Status: DONE | Depends on: ADM-AUTH-01, AUTH-08 | Primary: Codex after Human security approval | Review: Claude/Cursor security review
 
 Scope: Implement permissioned admin list/detail/create/update/disable flows on top of the ADM-00 identity model and ADM-AUTH-01 sessions. Owes refresh-session revocation on disablement and security-sensitive role changes. Also owes the admin-route guard-attachment architecture test for permissioned admin APIs (auth-lifecycle `/admin/auth/*` allowlist is defined by ADM-AUTH-01).
 
 Acceptance criteria: Privilege escalation and last-critical-admin risks are addressed; credentials are never returned; role changes and disablement revoke Admin refresh sessions as approved and are audited; every registered permissioned admin route carries `AccessTokenGuard`, `PermissionGuard`, and permission metadata.
+
+Delivered: Permissioned Admin list/detail/create/role-change/disable/enable HTTP APIs with `ADMIN_READ` / `ADMIN_MANAGE` restricted to `SUPER_ADMIN`, minimized no-store DTOs, canonical role validation, self-mutation rejection, last-active-`SUPER_ADMIN` protection serialized by a PostgreSQL advisory transaction lock plus row locks, actor-attributed audit events, atomic role/activation mutation with required audit and Admin refresh-session revocation, and guard-attachment architecture coverage. No schema migration, password change/reset, deletion, custom-role, bootstrap, impersonation, or CSRF architecture change.
 
 Explicitly out of scope: Impersonation and autonomous superuser creation. Admin login/session HTTP belongs to ADM-AUTH-01.
 

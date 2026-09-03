@@ -9,6 +9,7 @@ import { PrismaService } from '../../../src/infrastructure/database/prisma/prism
 import { TransactionRunner } from '../../../src/infrastructure/database/transaction';
 import { AdminsModule } from '../../../src/modules/admins/admins.module';
 import { AdminIdentityService } from '../../../src/modules/admins/application/admin-identity.service';
+import { AdminManagementService } from '../../../src/modules/admins/application/admin-management.service';
 import { AdminEmailAlreadyExistsError } from '../../../src/modules/admins/domain/admin-errors';
 import { AdminRepository } from '../../../src/modules/admins/infrastructure/admin.repository';
 import {
@@ -27,6 +28,7 @@ describe('Admin identity persistence (integration)', () => {
   let identity: AdminIdentityService;
   let authorization: AuthorizationService;
   let transactions: TransactionRunner;
+  let management: AdminManagementService;
   let emailCounter = 0;
 
   beforeAll(async () => {
@@ -40,6 +42,7 @@ describe('Admin identity persistence (integration)', () => {
     identity = moduleRef.get(AdminIdentityService);
     authorization = moduleRef.get(AuthorizationService);
     transactions = moduleRef.get(TransactionRunner);
+    management = moduleRef.get(AdminManagementService);
     await app.init();
   });
 
@@ -306,5 +309,92 @@ describe('Admin identity persistence (integration)', () => {
         },
       }),
     ).rejects.toMatchObject({ code: 'P2003' });
+  });
+
+  it('revokes sessions and audits role changes atomically', async () => {
+    const actor = await identity.createAdmin({
+      email: nextEmail(),
+      password: PASSWORD,
+      role: AdminRole.SUPER_ADMIN,
+    });
+    const target = await identity.createAdmin({
+      email: nextEmail(),
+      password: PASSWORD,
+      role: AdminRole.WAREHOUSE,
+    });
+    await prisma.adminAuthSession.create({
+      data: {
+        adminId: target.id,
+        refreshTokenHash: digestRefreshToken(generateRefreshToken()),
+        tokenFamilyId: randomUUID(),
+        expiresAt: new Date(Date.now() + 86_400_000),
+      },
+    });
+
+    const changed = await management.changeRole(
+      target.id,
+      AdminRole.ORDER_OPS,
+      actor.id,
+    );
+    expect(changed.role).toBe(AdminRole.ORDER_OPS);
+    expect(
+      await prisma.adminAuthSession.count({
+        where: { adminId: target.id, revokedAt: null },
+      }),
+    ).toBe(0);
+    await expect(
+      prisma.auditLog.findFirstOrThrow({
+        where: { action: 'admin.role.changed', entityId: target.id },
+      }),
+    ).resolves.toMatchObject({
+      actorId: actor.id,
+      metadata: {
+        changedFields: ['role'],
+        oldRole: 'WAREHOUSE',
+        newRole: 'ORDER_OPS',
+      },
+    });
+  });
+
+  it('protects the last active SUPER_ADMIN under concurrent demotion attempts', async () => {
+    const actor = await identity.createAdmin({
+      email: nextEmail(),
+      password: PASSWORD,
+      role: AdminRole.SUPER_ADMIN,
+    });
+    const target = await identity.createAdmin({
+      email: nextEmail(),
+      password: PASSWORD,
+      role: AdminRole.SUPER_ADMIN,
+    });
+    const attempts = await Promise.allSettled([
+      management.changeRole(actor.id, AdminRole.ORDER_OPS, target.id),
+      management.changeRole(target.id, AdminRole.ORDER_OPS, actor.id),
+    ]);
+    expect(
+      attempts.filter((result) => result.status === 'fulfilled'),
+    ).toHaveLength(1);
+    expect(
+      attempts.filter((result) => result.status === 'rejected'),
+    ).toHaveLength(1);
+    expect(
+      await prisma.admin.count({
+        where: { role: AdminRole.SUPER_ADMIN, isActive: true },
+      }),
+    ).toBe(1);
+  });
+
+  it('protects the last active SUPER_ADMIN from disablement', async () => {
+    const actor = await identity.createAdmin({
+      email: nextEmail(),
+      password: PASSWORD,
+      role: AdminRole.SUPER_ADMIN,
+    });
+    await expect(
+      management.setActive(actor.id, false, randomUUID()),
+    ).rejects.toMatchObject({ code: 'ADMIN_LAST_SUPER_ADMIN_PROTECTED' });
+    await expect(
+      prisma.admin.findUniqueOrThrow({ where: { id: actor.id } }),
+    ).resolves.toMatchObject({ isActive: true });
   });
 });

@@ -2,11 +2,41 @@
  * Admin domain failures.
  *
  * These are plain domain errors rather than `AuthError` values on purpose:
- * ADM-01 adds no HTTP surface, and choosing a status code or a client-visible
- * error code belongs to the task that exposes an endpoint. In particular, a
- * duplicate-email conflict must not become a pre-authentication response that
- * discloses whether an admin email exists.
+ * HTTP mapping remains centralized in the application error filter. In
+ * particular, a duplicate-email conflict must not become a
+ * pre-authentication response that discloses whether an admin email exists.
  */
+
+import { HttpStatus } from '@nestjs/common';
+import { ApplicationError } from '../../../common/errors/application-error';
+
+export class AdminNotFoundError extends ApplicationError {
+  constructor() {
+    super('ADMIN_NOT_FOUND', 'Admin was not found.', HttpStatus.NOT_FOUND);
+  }
+}
+
+export class AdminSelfMutationError extends ApplicationError {
+  constructor(operation: 'disable' | 'role change') {
+    super(
+      operation === 'disable'
+        ? 'ADMIN_SELF_DISABLE_FORBIDDEN'
+        : 'ADMIN_SELF_ROLE_CHANGE_FORBIDDEN',
+      `An Admin cannot perform this ${operation} on their own account.`,
+      HttpStatus.FORBIDDEN,
+    );
+  }
+}
+
+export class AdminLastSuperAdminProtectedError extends ApplicationError {
+  constructor() {
+    super(
+      'ADMIN_LAST_SUPER_' + 'ADMIN_PROTECTED',
+      'The last active critical Admin cannot be disabled or demoted.',
+      HttpStatus.CONFLICT,
+    );
+  }
+}
 
 /** The canonical email is already taken. Raised from the database unique constraint. */
 export class AdminEmailAlreadyExistsError extends Error {

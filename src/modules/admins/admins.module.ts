@@ -3,6 +3,7 @@ import { PrismaModule } from '../../infrastructure/database/prisma/prisma.module
 import { AuthModule } from '../auth/auth.module';
 import { AuditModule } from '../audit/audit.module';
 import { AdminIdentityService } from './application/admin-identity.service';
+import { AdminManagementService } from './application/admin-management.service';
 import { AdminRepository } from './infrastructure/admin.repository';
 import { PrismaAdminRoleResolver } from './infrastructure/prisma-admin-role.resolver';
 
@@ -18,7 +19,16 @@ import { PrismaAdminRoleResolver } from './infrastructure/prisma-admin-role.reso
  */
 @Module({
   imports: [PrismaModule, AuditModule, forwardRef(() => AuthModule)],
-  providers: [AdminRepository, PrismaAdminRoleResolver, AdminIdentityService],
-  exports: [PrismaAdminRoleResolver, AdminIdentityService],
+  providers: [
+    AdminRepository,
+    PrismaAdminRoleResolver,
+    AdminIdentityService,
+    AdminManagementService,
+  ],
+  exports: [
+    PrismaAdminRoleResolver,
+    AdminIdentityService,
+    AdminManagementService,
+  ],
 })
 export class AdminsModule {}

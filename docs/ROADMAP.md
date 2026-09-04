@@ -7,11 +7,11 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   110 |
-| DONE        |    87 |
-| IN_PROGRESS |     2 |
-| READY       |     2 |
+| DONE        |    89 |
+| IN_PROGRESS |     0 |
+| READY       |     4 |
 | BLOCKED     |     0 |
-| PLANNED     |    19 |
+| PLANNED     |    17 |
 
 - Current task: `DEP-03` (Deployment migrations and process health) is **DONE**. Explicit migration ownership, dependency-aware API health, Redis degradation, and bounded API/Worker shutdown are implemented and verified. No Liara resources were provisioned.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate. `M4 — Ordering complete` requirements are now all DONE (PRC-01 through PRC-05, ORD-01 through ORD-08 including ORD-03A, COM-01 through COM-03, DLU-01/DLU-02, SET-01/SET-02); milestone closure remains subject to the normal review/approval gates.
@@ -1334,6 +1334,8 @@ Status: READY | Depends on: DEP-02 | Primary: Human infrastructure process, then
 Scope: Define PostgreSQL/object-storage backup ownership, encryption, access, recovery objectives, and a repeatable isolated restore test.
 
 Acceptance criteria: A restore is demonstrated and reconciled, not merely configured; credentials and restored PII are protected; evidence and failure handling are documented.
+
+Delivered so far: [DEP-05 backup and restore architecture](dep-05-backup-and-restore.md), migration recovery gate, isolated restore-drill runbook, safe evidence format, and read-only recovery-manifest reconciliation command. Provider-backed restore evidence remains outstanding; no production resource, backup, or cleanup was performed.
 
 Explicitly out of scope: Inventing retention periods before DATA-01/DATA-03 approval.
 

@@ -175,11 +175,25 @@ Query-plan and index optimization remain ANL-04 responsibility.
 
 ## Today pulse, freshness, and scale
 
-Future ANL-03 today event metrics may include lifecycle counts,
-`createdOrderValue`, delivered sales fields, and inventory movement fields,
-using the same Tehran-day and source-fact rules above. `awaitingReviewCurrent`
-and other current-state values are request-time snapshots, not historical daily
-event counts.
+ANL-03 exposes sales overview, top products, and today pulse. Sales overview
+uses independent lifecycle timestamps and deliveredAt for all sales fields;
+`createdOrderValue` and `cancelledOrderValue` are separate immutable order
+values. `cancelledOrderValue` is not lost revenue, a refund, or accounting
+loss. `DELIVERED_VALUE` is `SUM(OrderLine.finalLineTotal)` before any invented
+allocation of order-level discounts; it is not net sales.
+
+Top products group by `productId`, rank by metric descending then productId
+ascending, and select the latest qualifying historical `OrderLine.productName`
+snapshot from the same event population. The name may therefore differ from
+the current Product name. Today pulse uses the current Tehran day for event
+metrics and also reports `awaitingReviewCurrent` as the request-time count of
+all PENDING_REVIEW orders, regardless of creation date. Its return metric is
+only `stockReturnedToStock`; no return or refund financial inference is made.
+
+ANL-03 query counts are one Order aggregate plus one InventoryLedger aggregate
+for today pulse, one aggregate for sales overview, and one aggregate for top
+products. EXPLAIN and scale/index findings are intentionally deferred to
+ANL-04.
 
 Operational/current metrics (`awaitingReviewCurrent`, current stock,
 reserved, available, and today pulse) are freshness-sensitive. Closed-period

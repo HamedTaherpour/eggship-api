@@ -121,4 +121,73 @@ describe('AnalyticsService', () => {
     expect(result.changes).toHaveLength(2);
     expect(result.changes.map((change) => change.id)).toEqual(['a', 'b']);
   });
+
+  it('maps sales aggregates without allowing lifecycle timestamps to affect sales', async () => {
+    const repository = {
+      salesOverview: jest.fn().mockResolvedValue({
+        ordersCreated: 2n,
+        createdOrderValue: 900n,
+        ordersConfirmed: 1n,
+        ordersShipped: 1n,
+        ordersDelivered: 1n,
+        ordersCancelled: 1n,
+        cancelledOrderValue: 300n,
+        grossSales: 500n,
+        lineDiscounts: 40n,
+        orderDiscounts: 60n,
+        netSales: 400n,
+        awaitingReviewCurrent: 3n,
+      }),
+    };
+    const result = await new AnalyticsService(
+      repository as never,
+    ).salesOverview('2026-01-01', '2026-01-01');
+    expect(result).toEqual(
+      expect.objectContaining({
+        ordersCreated: 2,
+        createdOrderValue: 900,
+        ordersCancelled: 1,
+        cancelledOrderValue: 300,
+        grossSales: 500,
+        totalDiscounts: 100,
+        netSales: 400,
+      }),
+    );
+  });
+
+  it('keeps today pulse current-state queue counts independent from today events', async () => {
+    const repository = {
+      salesOverview: jest.fn().mockResolvedValue({
+        ordersCreated: 1n,
+        createdOrderValue: 100n,
+        ordersConfirmed: 0n,
+        ordersShipped: 0n,
+        ordersDelivered: 0n,
+        ordersCancelled: 0n,
+        cancelledOrderValue: 0n,
+        grossSales: 0n,
+        lineDiscounts: 0n,
+        orderDiscounts: 0n,
+        netSales: 0n,
+        awaitingReviewCurrent: 7n,
+      }),
+      inventoryPulse: jest.fn().mockResolvedValue({
+        stockReceived: 4n,
+        stockShipped: 2n,
+        stockReturnedToStock: 1n,
+      }),
+    };
+    const result = await new AnalyticsService(repository as never).todayPulse(
+      new Date('2026-01-01T20:30:00.000Z'),
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        ordersCreated: 1,
+        awaitingReviewCurrent: 7,
+        stockReceived: 4,
+        stockShipped: 2,
+        stockReturnedToStock: 1,
+      }),
+    );
+  });
 });

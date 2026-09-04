@@ -7,11 +7,11 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   110 |
-| DONE        |    90 |
+| DONE        |    91 |
 | IN_PROGRESS |     0 |
 | READY       |     3 |
 | BLOCKED     |     0 |
-| PLANNED     |    17 |
+| PLANNED     |    16 |
 
 - Current task: `DEP-03` (Deployment migrations and process health) is **DONE**. Explicit migration ownership, dependency-aware API health, Redis degradation, and bounded API/Worker shutdown are implemented and verified. No Liara resources were provisioned.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate. `M4 — Ordering complete` requirements are now all DONE (PRC-01 through PRC-05, ORD-01 through ORD-08 including ORD-03A, COM-01 through COM-03, DLU-01/DLU-02, SET-01/SET-02); milestone closure remains subject to the normal review/approval gates.
@@ -1096,17 +1096,19 @@ speculative index changes. ANL-04 retains query-plan and scale optimization.
 
 ### ANL-03 — Sales overview, top products, and today pulse
 
-Status: READY | Depends on: ANL-01, ORD-03 | Primary: Codex | Review: Claude/Cursor query/performance review
+Status: DONE | Depends on: ANL-01, ORD-03 | Primary: Codex | Review: Claude/Cursor query/performance review
 
 Scope: Implement the remaining legacy analytics with PostgreSQL aggregation and documented state/time semantics.
 
 Acceptance criteria: Results reconcile to order facts; ties, empty periods, cancellations/returns, pagination/limits, permissions, and time boundaries are tested.
 
+Delivered: Sales overview, lifecycle and cancellation metrics, delivered/shipped/value top-product bases, historical OrderLine product-name resolution, Tehran today pulse, BigInt-safe money normalization, `ANALYTICS_READ` authorization, no-store responses, OpenAPI, and analytics documentation. Focused real-PostgreSQL proof covers lifecycle timestamp separation, discount arithmetic, returned orders, cancellation totals, deterministic rankings and historical renames, stock movement pulse, current review state, empty ranges, and isolation. Focused real-PostgreSQL E2E proof covers authorization, DTO validation, response/privacy contracts, today pulse, and OpenAPI operation IDs. No schema, migration, index, snapshot, or materialized-view change.
+
 Explicitly out of scope: Elasticsearch, a data warehouse, and predictive analytics.
 
 ### ANL-04 — Analytics index and performance verification
 
-Status: PLANNED | Depends on: ANL-02, ANL-03 | Primary: Codex | Review: Claude/Cursor performance review, Human capacity review
+Status: READY | Depends on: ANL-02, ANL-03 | Primary: Codex | Review: Claude/Cursor performance review, Human capacity review
 
 Scope: Analyze query plans, add justified indexes or approved aggregation only where measurements demand it, and establish analytics load baselines.
 

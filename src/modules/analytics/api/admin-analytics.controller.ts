@@ -26,19 +26,28 @@ import { ApiErrorResponseDto } from '../../../common/openapi/dto/common-response
 import { AccessTokenGuard } from '../../auth/api/access-token.guard';
 import {
   AnalyticsService,
+  type AnalyticsSalesOverviewResult,
+  type AnalyticsTodayPulseResult,
+  type AnalyticsTopProductsResult,
   type AnalyticsCurrentStockResult,
   type AnalyticsDailyStockResult,
   type AnalyticsPriceHistoryResult,
 } from '../application/analytics.service';
-import { AnalyticsDateRangeQueryDto } from './dto/analytics-query.dto';
+import {
+  AnalyticsDateRangeQueryDto,
+  AnalyticsTopProductsQueryDto,
+} from './dto/analytics-query.dto';
 import {
   CurrentStockDto,
   DailyStockResponseDto,
   PriceHistoryResponseDto,
+  AnalyticsSalesOverviewDto,
+  AnalyticsTopProductsResponseDto,
+  AnalyticsTodayPulseDto,
 } from './dto/analytics-response.dto';
 
 @ApiTags('AdminAnalytics')
-@Controller('admin/analytics/products/:productId')
+@Controller('admin/analytics')
 @UseGuards(AccessTokenGuard, PermissionGuard)
 @RequirePermissions(Permission.ANALYTICS_READ)
 @ApiCookieAuth('adminAccessCookie')
@@ -46,7 +55,7 @@ import {
 export class AdminAnalyticsController {
   constructor(private readonly analytics: AnalyticsService) {}
 
-  @Get('stock')
+  @Get('products/:productId/stock')
   @Header('Cache-Control', 'no-store')
   @ApiOperation({
     operationId: 'AdminAnalytics_getCurrentStock',
@@ -66,7 +75,7 @@ export class AdminAnalyticsController {
     return { data: { ...result, updatedAt: result.updatedAt.toISOString() } };
   }
 
-  @Get('stock/daily')
+  @Get('products/:productId/stock/daily')
   @Header('Cache-Control', 'no-store')
   @ApiOperation({
     operationId: 'AdminAnalytics_getDailyStock',
@@ -85,7 +94,7 @@ export class AdminAnalyticsController {
     return { data: await this.analytics.dailyStock(id, query.from, query.to) };
   }
 
-  @Get('price-history')
+  @Get('products/:productId/price-history')
   @Header('Cache-Control', 'no-store')
   @ApiOperation({
     operationId: 'AdminAnalytics_getPriceHistory',
@@ -129,6 +138,52 @@ export class AdminAnalyticsController {
         })),
       },
     };
+  }
+
+  @Get('sales-overview')
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({
+    operationId: 'AdminAnalytics_getSalesOverview',
+    summary: 'Get sales overview analytics',
+  })
+  @ApiOkResponse({ type: AnalyticsSalesOverviewDto })
+  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
+  async salesOverview(
+    @Query() query: AnalyticsDateRangeQueryDto,
+  ): Promise<{ data: AnalyticsSalesOverviewResult }> {
+    return { data: await this.analytics.salesOverview(query.from, query.to) };
+  }
+
+  @Get('top-products')
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({
+    operationId: 'AdminAnalytics_getTopProducts',
+    summary: 'Get top products analytics',
+  })
+  @ApiOkResponse({ type: AnalyticsTopProductsResponseDto })
+  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
+  async topProducts(
+    @Query() query: AnalyticsTopProductsQueryDto,
+  ): Promise<{ data: AnalyticsTopProductsResult }> {
+    return {
+      data: await this.analytics.topProducts(
+        query.from,
+        query.to,
+        query.basis,
+        query.limit,
+      ),
+    };
+  }
+
+  @Get('today-pulse')
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({
+    operationId: 'AdminAnalytics_getTodayPulse',
+    summary: 'Get today analytics pulse in Tehran time',
+  })
+  @ApiOkResponse({ type: AnalyticsTodayPulseDto })
+  async todayPulse(): Promise<{ data: AnalyticsTodayPulseResult }> {
+    return { data: await this.analytics.todayPulse() };
   }
 }
 function serializeAnchor(anchor: {

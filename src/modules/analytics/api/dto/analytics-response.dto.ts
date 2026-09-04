@@ -49,3 +49,40 @@ export class PriceHistoryResponseDto {
   priceAtRangeStart!: InitialPriceAnchorDto | null;
   @ApiProperty({ type: [PriceChangeDto] }) changes!: PriceChangeDto[];
 }
+
+export class AnalyticsSalesOverviewDto {
+  @ApiProperty() ordersCreated!: number;
+  @ApiProperty() createdOrderValue!: number | string;
+  @ApiProperty() ordersConfirmed!: number;
+  @ApiProperty() ordersShipped!: number;
+  @ApiProperty() ordersDelivered!: number;
+  @ApiProperty() ordersCancelled!: number;
+  @ApiProperty() cancelledOrderValue!: number | string;
+  @ApiProperty() grossSales!: number | string;
+  @ApiProperty() lineDiscounts!: number | string;
+  @ApiProperty() orderDiscounts!: number | string;
+  @ApiProperty() totalDiscounts!: number | string;
+  @ApiProperty() netSales!: number | string;
+}
+
+export class AnalyticsTopProductDto {
+  @ApiProperty({ format: 'uuid' }) productId!: string;
+  @ApiProperty() productName!: string;
+  @ApiProperty() value!: number | string;
+}
+
+export class AnalyticsTopProductsResponseDto {
+  @ApiProperty({
+    enum: ['DELIVERED_QUANTITY', 'DELIVERED_VALUE', 'SHIPPED_QUANTITY'],
+  })
+  basis!: string;
+  @ApiProperty({ type: [AnalyticsTopProductDto] })
+  items!: AnalyticsTopProductDto[];
+}
+
+export class AnalyticsTodayPulseDto extends AnalyticsSalesOverviewDto {
+  @ApiProperty() stockReceived!: number;
+  @ApiProperty() stockShipped!: number;
+  @ApiProperty() stockReturnedToStock!: number;
+  @ApiProperty() awaitingReviewCurrent!: number;
+}

@@ -208,6 +208,9 @@ export function applyIntegrationEnvironment(
     // testing module never constructs Prisma. Keep runtime DB credentials out
     // of that suite with the established non-routable unit/e2e placeholder.
     env['DATABASE_URL'] = SYNTHETIC_UNIT_DATABASE_URL;
+    env['DATABASE_POOL_MAX'] = '5';
+    env['DATABASE_CONNECTION_TIMEOUT_MS'] = '5000';
+    env['DATABASE_IDLE_TIMEOUT_MS'] = '10000';
   }
   if (resolved.redisUrl !== undefined) {
     env['TEST_REDIS_URL'] = resolved.redisUrl;

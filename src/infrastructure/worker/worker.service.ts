@@ -75,6 +75,17 @@ export class WorkerService {
                   jobId: job.id,
                   jobName: job.name,
                   correlationId,
+                  outboxEventId: (
+                    job.data as { data?: { outboxEventId?: string } }
+                  )?.data?.outboxEventId,
+                  eventType: (job.data as { data?: { eventType?: string } })
+                    ?.data?.eventType,
+                  eventVersion: (
+                    job.data as { data?: { eventVersion?: number } }
+                  )?.data?.eventVersion,
+                  processorIdentity:
+                    processor.identity ??
+                    `${processor.queueName}:${processor.jobName ?? job.name}`,
                   durationMs: Date.now() - started,
                 },
                 'Worker job completed',

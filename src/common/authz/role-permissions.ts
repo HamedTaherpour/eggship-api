@@ -37,6 +37,9 @@ export const ROLE_PERMISSIONS: Readonly<
     Permission.AUDIT_READ,
     Permission.ADMIN_READ,
     Permission.ADMIN_MANAGE,
+    Permission.ASYNC_FAILURE_READ,
+    Permission.ASYNC_FAILURE_REPLAY,
+    Permission.ASYNC_FAILURE_MANAGE,
   ]),
   [AdminRole.WAREHOUSE]: Object.freeze([
     Permission.INVENTORY_READ,

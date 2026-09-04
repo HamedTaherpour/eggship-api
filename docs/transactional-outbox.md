@@ -30,6 +30,16 @@ backoff. Redis is never authoritative and no network call occurs inside a
 PostgreSQL transaction. Cleanup/retention of published rows belongs to a later
 approved DATA/ASY lifecycle task.
 
+ASY-04 records normalized processor failures separately in `AsyncFailure` and
+operator replay commands in `AsyncReplay`; neither changes the meaning of
+`PUBLISHED`. Replay uses the immutable original event and is available only to
+an explicitly registered recovery-capable processor. `ReplayDispatcher` claims
+requested or lease-expired commands with PostgreSQL `FOR UPDATE SKIP LOCKED`,
+publishes the immutable source event with `replay-{failureId}`, and conditionally
+acknowledges queue acceptance. Redis/BullMQ records are never the Admin
+inspection contract. `PUBLISHED` means queue accepted; the durable replay
+execution receipt is the processor's later `SUCCEEDED` or `FAILED` result.
+
 NOT-03 uses `order.status.changed` version `1` for the approved customer
 Order lifecycle transitions. Its event identity is a deterministic UUID
 derived from `(Order.id, status)`, matching the state machine's one-time

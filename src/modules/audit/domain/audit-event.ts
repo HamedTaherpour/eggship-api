@@ -25,6 +25,7 @@ export const AuditEntityType = {
   VISITOR: 'VISITOR',
   BLOG: 'BLOG',
   MEDIA: 'MEDIA',
+  ASYNC_FAILURE: 'ASYNC_FAILURE',
 } as const;
 export type AuditEntityType =
   (typeof AuditEntityType)[keyof typeof AuditEntityType];
@@ -71,6 +72,14 @@ export const AuditAction = {
   BLOG_PUBLISHED: 'blog.published',
   BLOG_UNPUBLISHED: 'blog.unpublished',
   MEDIA_DELETED: 'media.deleted',
+  ASYNC_REPLAY_REQUESTED: 'async.replay.requested',
+  ASYNC_REPLAY_REJECTED: 'async.replay.rejected',
+  ASYNC_REPLAY_SUCCEEDED: 'async.replay.succeeded',
+  ASYNC_REPLAY_FAILED: 'async.replay.failed',
+  ASYNC_FAILURE_ACKNOWLEDGED: 'async.failure.acknowledged',
+  ASYNC_FAILURE_QUARANTINED: 'async.failure.quarantined',
+  ASYNC_FAILURE_UNQUARANTINED: 'async.failure.unquarantined',
+  ASYNC_FAILURE_DISMISSED: 'async.failure.dismissed',
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 
@@ -90,6 +99,7 @@ type AdminRoleChangedMetadata = {
 };
 type ReasonMetadata = { reason: AdminLoginFailureReason };
 type SessionMetadata = { sessionId: string };
+type AsyncMetadata = { changedFields: readonly string[] };
 type MetadataActions =
   | typeof AuditAction.ADMIN_LOGIN_FAILED
   | typeof AuditAction.ADMIN_LOGIN_SUCCEEDED
@@ -105,7 +115,15 @@ type MetadataActions =
   | typeof AuditAction.INVENTORY_WRITTEN_OFF
   | typeof AuditAction.INVENTORY_CORRECTED
   | typeof AuditAction.SETTLEMENT_UPDATED
-  | typeof AuditAction.VISITOR_UPDATED;
+  | typeof AuditAction.VISITOR_UPDATED
+  | typeof AuditAction.ASYNC_REPLAY_REQUESTED
+  | typeof AuditAction.ASYNC_REPLAY_REJECTED
+  | typeof AuditAction.ASYNC_REPLAY_SUCCEEDED
+  | typeof AuditAction.ASYNC_REPLAY_FAILED
+  | typeof AuditAction.ASYNC_FAILURE_ACKNOWLEDGED
+  | typeof AuditAction.ASYNC_FAILURE_QUARANTINED
+  | typeof AuditAction.ASYNC_FAILURE_UNQUARANTINED
+  | typeof AuditAction.ASYNC_FAILURE_DISMISSED;
 type AuditMetadataForAction = {
   [AuditAction.ADMIN_LOGIN_FAILED]: ReasonMetadata;
   [AuditAction.ADMIN_LOGIN_SUCCEEDED]: SessionMetadata;
@@ -122,6 +140,14 @@ type AuditMetadataForAction = {
   [AuditAction.INVENTORY_CORRECTED]: ChangedMetadata;
   [AuditAction.SETTLEMENT_UPDATED]: ChangedMetadata;
   [AuditAction.VISITOR_UPDATED]: ChangedMetadata;
+  [AuditAction.ASYNC_REPLAY_REQUESTED]: AsyncMetadata;
+  [AuditAction.ASYNC_REPLAY_REJECTED]: AsyncMetadata;
+  [AuditAction.ASYNC_REPLAY_SUCCEEDED]: AsyncMetadata;
+  [AuditAction.ASYNC_REPLAY_FAILED]: AsyncMetadata;
+  [AuditAction.ASYNC_FAILURE_ACKNOWLEDGED]: AsyncMetadata;
+  [AuditAction.ASYNC_FAILURE_QUARANTINED]: AsyncMetadata;
+  [AuditAction.ASYNC_FAILURE_UNQUARANTINED]: AsyncMetadata;
+  [AuditAction.ASYNC_FAILURE_DISMISSED]: AsyncMetadata;
 } & { [A in Exclude<AuditAction, MetadataActions>]: undefined };
 type ActionSpec = {
   entityType: AuditEntityType;
@@ -202,6 +228,20 @@ export const AUDIT_ACTION_SPECS: Record<AuditAction, ActionSpec> = {
   [AuditAction.BLOG_PUBLISHED]: identified(AuditEntityType.BLOG),
   [AuditAction.BLOG_UNPUBLISHED]: identified(AuditEntityType.BLOG),
   [AuditAction.MEDIA_DELETED]: identified(AuditEntityType.MEDIA),
+  [AuditAction.ASYNC_REPLAY_REQUESTED]: changed(AuditEntityType.ASYNC_FAILURE),
+  [AuditAction.ASYNC_REPLAY_REJECTED]: changed(AuditEntityType.ASYNC_FAILURE),
+  [AuditAction.ASYNC_REPLAY_SUCCEEDED]: changed(AuditEntityType.ASYNC_FAILURE),
+  [AuditAction.ASYNC_REPLAY_FAILED]: changed(AuditEntityType.ASYNC_FAILURE),
+  [AuditAction.ASYNC_FAILURE_ACKNOWLEDGED]: changed(
+    AuditEntityType.ASYNC_FAILURE,
+  ),
+  [AuditAction.ASYNC_FAILURE_QUARANTINED]: changed(
+    AuditEntityType.ASYNC_FAILURE,
+  ),
+  [AuditAction.ASYNC_FAILURE_UNQUARANTINED]: changed(
+    AuditEntityType.ASYNC_FAILURE,
+  ),
+  [AuditAction.ASYNC_FAILURE_DISMISSED]: changed(AuditEntityType.ASYNC_FAILURE),
 };
 
 export type AuditEvent = {

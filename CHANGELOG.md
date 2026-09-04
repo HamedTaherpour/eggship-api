@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- ASY-04 durable async failure inspection and processor-approved replay infrastructure, normalized failure metadata, operator lifecycle controls, dedicated RBAC permissions, no-store Admin API, PostgreSQL claim/lease replay dispatch, and durable processor result receipts. Real processor replay proof remains deferred until an approved side-effect processor exists.
+
 ### Fixed
 
 - Keep the API process alive when configured Redis is unavailable while reporting readiness as degraded and failing Redis-backed capabilities closed; Worker startup remains Redis-mandatory.

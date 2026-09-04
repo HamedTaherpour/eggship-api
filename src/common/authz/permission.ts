@@ -44,6 +44,9 @@ export const Permission = {
   /** Admin account administration (ADM-01). */
   ADMIN_READ: 'ADMIN_READ',
   ADMIN_MANAGE: 'ADMIN_MANAGE',
+  ASYNC_FAILURE_READ: 'ASYNC_FAILURE_READ',
+  ASYNC_FAILURE_REPLAY: 'ASYNC_FAILURE_REPLAY',
+  ASYNC_FAILURE_MANAGE: 'ASYNC_FAILURE_MANAGE',
 } as const;
 
 export type Permission = (typeof Permission)[keyof typeof Permission];

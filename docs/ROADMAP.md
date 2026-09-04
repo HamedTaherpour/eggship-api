@@ -7,11 +7,11 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   110 |
-| DONE        |    85 |
+| DONE        |    86 |
 | IN_PROGRESS |     0 |
 | READY       |     2 |
 | BLOCKED     |     0 |
-| PLANNED     |    23 |
+| PLANNED     |    22 |
 
 - Current task: `DEP-03` (Deployment migrations and process health) is **DONE**. Explicit migration ownership, dependency-aware API health, Redis degradation, and bounded API/Worker shutdown are implemented and verified. No Liara resources were provisioned.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate. `M4 — Ordering complete` requirements are now all DONE (PRC-01 through PRC-05, ORD-01 through ORD-08 including ORD-03A, COM-01 through COM-03, DLU-01/DLU-02, SET-01/SET-02); milestone closure remains subject to the normal review/approval gates.
@@ -1033,11 +1033,13 @@ Explicitly out of scope: Running empty/fake workers and Liara automation.
 
 ### ASY-04 — Failed-job inspection, replay, and recovery
 
-Status: PLANNED | Depends on: ASY-02, ASY-03 | Primary: Codex after Human operations approval | Review: Claude/Cursor security/operations review
+Status: DONE | Depends on: ASY-02, ASY-03 | Primary: Codex after Human operations approval | Review: Claude/Cursor security/operations review
 
 Scope: Define and implement safe failure inspection, bounded retention, authorized replay, poison-job handling, and operational recovery procedures.
 
 Acceptance criteria: Metadata includes safe queue/job/attempt/correlation/timestamps; replay is idempotent and audited; PII/secrets are absent; critical alerts have owners.
+
+Delivered: Durable `AsyncFailure` / `AsyncReplay` persistence and migrations; normalized failure taxonomy and lifecycle controls; safe no-store Admin inspection, replay, quarantine, acknowledgement, and dismissal APIs; dedicated SUPER_ADMIN-only permissions; atomic AuditLog actions; PostgreSQL `FOR UPDATE SKIP LOCKED` replay claim/lease dispatch with deterministic job IDs; explicit recovery-processor contract and replay worker execution adapter; idempotent terminal execution receipts; test-only recovery processor fixtures; focused PostgreSQL, Redis/BullMQ, E2E, unit, OpenAPI, build, and release verification. `OutboxEvent.PUBLISHED` remains queue acceptance only. The production WorkerAppModule remains processor-empty and no fake processor is registered. Real external-side-effect replay proof is intentionally deferred to NOT-05.
 
 Explicitly out of scope: Admin UI and arbitrary payload editing.
 

@@ -920,11 +920,72 @@ model OutboxEvent {
   claimedAt      DateTime?        @db.Timestamptz(3)
   leaseExpiresAt DateTime?        @db.Timestamptz(3)
   createdAt      DateTime         @default(now()) @db.Timestamptz(3)
+  asyncFailures  AsyncFailure[]
 
   /// ASY-02 lookup/claim order: pending oldest event, stable UUID tie-break.
   @@index([state, nextAttemptAt, createdAt, id])
   /// DATA-02/ASY-05 cleanup can bound retained published history.
   @@index([publishedAt, id])
+}
+
+/// PostgreSQL-authoritative normalized execution failure. This is deliberately
+/// separate from OutboxEvent.PUBLISHED: publication only means BullMQ accepted
+/// the job.
+model AsyncFailure {
+  id                 String                @id @default(uuid()) @db.Uuid
+  outboxEventId      String                @db.Uuid
+  processorIdentity  String                @db.VarChar(128)
+  queueName          String                @db.VarChar(100)
+  jobName            String                @db.VarChar(100)
+  jobId              String?               @db.VarChar(128)
+  eventType          String                @db.VarChar(100)
+  eventVersion       Int
+  correlationId      String                @db.VarChar(128)
+  aggregateReference String?               @db.VarChar(128)
+  attemptCount       Int                   @default(0)
+  lastAttemptAt      DateTime?             @db.Timestamptz(3)
+  category           AsyncFailureCategory
+  reasonCode         String                @db.VarChar(64)
+  lifecycleState     AsyncFailureLifecycle @default(RETRY_EXHAUSTED)
+  quarantinedAt      DateTime?
+  acknowledgedAt     DateTime?
+  dismissedAt        DateTime?
+  applicationVersion String?               @db.VarChar(64)
+  createdAt          DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime              @updatedAt @db.Timestamptz(3)
+  outboxEvent        OutboxEvent           @relation(fields: [outboxEventId], references: [id], onDelete: Restrict)
+  replays            AsyncReplay[]
+
+  @@unique([outboxEventId, processorIdentity])
+  @@index([createdAt, id])
+  @@index([lifecycleState, quarantinedAt, createdAt, id])
+  @@index([eventType, eventVersion, createdAt, id])
+}
+
+/// Durable operator/system replay command. The original event and payload are
+/// immutable; this record is the replay's identity and history.
+model AsyncReplay {
+  id                 String            @id @default(uuid()) @db.Uuid
+  failureId          String            @db.Uuid
+  deterministicJobId String            @unique @db.VarChar(128)
+  status             AsyncReplayStatus @default(REQUESTED)
+  claimToken         String?           @db.Uuid
+  requestedBy        String?           @db.Uuid
+  requestedAt        DateTime          @default(now()) @db.Timestamptz(3)
+  claimedAt          DateTime?
+  leaseExpiresAt     DateTime?
+  attemptCount       Int               @default(0)
+  lastAttemptAt      DateTime?
+  completedAt        DateTime?
+  failureReasonCode  String?           @db.VarChar(64)
+  resultCategory     AsyncFailureCategory?
+  processorIdentity  String?           @db.VarChar(128)
+  releaseIdentity    String?           @db.VarChar(128)
+  createdAt          DateTime          @default(now()) @db.Timestamptz(3)
+  failure            AsyncFailure      @relation(fields: [failureId], references: [id], onDelete: Restrict)
+
+  @@index([failureId, createdAt, id])
+  @@index([status, leaseExpiresAt, createdAt, id])
 }
 
 /// Immutable, append-only audit fact. Actor and entity identifiers are
@@ -953,4 +1014,31 @@ enum OutboxEventState {
   PENDING
   CLAIMED
   PUBLISHED
+}
+
+enum AsyncFailureCategory {
+  INFRASTRUCTURE_TRANSIENT
+  PROVIDER_TRANSIENT
+  PROVIDER_RATE_LIMITED
+  PROVIDER_PERMANENT
+  INVALID_PAYLOAD
+  UNSUPPORTED_VERSION
+  BUSINESS_REJECTION
+  PROCESSOR_TIMEOUT
+  UNKNOWN
+}
+
+enum AsyncFailureLifecycle {
+  RETRY_EXHAUSTED
+  ACKNOWLEDGED
+  DISMISSED
+}
+
+enum AsyncReplayStatus {
+  REQUESTED
+  CLAIMED
+  PUBLISHED
+  RUNNING
+  SUCCEEDED
+  FAILED
 }

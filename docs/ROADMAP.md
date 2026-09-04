@@ -7,9 +7,9 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   110 |
-| DONE        |    89 |
+| DONE        |    90 |
 | IN_PROGRESS |     0 |
-| READY       |     4 |
+| READY       |     3 |
 | BLOCKED     |     0 |
 | PLANNED     |    17 |
 
@@ -1078,13 +1078,21 @@ Delivered: Accepted [ADR 0029](adr/0029-analytics-contracts-and-business-time-se
 
 ### ANL-02 — Product price and daily-stock analytics
 
-Status: READY | Depends on: ANL-01, PRC-01, INV-05 | Primary: Codex | Review: Claude/Cursor query/performance review
+Status: DONE | Depends on: ANL-01, PRC-01, INV-05 | Primary: Codex | Review: Claude/Cursor query/performance review
 
 Scope: Implement correct PostgreSQL queries/APIs for product price history charts and daily stock using approved historical sources.
 
 Acceptance criteria: Boundary/timezone cases, sparse days, indexes, authorization, OpenAPI, and real-data-scale query plans are tested.
 
 Explicitly out of scope: Redis authority and speculative pre-aggregation.
+
+Delivered: Admin current-stock, Tehran-local daily physical-stock, and bounded
+price-history endpoints behind `ANALYTICS_READ`, with explicit errors,
+OpenAPI, reverse-from-current ledger reconstruction, sparse-day output, and
+inferred initial price anchors. PostgreSQL integration and focused E2E coverage
+verify boundary, sparse-day, reservation, price-history, authorization, and
+missing-inventory behavior. No schema, snapshot, materialized-view, or
+speculative index changes. ANL-04 retains query-plan and scale optimization.
 
 ### ANL-03 — Sales overview, top products, and today pulse
 

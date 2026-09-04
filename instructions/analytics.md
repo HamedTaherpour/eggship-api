@@ -143,6 +143,36 @@ PriceHistory event. Any later daily representation must explicitly distinguish
 opening price, closing price, and change-series semantics rather than silently
 filling this gap.
 
+## ANL-02 product endpoints
+
+The Admin product analytics routes are:
+
+- `GET /api/v1/admin/analytics/products/:productId/stock`
+- `GET /api/v1/admin/analytics/products/:productId/stock/daily?from=YYYY-MM-DD&to=YYYY-MM-DD`
+- `GET /api/v1/admin/analytics/products/:productId/price-history?from=YYYY-MM-DD&to=YYYY-MM-DD`
+
+All require `AccessTokenGuard`, `PermissionGuard`, and `ANALYTICS_READ`, and
+set `Cache-Control: no-store`. Product metadata is limited to `id`, `name`, and
+`isActive`; current Category is never joined as historical truth. Inactive
+Products remain readable. A missing Product is `404 PRODUCT_NOT_FOUND`; a
+missing Inventory row for an existing Product is an application invariant
+failure and is never converted to zero.
+
+Daily ranges are inclusive Tehran dates, capped at 366 days, and are converted
+to `[startOfTehranDay, startOfNextTehranDay)`. Daily physical stock uses
+`onHand` only. Reservations and releases do not change physical opening,
+closing, received, shipped, return, write-off, or signed adjustment fields.
+The implementation reconstructs each boundary as `current onHand - SUM(onHandDelta
+where createdAt >= boundary)`, fetches the product's ledger once from the
+requested start onward, and buckets the result in memory. Sparse days are
+returned with equal opening/closing balances and zero movements.
+
+Price history preserves every actual change in `(createdAt ASC, id ASC)` order.
+The response exposes `currentPrice` as current state, an explicitly inferred
+initial anchor at `Product.createdAt`, `priceAtRangeStart`, and only changes in
+the requested half-open range. It does not insert a synthetic PriceHistory row.
+Query-plan and index optimization remain ANL-04 responsibility.
+
 ## Today pulse, freshness, and scale
 
 Future ANL-03 today event metrics may include lifecycle counts,

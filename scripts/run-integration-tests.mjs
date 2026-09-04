@@ -275,6 +275,10 @@ function runMigrations(env) {
   const migrateEnv = {
     ...env,
     DATABASE_URL: env['TEST_DATABASE_URL'],
+    // Prisma's CLI checkpoint child can remain alive on Windows when its
+    // network request is unavailable, preventing migrate deploy from exiting.
+    // Integration runs do not need CLI telemetry and must be deterministic.
+    CHECKPOINT_DISABLE: '1',
   };
   const result = spawnSync('pnpm', ['prisma:migrate:deploy'], {
     cwd: root,

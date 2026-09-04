@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- ANL-02 Admin product analytics: current stock, Tehran-day physical stock
+  reconstruction, and bounded price-history charts with `ANALYTICS_READ`,
+  no-store responses, sparse-day support, explicit inferred price anchors, and
+  no analytics snapshots or materialized views.
+
 - ANL-01 analytics architecture (ADR 0029 and `instructions/analytics.md`):
   Asia/Tehran business-day semantics, independent lifecycle timestamps,
   delivered-order integer-Toman sales formulas, operational return limits,

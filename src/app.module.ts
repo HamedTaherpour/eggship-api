@@ -32,6 +32,7 @@ import { BlogsModule } from './modules/blogs/blogs.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AdminAuditModule } from './modules/audit/admin-audit.module';
 import { AsyncRecoveryModule } from './modules/async-recovery/async-recovery.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { AsyncRecoveryModule } from './modules/async-recovery/async-recovery.mod
     AuditModule,
     AdminAuditModule,
     AsyncRecoveryModule,
+    AnalyticsModule,
   ],
   controllers: [HealthController],
   providers: [ApplicationReadinessService],

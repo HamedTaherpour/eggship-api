@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ADMIN_ROLE_RESOLVER } from './common/authz/authorization.tokens';
 import { AuthorizationModule } from './common/authz/authorization.module';
 import { HealthController } from './common/health/health.controller';
+import { ApplicationReadinessService } from './common/health/application-readiness.service';
 import { ObservabilityModule } from './common/observability/observability.module';
 import { createConfigModuleOptions } from './config/config-module.options';
 import { PrismaModule } from './infrastructure/database/prisma/prisma.module';
@@ -69,5 +70,6 @@ import { AdminAuditModule } from './modules/audit/admin-audit.module';
     AdminAuditModule,
   ],
   controllers: [HealthController],
+  providers: [ApplicationReadinessService],
 })
 export class AppModule {}

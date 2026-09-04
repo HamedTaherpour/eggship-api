@@ -10,6 +10,8 @@ export interface RedisReadiness {
   ready: boolean;
 }
 
+const REDIS_STARTUP_CONNECT_TIMEOUT_MS = 1_000;
+
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
   private client: Redis | undefined;
@@ -31,23 +33,25 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
 
     this.client = this.clientFactory.createLifecycleClient(url);
+    this.client.on('error', () => {
+      this.logger.warn(
+        { module: 'redis', operation: 'connection_degraded' },
+        'Redis connection is unavailable; Redis-backed capabilities are disabled',
+      );
+    });
     try {
-      await this.client.connect();
-      this.logger.info(
+      await this.withStartupTimeout(this.client.connect());
+      if (this.client.status === 'ready') {
+        this.logger.info(
+          { module: 'redis', operation: 'connect', enabled: true },
+          'Redis connection established',
+        );
+      }
+    } catch {
+      this.logger.warn(
         { module: 'redis', operation: 'connect', enabled: true },
-        'Redis connection established',
+        'Redis connection unavailable; API will start degraded',
       );
-    } catch (error: unknown) {
-      this.client.disconnect(false);
-      this.client = undefined;
-      const connectionError =
-        error instanceof Error ? error : new Error('Redis connection failed.');
-      this.logger.error(
-        { module: 'redis', operation: 'connect' },
-        'Redis connection failed',
-        connectionError,
-      );
-      throw connectionError;
     }
   }
 
@@ -69,7 +73,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   async readiness(): Promise<RedisReadiness> {
     if (this.client === undefined) {
-      return { configured: false, ready: false };
+      return { configured: this.isConfigured(), ready: false };
     }
     if (this.client.status !== 'ready') {
       return { configured: true, ready: false };
@@ -106,6 +110,23 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       );
     } finally {
       this.client = undefined;
+    }
+  }
+
+  private async withStartupTimeout(connection: Promise<void>): Promise<void> {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        connection,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('Redis startup connection timed out.')),
+            REDIS_STARTUP_CONNECT_TIMEOUT_MS,
+          );
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
     }
   }
 }

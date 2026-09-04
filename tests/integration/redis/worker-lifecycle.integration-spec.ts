@@ -2,6 +2,7 @@ import { PassThrough } from 'node:stream';
 import type { INestApplicationContext } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { Job, Queue } from 'bullmq';
+import Redis from 'ioredis';
 import { LOG_DESTINATION } from '../../../src/common/observability/application-logger.service';
 import { RequestContextService } from '../../../src/common/observability/request-context.service';
 import { AsyncJobContextService } from '../../../src/infrastructure/queue/async-job-context.service';
@@ -12,6 +13,7 @@ import { WORKER_PROCESSORS } from '../../../src/infrastructure/worker/worker.tok
 import { WorkerService } from '../../../src/infrastructure/worker/worker.service';
 import type { WorkerProcessor } from '../../../src/infrastructure/worker/worker.types';
 import { createTestRunId } from '../support/test-run-id';
+import { RedisClientFactory } from '../../../src/infrastructure/redis/redis-client.factory';
 
 const runId = process.env['EGGSHIP_TEST_RUN_ID'] ?? createTestRunId();
 const lifecycleQueueName = `eggship-worker-${runId}`;
@@ -93,10 +95,8 @@ describe('WorkerService lifecycle (integration)', () => {
   const originalShutdownTimeout = process.env['WORKER_SHUTDOWN_TIMEOUT_MS'];
 
   beforeAll(() => {
-    if (redisUrl !== 'redis://127.0.0.1:6380')
-      throw new Error(
-        'ASY-03 lifecycle tests require TEST_REDIS_URL=redis://127.0.0.1:6380.',
-      );
+    if (redisUrl === undefined || redisUrl === '')
+      throw new Error('ASY-03 lifecycle tests require TEST_REDIS_URL.');
   });
 
   afterAll(() => {
@@ -113,6 +113,36 @@ describe('WorkerService lifecycle (integration)', () => {
     await expect(lifecycle.start([])).rejects.toThrow(
       'without an approved processor',
     );
+    await app.close();
+  });
+
+  it('fails Worker startup when the configured Redis endpoint is unavailable', async () => {
+    const unavailable = 'redis://127.0.0.1:1';
+    const app = await Test.createTestingModule({
+      imports: [WorkerAppModule],
+    })
+      .overrideProvider(RedisClientFactory)
+      .useValue({
+        createLifecycleClient: (): Redis =>
+          new Redis(unavailable, {
+            lazyConnect: true,
+            connectTimeout: 100,
+            maxRetriesPerRequest: 1,
+            retryStrategy: () => null,
+          }),
+        createWorkerClient: (): Redis =>
+          new Redis(unavailable, {
+            lazyConnect: true,
+            connectTimeout: 100,
+            maxRetriesPerRequest: null,
+            retryStrategy: () => null,
+          }),
+      })
+      .compile();
+    const lifecycle = app.get(WorkerService);
+    await app.init();
+    const processor = new ProbeProcessor(`eggship-worker-unavailable-${runId}`);
+    await expect(lifecycle.start([processor])).rejects.toThrow();
     await app.close();
   });
 

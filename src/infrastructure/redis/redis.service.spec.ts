@@ -11,6 +11,7 @@ class TestRedisClient {
   connectCalls = 0;
   quitCalls = 0;
   disconnectCalls = 0;
+  private readonly errorListeners: Array<(error: Error) => void> = [];
 
   constructor(private readonly connectError?: Error) {}
 
@@ -36,6 +37,20 @@ class TestRedisClient {
   disconnect(): void {
     this.disconnectCalls += 1;
     this.status = 'end';
+  }
+
+  on(event: string, listener: (error: Error) => void): this {
+    if (event === 'error') this.errorListeners.push(listener);
+    return this;
+  }
+
+  drop(): void {
+    this.status = 'end';
+    for (const listener of this.errorListeners) listener(new Error('dropped'));
+  }
+
+  recover(): void {
+    this.status = 'ready';
   }
 }
 
@@ -93,7 +108,7 @@ describe('RedisService', () => {
     expect(service.getCommandClient()).toBeUndefined();
   });
 
-  it('fails startup without logging Redis credentials', async () => {
+  it('starts degraded without logging Redis credentials when Redis is unavailable', async () => {
     const client = new TestRedisClient(new Error('connection refused'));
     const factory = new TestRedisClientFactory(client);
     const { logger, output } = createLogger();
@@ -104,11 +119,38 @@ describe('RedisService', () => {
       factory,
     );
 
-    await expect(service.onModuleInit()).rejects.toThrow('connection refused');
-    expect(client.disconnectCalls).toBe(1);
-    expect(output()).toContain('Redis connection failed');
+    await expect(service.onModuleInit()).resolves.toBeUndefined();
+    expect(client.disconnectCalls).toBe(0);
+    expect(output()).toContain('Redis connection unavailable');
     expect(output()).not.toContain(redisUrl);
     expect(output()).not.toContain('private-password');
+    await expect(service.readiness()).resolves.toEqual({
+      configured: true,
+      ready: false,
+    });
+  });
+
+  it('derives readiness from the lifecycle client after disconnect and recovery', async () => {
+    const client = new TestRedisClient();
+    const factory = new TestRedisClientFactory(client);
+    const { logger } = createLogger();
+    const service = new RedisService(
+      new ConfigService({ REDIS_URL: 'redis://example.invalid:6379' }),
+      logger,
+      factory,
+    );
+
+    await service.onModuleInit();
+    client.drop();
+    await expect(service.readiness()).resolves.toEqual({
+      configured: true,
+      ready: false,
+    });
+    client.recover();
+    await expect(service.readiness()).resolves.toEqual({
+      configured: true,
+      ready: true,
+    });
   });
 });
 

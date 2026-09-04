@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep the API process alive when configured Redis is unavailable while reporting readiness as degraded and failing Redis-backed capabilities closed; Worker startup remains Redis-mandatory.
+
+### Operations
+
+- Add explicit migration execution target, dependency readiness reporting, and
+  graceful API/Worker shutdown behavior for DEP-03.
+
 ### Added
 
 - DEP-02 Liara infrastructure/configuration contract: separate staging and production private-network PostgreSQL/Redis/Object Storage resources, default-disabled public DB/Redis access, private bucket and bucket-scoped S3 credential policy, provider-issued connection/TLS handling, Liara-managed secret ownership, and safe non-provisioning checklist. No real resources, credentials, migration, deployment, sizing, retention, or recovery objective added. Current Media presigning gap is recorded as a production follow-up.

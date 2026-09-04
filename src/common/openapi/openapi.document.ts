@@ -3,6 +3,7 @@ import type { OpenAPIObject } from '@nestjs/swagger';
 import type { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HealthResponseDto } from '../health/dto/health-response.dto';
+import { ReadinessResponseDto } from '../health/dto/readiness-response.dto';
 import {
   ApiErrorResponseDto,
   ApiInternalErrorResponseDto,
@@ -134,6 +135,7 @@ export function createOpenApiDocument(app: INestApplication): OpenAPIObject {
   return SwaggerModule.createDocument(app, buildOpenApiConfig(appVersion), {
     extraModels: [
       HealthResponseDto,
+      ReadinessResponseDto,
       AuthSessionStatusResponseDto,
       CompleteAuthResponseDto,
       CurrentUserResponseDto,

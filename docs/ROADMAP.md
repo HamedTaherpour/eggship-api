@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   110 |
-| DONE        |    84 |
+| DONE        |    85 |
 | IN_PROGRESS |     0 |
-| READY       |     3 |
+| READY       |     2 |
 | BLOCKED     |     0 |
 | PLANNED     |    23 |
 
-- Current task: `DEP-02` (PostgreSQL, Redis, object storage, and secrets) is **DONE**. The provider-verified Liara infrastructure/configuration contract is recorded in [docs/dep-02-infrastructure-contract.md](dep-02-infrastructure-contract.md). No provisioning, credentials, migration, or deployment was added.
+- Current task: `DEP-03` (Deployment migrations and process health) is **DONE**. Explicit migration ownership, dependency-aware API health, Redis degradation, and bounded API/Worker shutdown are implemented and verified. No Liara resources were provisioned.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate. `M4 — Ordering complete` requirements are now all DONE (PRC-01 through PRC-05, ORD-01 through ORD-08 including ORD-03A, COM-01 through COM-03, DLU-01/DLU-02, SET-01/SET-02); milestone closure remains subject to the normal review/approval gates.
 
 ## Status model
@@ -1287,11 +1287,20 @@ added.
 
 ### DEP-03 — Deployment migrations and process health
 
-Status: READY | Depends on: DEP-01, DEP-02 | Primary: Codex | Review: Claude/Cursor operations review, Human deployment approval
+Status: DONE | Depends on: DEP-01, DEP-02 | Primary: Codex | Review: Claude/Cursor operations review, Human deployment approval
 
 Scope: Add explicit `prisma migrate deploy` release step, API liveness, dependency/worker readiness, graceful shutdown, and failed-start behavior.
 
 Acceptance criteria: Migrations are never implicit per replica; traffic/work admission respects readiness; termination drains HTTP/jobs without hiding failure.
+
+Delivered: explicit `pnpm prisma:migrate:deploy` ownership with a Docker
+migration target; no implicit API/Worker startup migrations; process-only API
+liveness; PostgreSQL and configured-Redis readiness; API Redis degradation with
+fail-closed Redis capabilities; mandatory Worker Redis/processor startup;
+bounded Worker pause/drain/timeout/close; API admission shutdown; and
+parameterized real-Redis lifecycle coverage using `TEST_REDIS_URL`. Real
+PostgreSQL/Redis evidence and the full quality gates passed. No Liara
+resources were provisioned.
 
 Explicitly out of scope: Destructive migration approval and rollback automation that cannot restore data.
 

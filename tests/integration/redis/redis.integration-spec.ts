@@ -109,7 +109,7 @@ describe('Redis infrastructure (integration)', () => {
     workerClient.disconnect(false);
   });
 
-  it('fails loudly when Redis is unavailable and does not invent a fallback client', async () => {
+  it('keeps configured API Redis degraded when unavailable and does not invent a fallback client', async () => {
     const unavailableUrl = 'redis://127.0.0.1:1';
     const failing = new RedisService(
       new ConfigService({ REDIS_URL: unavailableUrl }),
@@ -117,11 +117,11 @@ describe('Redis infrastructure (integration)', () => {
       factory,
     );
 
-    await expect(failing.onModuleInit()).rejects.toThrow();
+    await expect(failing.onModuleInit()).resolves.toBeUndefined();
     expect(failing.isConfigured()).toBe(true);
     expect(failing.getCommandClient()).toBeUndefined();
     await expect(failing.readiness()).resolves.toEqual({
-      configured: false,
+      configured: true,
       ready: false,
     });
   });

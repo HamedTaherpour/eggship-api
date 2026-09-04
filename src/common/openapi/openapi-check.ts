@@ -63,6 +63,13 @@ export function assertOpenApiDocument(
     });
   }
 
+  const readinessGet = document.paths?.['/api/v1/health/readiness']?.get;
+  if (readinessGet?.operationId !== 'Health_readiness') {
+    failures.push({
+      message: 'Expected readiness endpoint with operationId Health_readiness.',
+    });
+  }
+
   const requiredAuthOperations: Array<{
     path: string;
     method: 'get' | 'post';

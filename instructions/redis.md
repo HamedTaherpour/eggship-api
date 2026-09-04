@@ -6,7 +6,7 @@ Redis is optional ephemeral infrastructure. PostgreSQL remains the source of tru
 
 - Redis clients belong under `src/infrastructure/redis`. Business modules use an explicit infrastructure capability and must not construct clients directly.
 - `REDIS_URL` is optional. When it is blank or absent, the API starts without opening a Redis connection and Redis-backed capabilities are unavailable.
-- When `REDIS_URL` is configured, startup must establish the connection or fail loudly. Do not silently degrade a configured deployment.
+- When `REDIS_URL` is configured, API startup is bounded and tolerant of an unavailable Redis connection. The API remains alive in a degraded state, reports Redis as not ready, and disables Redis-backed capabilities. Worker startup remains mandatory and fails loudly when Redis is unavailable.
 - Never log Redis URLs, credentials, connection options, or command payloads.
 - Remote development Redis is permitted, but it must be isolated development infrastructure and never a production instance. Development `.env` must never point `REDIS_URL` at production Redis.
 - Client resources must close during graceful application shutdown.

@@ -19,6 +19,7 @@ export class WorkerService {
   private activeJobs = 0;
   private activeJobsDrained: Promise<void> = Promise.resolve();
   private resolveActiveJobsDrained?: () => void;
+  private ready = false;
 
   constructor(
     private readonly config: ConfigService,
@@ -35,84 +36,94 @@ export class WorkerService {
       concurrency: this.configuredNumber('WORKER_CONCURRENCY'),
     });
     const redisUrl = this.config.getOrThrow<string>('REDIS_URL');
-    for (const processor of processors) {
-      const connection = this.redisFactory.createWorkerClient(redisUrl);
-      const worker = new Worker<AsyncJobEnvelope<unknown>, void, string>(
-        processor.queueName,
-        async (job) => {
-          if (processor.jobName !== undefined && processor.jobName !== job.name)
-            return;
-          this.beginJob();
-          const started = Date.now();
-          const correlationId = job.data?.metadata?.correlationId ?? 'invalid';
-          this.logger.info(
-            {
-              module: 'worker',
-              operation: 'job_started',
-              queue: processor.queueName,
-              jobId: job.id,
-              jobName: job.name,
-              correlationId,
-              attemptNumber: job.attemptsMade + 1,
-            },
-            'Worker job started',
-          );
-          try {
-            await this.context.runWithEnvelope(job.data, () =>
-              processor.process(job),
-            );
+    try {
+      for (const processor of processors) {
+        const connection = this.redisFactory.createWorkerClient(redisUrl);
+        const worker = new Worker<AsyncJobEnvelope<unknown>, void, string>(
+          processor.queueName,
+          async (job) => {
+            if (
+              processor.jobName !== undefined &&
+              processor.jobName !== job.name
+            )
+              return;
+            this.beginJob();
+            const started = Date.now();
+            const correlationId =
+              job.data?.metadata?.correlationId ?? 'invalid';
             this.logger.info(
               {
                 module: 'worker',
-                operation: 'job_completed',
+                operation: 'job_started',
                 queue: processor.queueName,
                 jobId: job.id,
                 jobName: job.name,
                 correlationId,
-                durationMs: Date.now() - started,
+                attemptNumber: job.attemptsMade + 1,
               },
-              'Worker job completed',
+              'Worker job started',
             );
-          } catch (error: unknown) {
-            const normalized =
-              error instanceof Error
-                ? error
-                : new Error('Worker processor failed.');
-            this.failures.report(
-              {
-                queueName: processor.queueName,
-                jobName: job.name,
-                jobId: job.id,
-                attemptsMade: job.attemptsMade + 1,
-                correlationId,
-              },
-              normalized,
-            );
-            throw normalized;
-          } finally {
-            this.finishJob();
-          }
-        },
-        {
-          connection,
-          concurrency: policy.concurrency,
-          lockDuration: policy.lockDurationMs,
-        },
-      );
-      worker.on('error', (error: Error) => {
-        this.logger.error(
-          {
-            module: 'worker',
-            operation: 'worker_error',
-            queue: processor.queueName,
+            try {
+              await this.context.runWithEnvelope(job.data, () =>
+                processor.process(job),
+              );
+              this.logger.info(
+                {
+                  module: 'worker',
+                  operation: 'job_completed',
+                  queue: processor.queueName,
+                  jobId: job.id,
+                  jobName: job.name,
+                  correlationId,
+                  durationMs: Date.now() - started,
+                },
+                'Worker job completed',
+              );
+            } catch (error: unknown) {
+              const normalized =
+                error instanceof Error
+                  ? error
+                  : new Error('Worker processor failed.');
+              this.failures.report(
+                {
+                  queueName: processor.queueName,
+                  jobName: job.name,
+                  jobId: job.id,
+                  attemptsMade: job.attemptsMade + 1,
+                  correlationId,
+                },
+                normalized,
+              );
+              throw normalized;
+            } finally {
+              this.finishJob();
+            }
           },
-          'Worker infrastructure error',
-          error,
+          {
+            connection,
+            concurrency: policy.concurrency,
+            lockDuration: policy.lockDurationMs,
+          },
         );
-      });
-      await worker.waitUntilReady();
-      this.workers.push({ worker, connection });
+        worker.on('error', (error: Error) => {
+          this.logger.error(
+            {
+              module: 'worker',
+              operation: 'worker_error',
+              queue: processor.queueName,
+            },
+            'Worker infrastructure error',
+            error,
+          );
+        });
+        this.workers.push({ worker, connection });
+        await worker.waitUntilReady();
+      }
+    } catch (error: unknown) {
+      await this.stop();
+      throw error;
     }
+    this.ready = true;
     this.logger.info(
       {
         module: 'worker',
@@ -127,6 +138,7 @@ export class WorkerService {
   async stop(): Promise<void> {
     if (this.stopping) return;
     this.stopping = true;
+    this.ready = false;
     this.logger.info(
       { module: 'worker', operation: 'stopping' },
       'Worker stopping',
@@ -147,6 +159,10 @@ export class WorkerService {
       { module: 'worker', operation: 'stopped' },
       'Worker stopped',
     );
+  }
+
+  isReady(): boolean {
+    return this.ready;
   }
 
   private async closeWithGrace(

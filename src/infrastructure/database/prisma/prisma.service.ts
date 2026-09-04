@@ -24,7 +24,8 @@ export class PrismaService
   }
 
   async onModuleInit(): Promise<void> {
-    await this.$connect();
+    // Prisma connects lazily. Readiness owns the dependency check so the API
+    // can remain live while truthfully returning not_ready during DB outage.
   }
 
   async onModuleDestroy(): Promise<void> {

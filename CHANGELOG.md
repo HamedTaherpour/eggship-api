@@ -6,12 +6,19 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- ANL-01 analytics architecture (ADR 0029 and `instructions/analytics.md`):
+  Asia/Tehran business-day semantics, independent lifecycle timestamps,
+  delivered-order integer-Toman sales formulas, operational return limits,
+  explicit top-product bases, ledger-reconstructed inventory analytics,
+  PriceHistory limitations, historical category limitations, and measured
+  cache/scale boundaries. No analytics endpoints or schema/query structures
+  were added.
+
 - NOT-05 production order-status notification worker foundation: FCM adapter
   behind the provider-neutral port, durable recipient snapshots, per-delivery
   claim/lease execution, retry classification, suppression/invalidation
   handling, and fail-closed Worker configuration. Real FCM/Liara staging proof
   remains a required pre-production gate.
-
 
 - ASY-04 durable async failure inspection and processor-approved replay infrastructure, normalized failure metadata, operator lifecycle controls, dedicated RBAC permissions, no-store Admin API, PostgreSQL claim/lease replay dispatch, and durable processor result receipts. Real processor replay proof remains deferred until an approved side-effect processor exists.
 - NOT-04 provider-neutral push installations and durable notification delivery

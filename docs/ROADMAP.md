@@ -7,11 +7,11 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   110 |
-| DONE        |    88 |
-| IN_PROGRESS |     0 |
+| DONE        |    87 |
+| IN_PROGRESS |     2 |
 | READY       |     2 |
 | BLOCKED     |     0 |
-| PLANNED     |    20 |
+| PLANNED     |    19 |
 
 - Current task: `DEP-03` (Deployment migrations and process health) is **DONE**. Explicit migration ownership, dependency-aware API health, Redis degradation, and bounded API/Worker shutdown are implemented and verified. No Liara resources were provisioned.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate. `M4 — Ordering complete` requirements are now all DONE (PRC-01 through PRC-05, ORD-01 through ORD-08 including ORD-03A, COM-01 through COM-03, DLU-01/DLU-02, SET-01/SET-02); milestone closure remains subject to the normal review/approval gates.
@@ -1066,7 +1066,7 @@ Explicitly out of scope: Speculative cron jobs or using Redis as the sole durabl
 
 ### ANL-01 — Analytics contracts and business-time semantics
 
-Status: PLANNED | Depends on: ORD-02A, PRC-01, INV-01B | Primary: Human + ChatGPT architecture process | Review: Claude/Cursor, Human approval
+Status: DONE | Depends on: ORD-02A, PRC-01, INV-01B | Primary: Human + ChatGPT architecture process | Review: Claude/Cursor, Human approval
 
 Scope: Define exact metrics, filters, authorization, freshness, source facts, and Tehran/business-day boundaries for product price chart, daily stock, sales overview, top products, and today pulse.
 
@@ -1074,9 +1074,11 @@ Acceptance criteria: Every metric has an unambiguous formula and timezone bounda
 
 Explicitly out of scope: Query implementation and introducing an analytics datastore.
 
+Delivered: Accepted [ADR 0029](adr/0029-analytics-contracts-and-business-time-semantics.md) and canonical [analytics architecture](../instructions/analytics.md): immutable `Asia/Tehran` business-day conversion to half-open UTC ranges; independent lifecycle timestamps; delivered-order sales and integer-Toman value formulas; explicit operational return metrics; explicit top-product bases with safe delivered-line value semantics; OrderLine historical product snapshots and the category-history limitation; ledger-reconstructed inventory movement/balances without snapshots; PriceHistory grouping and initial-price limitation; current-state freshness/cache policy; `ANALYTICS_READ` authorization boundary; and ANL-04 measurement ownership. No analytics endpoint, schema, index, aggregation, snapshot, or materialized-view change.
+
 ### ANL-02 — Product price and daily-stock analytics
 
-Status: PLANNED | Depends on: ANL-01, PRC-01, INV-05 | Primary: Codex | Review: Claude/Cursor query/performance review
+Status: READY | Depends on: ANL-01, PRC-01, INV-05 | Primary: Codex | Review: Claude/Cursor query/performance review
 
 Scope: Implement correct PostgreSQL queries/APIs for product price history charts and daily stock using approved historical sources.
 
@@ -1086,7 +1088,7 @@ Explicitly out of scope: Redis authority and speculative pre-aggregation.
 
 ### ANL-03 — Sales overview, top products, and today pulse
 
-Status: PLANNED | Depends on: ANL-01, ORD-03 | Primary: Codex | Review: Claude/Cursor query/performance review
+Status: READY | Depends on: ANL-01, ORD-03 | Primary: Codex | Review: Claude/Cursor query/performance review
 
 Scope: Implement the remaining legacy analytics with PostgreSQL aggregation and documented state/time semantics.
 
@@ -1483,7 +1485,7 @@ The following are not implementation assumptions:
 - Future USER referral, visitor conversion, attribution correction/reassignment, reward policy, and any broader self-referral rule remain deferred. V1 Visitor attribution, duplicate handling, no-op existing-user behavior, no-reuse codes, and no speculative self-referral matching are settled in ADR 0020 / `instructions/referrals.md`.
 - Notification type/content rules, push provider/consent, delivery guarantees, and token lifecycle.
 - Media attachment and reference lifecycle is decided in [ADR 0022](adr/0022-media-attachment-and-reference-lifecycle.md) (Human Architecture Gate closed; MED-01 READY): image-only JPEG/PNG/WebP; Product exactly one optional image; Blog cover + Author avatar + durable inline registry; catalog Category has no image; shared library with valid unreferenced Media; `ON DELETE RESTRICT` / `MEDIA_REFERENCED`; replace-without-delete; usage inspection in MED-01; orphan cleanup deferred to DATA-02 with conservative grace (no retention invented); CAT-04 storage/upload bounds preserved. Remaining: MED-01 implementation, DATA-02 orphan policy/durations, DEP-02 live production-bucket verification. Blog Markdown/taxonomy remain ADR 0021 / CNT-04 (DONE).
-- Tehran/business-day definitions and canceled/returned treatment for each analytics metric.
+- Analytics contracts are settled in [ADR 0029](adr/0029-analytics-contracts-and-business-time-semantics.md) / ANL-01 and [analytics.md](../instructions/analytics.md). Remaining analytics work is implementation/performance work in ANL-02 through ANL-04; no endpoint, index, snapshot, aggregation, or accounting/refund semantics is approved by ANL-01.
 - Retention periods for every data class and backup recovery objectives (classification and approved lifecycle principles in [data-lifecycle.md](data-lifecycle.md); durations remain **UNRESOLVED** pending legal/accounting/operations approval and DATA-02/DATA-03/DEP-05 work).
 - Legacy compatibility, migration transforms, rollout waves, parallel-validation feasibility, and final cutover strategy.
 

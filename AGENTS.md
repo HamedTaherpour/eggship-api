@@ -15,6 +15,7 @@ This file is the primary instruction entry point for every AI coding agent worki
 - [Orders](instructions/orders.md) for order snapshots, ownership, money, and Inventory orchestration boundaries.
 - [Commerce policy](instructions/commerce-policy.md) for ordering hours, minimum cart quantity, and Order-acceptance settings.
 - [Settlement](instructions/settlement.md) for post-delivery deferred-settlement tracking and Media references.
+- [Analytics](instructions/analytics.md) for business-day semantics, lifecycle metrics, sales, returns, product rankings, inventory reconstruction, and historical limitations.
 - [Referrals](instructions/referrals.md) for V1 Visitor attribution, registration boundaries, immutability, and abuse policy.
 - [Code quality](instructions/code-quality.md) for TypeScript and review expectations.
 - [Testing](instructions/testing.md) for required test layers and practices.

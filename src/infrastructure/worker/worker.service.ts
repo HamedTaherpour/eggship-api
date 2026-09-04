@@ -102,9 +102,12 @@ export class WorkerService {
                   jobId: job.id,
                   attemptsMade: job.attemptsMade + 1,
                   correlationId,
+                  category: failureCategory(error),
+                  reasonCode: failureReason(error),
                 },
                 normalized,
               );
+              if (isPermanentProcessorFailure(error)) return;
               throw normalized;
             } finally {
               this.finishJob();
@@ -219,4 +222,30 @@ export class WorkerService {
     const value = this.config.get<number | string>(name);
     return value === undefined ? undefined : Number(value);
   }
+}
+
+function isPermanentProcessorFailure(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'retryable' in error &&
+    (error as { retryable?: unknown }).retryable === false
+  );
+}
+
+function failureCategory(error: unknown): string | undefined {
+  return typeof error === 'object' &&
+    error !== null &&
+    'category' in error &&
+    typeof (error as { category?: unknown }).category === 'string'
+    ? (error as { category: string }).category
+    : undefined;
+}
+function failureReason(error: unknown): string | undefined {
+  return typeof error === 'object' &&
+    error !== null &&
+    'reasonCode' in error &&
+    typeof (error as { reasonCode?: unknown }).reasonCode === 'string'
+    ? (error as { reasonCode: string }).reasonCode
+    : undefined;
 }

@@ -58,6 +58,7 @@ export class ReplayWorkerProcessor implements WorkerProcessor {
     try {
       const result = await this.processor.executeReplay({
         replayId: data.replayId,
+        outboxEventId: data.outboxEventId,
         eventType: data.eventType,
         eventVersion: data.eventVersion,
         payload: data.payload,

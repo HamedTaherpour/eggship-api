@@ -66,6 +66,7 @@ export interface RecoveryProcessor {
   readonly idempotencyDescription: string;
   executeReplay?(input: {
     replayId: string;
+    outboxEventId?: string;
     eventType: string;
     eventVersion: number;
     payload: Record<string, unknown>;

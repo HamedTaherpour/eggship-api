@@ -5,6 +5,10 @@ const valid = {
   APP_VERSION: '0.1.0',
   GIT_SHA: 'test',
   REDIS_URL: 'redis://127.0.0.1:6380',
+  DATABASE_URL: 'postgresql://127.0.0.1:5432/eggship_test',
+  FCM_PROJECT_ID: 'test-project',
+  FCM_CLIENT_EMAIL: 'worker@test-project.iam.gserviceaccount.com',
+  FCM_PRIVATE_KEY: '-----BEGIN PRIVATE KEY----- test -----END PRIVATE KEY-----',
 };
 
 describe('validateWorkerEnvironment', () => {

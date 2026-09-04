@@ -66,6 +66,11 @@ export class NotificationRepository {
     return row === null ? null : mapNotification(row);
   }
 
+  async findById(id: string): Promise<NotificationRecord | null> {
+    const row = await this.prisma.notification.findUnique({ where: { id } });
+    return row === null ? null : mapNotification(row);
+  }
+
   /** Idempotent owner-scoped read transition. */
   async markReadForOwner(
     notificationId: string,
@@ -139,6 +144,7 @@ function mapNotification(row: {
   payload: Prisma.JsonValue;
   createdAt: Date;
   readAt: Date | null;
+  pushDeliveriesMaterializedAt: Date | null;
 }): NotificationRecord {
   return {
     id: row.id,
@@ -150,5 +156,6 @@ function mapNotification(row: {
     payload: row.payload as NotificationRecord['payload'],
     createdAt: row.createdAt,
     readAt: row.readAt,
+    pushDeliveriesMaterializedAt: row.pushDeliveriesMaterializedAt,
   };
 }

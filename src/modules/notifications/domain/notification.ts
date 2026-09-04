@@ -46,6 +46,7 @@ export interface NotificationRecord extends CreateNotificationInput {
   id: string;
   createdAt: Date;
   readAt: Date | null;
+  pushDeliveriesMaterializedAt?: Date | null;
 }
 
 export class NotificationInvalidInputError extends Error {

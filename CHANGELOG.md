@@ -6,6 +6,13 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- NOT-05 production order-status notification worker foundation: FCM adapter
+  behind the provider-neutral port, durable recipient snapshots, per-delivery
+  claim/lease execution, retry classification, suppression/invalidation
+  handling, and fail-closed Worker configuration. Real FCM/Liara staging proof
+  remains a required pre-production gate.
+
+
 - ASY-04 durable async failure inspection and processor-approved replay infrastructure, normalized failure metadata, operator lifecycle controls, dedicated RBAC permissions, no-store Admin API, PostgreSQL claim/lease replay dispatch, and durable processor result receipts. Real processor replay proof remains deferred until an approved side-effect processor exists.
 - NOT-04 provider-neutral push installations and durable notification delivery
   identity, with ownership-safe lifecycle APIs, CSRF/private-response coverage,

@@ -25,11 +25,51 @@ export function validateEnvironmentBase(
   } catch {
     throw new Error('REDIS_URL must use the redis:// or rediss:// protocol.');
   }
+  const databaseUrl = required(values, 'DATABASE_URL');
+  try {
+    const parsed = new URL(databaseUrl);
+    if (
+      !['postgres:', 'postgresql:'].includes(parsed.protocol) ||
+      parsed.hostname === ''
+    )
+      throw new Error();
+  } catch {
+    throw new Error(
+      'DATABASE_URL must use the postgresql:// or postgres:// protocol.',
+    );
+  }
+  const fcmProjectId = required(values, 'FCM_PROJECT_ID');
+  const fcmClientEmail = required(values, 'FCM_CLIENT_EMAIL');
+  const fcmPrivateKey = required(values, 'FCM_PRIVATE_KEY');
+  if (
+    !fcmPrivateKey.includes('BEGIN PRIVATE KEY') ||
+    !fcmPrivateKey.includes('END PRIVATE KEY')
+  )
+    throw new Error('FCM_PRIVATE_KEY must be a PEM private key.');
   return {
     NODE_ENV: nodeEnv as 'development' | 'test' | 'production',
     APP_VERSION: appVersion,
     GIT_SHA: gitSha,
     REDIS_URL: redisUrl,
+    DATABASE_URL: databaseUrl,
+    DATABASE_POOL_MAX: boundedInteger(values, 'DATABASE_POOL_MAX', 10, 1, 50),
+    DATABASE_CONNECTION_TIMEOUT_MS: boundedInteger(
+      values,
+      'DATABASE_CONNECTION_TIMEOUT_MS',
+      5_000,
+      250,
+      30_000,
+    ),
+    DATABASE_IDLE_TIMEOUT_MS: boundedInteger(
+      values,
+      'DATABASE_IDLE_TIMEOUT_MS',
+      30_000,
+      1_000,
+      300_000,
+    ),
+    FCM_PROJECT_ID: fcmProjectId,
+    FCM_CLIENT_EMAIL: fcmClientEmail,
+    FCM_PRIVATE_KEY: fcmPrivateKey,
     WORKER_CONCURRENCY: boundedInteger(values, 'WORKER_CONCURRENCY', 5, 1, 100),
     WORKER_SHUTDOWN_TIMEOUT_MS: boundedInteger(
       values,

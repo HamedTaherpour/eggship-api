@@ -17,6 +17,10 @@ export interface NotificationDeliveryRecord {
   channel: NotificationChannel;
   state: NotificationDeliveryState;
   failureCode: NotificationDeliveryFailureCode | null;
+  attemptCount: number;
+  claimToken: string | null;
+  claimedAt: Date | null;
+  leaseExpiresAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }

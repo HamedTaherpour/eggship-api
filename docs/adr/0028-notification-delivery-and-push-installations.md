@@ -33,3 +33,23 @@ The `PushDeliveryProvider` port is provider-neutral. Firebase/FCM types,
 credentials, diagnostics, adapters, provider calls, workers, retries, and
 external-side-effect replay belong to NOT-05. Retention and cleanup belong to
 DATA-02; no duration is invented here.
+
+## NOT-05 implementation addendum
+
+FCM is the V1 infrastructure adapter behind the provider-neutral port. BullMQ
+owns automatic retry scheduling; PostgreSQL `NotificationDelivery` state,
+attempts, claim token, and bounded lease are authoritative. The initial
+eligible installation set is materialized once per Notification, so retry and
+ASY-04 replay never add installations registered later. Eligibility is checked
+again immediately before each provider call; ineligible rows become
+`SUPPRESSED`, and provider-confirmed invalid tokens become `INVALIDATED` while
+the installation history is retained. Both are handled terminal outcomes and
+do not create ASY-04 failures.
+
+EggShip guarantees one durable logical delivery identity per
+`notificationId × installationId × channel`, not exactly-once external push.
+If FCM accepts a message and the worker crashes before recording `ACCEPTED`, a
+stale-lease reclaim can send a duplicate. No verified FCM idempotency primitive
+is assumed. `ACCEPTED` means provider acceptance only. `DATA-02` remains the
+owner of retention. Real FCM reachability and Liara/Iran staging proof are
+mandatory before production release and are not claimed by local tests.

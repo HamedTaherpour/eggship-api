@@ -143,17 +143,19 @@ model ReferralAttribution {
 /// Durable customer inbox record. This is authoritative independently of push
 /// delivery; provider state belongs to a later delivery task.
 model Notification {
-  id        String             @id @default(uuid()) @db.Uuid
-  userId    String             @db.Uuid
-  type      NotificationType
-  source    NotificationSource
-  title     String             @db.VarChar(160)
-  body      String             @db.VarChar(2000)
-  payload   Json
-  createdAt DateTime           @default(now()) @db.Timestamptz(3)
-  readAt    DateTime?          @db.Timestamptz(3)
+  id                           String             @id @default(uuid()) @db.Uuid
+  userId                       String             @db.Uuid
+  type                         NotificationType
+  source                       NotificationSource
+  title                        String             @db.VarChar(160)
+  body                         String             @db.VarChar(2000)
+  payload                      Json
+  /// Set once, transactionally with the initial WEB_PUSH fan-out.
+  pushDeliveriesMaterializedAt DateTime?          @db.Timestamptz(3)
+  createdAt                    DateTime           @default(now()) @db.Timestamptz(3)
+  readAt                       DateTime?          @db.Timestamptz(3)
 
-  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  user       User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
   deliveries NotificationDelivery[]
 
   /// Newest-first customer inbox reads.
@@ -161,8 +163,6 @@ model Notification {
   /// Unread filtering/counting followed by newest-first ordering.
   @@index([userId, readAt, createdAt, id])
 }
-
-/// Only notification categories with an approved producer are persisted here.
 
 /// A browser/device/app installation owned by a User. The provider token is
 /// recoverable delivery material and is never exposed outside this boundary.
@@ -198,6 +198,10 @@ model NotificationDelivery {
   channel        NotificationChannel
   state          NotificationDeliveryState        @default(PENDING)
   failureCode    NotificationDeliveryFailureCode?
+  attemptCount   Int                              @default(0)
+  claimToken     String?                          @db.Uuid
+  claimedAt      DateTime?                        @db.Timestamptz(3)
+  leaseExpiresAt DateTime?                        @db.Timestamptz(3)
   createdAt      DateTime                         @default(now()) @db.Timestamptz(3)
   updatedAt      DateTime                         @updatedAt @db.Timestamptz(3)
 
@@ -229,7 +233,10 @@ enum NotificationDeliveryFailureCode {
   RATE_LIMITED
   PROVIDER_CONFIGURATION
   MALFORMED_PAYLOAD
+  UNKNOWN
 }
+
+/// Only notification categories with an approved producer are persisted here.
 /// New categories are additive enum migrations rather than uncontrolled text.
 enum NotificationType {
   ORDER_STATUS

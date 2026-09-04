@@ -33,6 +33,8 @@ export class QueueFailureReporter {
         jobId: metadata.jobId,
         attemptsMade: metadata.attemptsMade,
         failureReason: error.message,
+        failureCategory: metadata.category ?? normalizedFailureCategory(error),
+        failureCode: metadata.reasonCode ?? normalizedFailureReason(error),
         correlationId: metadata.correlationId,
         failedAt: new Date().toISOString(),
       },
@@ -65,13 +67,15 @@ export class QueueFailureReporter {
             correlationId: metadata.correlationId,
             attemptCount: metadata.attemptsMade,
             lastAttemptAt: new Date(),
-            category: 'UNKNOWN',
-            reasonCode: metadata.reasonCode ?? 'processor_failed',
+            category: toAsyncFailureCategory(
+              metadata.category ?? normalizedFailureCategory(error),
+            ),
+            reasonCode: metadata.reasonCode ?? normalizedFailureReason(error),
           },
           update: {
             attemptCount: metadata.attemptsMade,
             lastAttemptAt: new Date(),
-            reasonCode: metadata.reasonCode ?? 'processor_failed',
+            reasonCode: metadata.reasonCode ?? normalizedFailureReason(error),
           },
         })
         .catch((persistenceError: unknown) =>
@@ -87,4 +91,46 @@ export class QueueFailureReporter {
         );
     }
   }
+}
+
+function normalizedFailureCategory(error: Error): string {
+  return isFailureMetadata(error) ? error.category : 'UNKNOWN';
+}
+function normalizedFailureReason(error: Error): string {
+  return isFailureMetadata(error) ? error.reasonCode : 'processor_failed';
+}
+function isFailureMetadata(
+  error: Error,
+): error is Error & { category: string; reasonCode: string } {
+  return (
+    typeof (error as { category?: unknown }).category === 'string' &&
+    typeof (error as { reasonCode?: unknown }).reasonCode === 'string'
+  );
+}
+function toAsyncFailureCategory(
+  value: string,
+):
+  | 'INFRASTRUCTURE_TRANSIENT'
+  | 'PROVIDER_TRANSIENT'
+  | 'PROVIDER_RATE_LIMITED'
+  | 'PROVIDER_PERMANENT'
+  | 'INVALID_PAYLOAD'
+  | 'UNSUPPORTED_VERSION'
+  | 'BUSINESS_REJECTION'
+  | 'PROCESSOR_TIMEOUT'
+  | 'UNKNOWN' {
+  const allowed = [
+    'INFRASTRUCTURE_TRANSIENT',
+    'PROVIDER_TRANSIENT',
+    'PROVIDER_RATE_LIMITED',
+    'PROVIDER_PERMANENT',
+    'INVALID_PAYLOAD',
+    'UNSUPPORTED_VERSION',
+    'BUSINESS_REJECTION',
+    'PROCESSOR_TIMEOUT',
+    'UNKNOWN',
+  ] as const;
+  return (allowed as readonly string[]).includes(value)
+    ? (value as ReturnType<typeof toAsyncFailureCategory>)
+    : 'UNKNOWN';
 }

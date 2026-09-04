@@ -5,6 +5,13 @@ export interface WorkerEnvironmentVariables {
   APP_VERSION: string;
   GIT_SHA: string;
   REDIS_URL: string;
+  DATABASE_URL: string;
+  DATABASE_POOL_MAX: number;
+  DATABASE_CONNECTION_TIMEOUT_MS: number;
+  DATABASE_IDLE_TIMEOUT_MS: number;
+  FCM_PROJECT_ID: string;
+  FCM_CLIENT_EMAIL: string;
+  FCM_PRIVATE_KEY: string;
   WORKER_CONCURRENCY: number;
   WORKER_SHUTDOWN_TIMEOUT_MS: number;
 }

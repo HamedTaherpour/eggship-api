@@ -7,9 +7,9 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   110 |
-| DONE        |    87 |
+| DONE        |    88 |
 | IN_PROGRESS |     0 |
-| READY       |     3 |
+| READY       |     2 |
 | BLOCKED     |     0 |
 | PLANNED     |    20 |
 
@@ -848,7 +848,9 @@ Explicitly out of scope: Selecting or integrating a push vendor before approval.
 
 ### NOT-05 — BullMQ notification delivery worker
 
-Status: READY | Depends on: NOT-03, NOT-04, ASY-02, ASY-03 | Primary: Codex | Review: Claude/Cursor concurrency/operations review
+Status: DONE | Depends on: NOT-03, NOT-04, ASY-02, ASY-03 | Primary: Codex | Review: Claude/Cursor concurrency/operations review
+
+Delivered: Production notifications.order-status.v1 BullMQ processor with FCM adapter behind the provider-neutral port, durable fixed recipient snapshots, PostgreSQL-authoritative claim/lease execution, retry classification, terminal invalidation/suppression, ASY-04 replay integration, fail-closed Worker configuration, and focused PostgreSQL/Redis/unit verification. Real FCM/Liara staging proof remains a mandatory pre-production gate and is not claimed here.
 
 Scope: Implement outbox-backed delivery jobs, provider adapter invocation, retry classification, idempotency, correlation context, failed-job visibility, and replay safety.
 

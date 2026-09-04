@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- DEP-02 Liara infrastructure/configuration contract: separate staging and production private-network PostgreSQL/Redis/Object Storage resources, default-disabled public DB/Redis access, private bucket and bucket-scoped S3 credential policy, provider-issued connection/TLS handling, Liara-managed secret ownership, and safe non-provisioning checklist. No real resources, credentials, migration, deployment, sizing, retention, or recovery objective added. Current Media presigning gap is recorded as a production follow-up.
+
 - DEP-01 deployment runtime architecture (ADR 0025): Human + ChatGPT-approved conceptual API/Worker topology, immutable shared release artifact, environment-scoped PostgreSQL/Redis/object-storage isolation, explicit release metadata and single migration-owner boundary, failure isolation, and documented Liara provider-verification follow-ups. No provisioning or deployment.
 
 - ADM-01 implementation: permissioned Admin list/detail/create/role-change/disable/enable endpoints with minimized responses, no-store caching, canonical role validation, actor-attributed audit events, atomic role/activation mutation, Admin refresh-session revocation, and a concurrency-safe last-active-SUPER_ADMIN invariant. No schema migration; password changes, deletion, bootstrap, and role expansion remain out of scope.

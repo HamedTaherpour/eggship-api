@@ -6,14 +6,14 @@ This is the authoritative execution plan for completing the standalone EggShip A
 
 | Measure     | Count |
 | ----------- | ----: |
-| Total       |   109 |
-| DONE        |    83 |
+| Total       |   110 |
+| DONE        |    84 |
 | IN_PROGRESS |     0 |
-| READY       |     1 |
+| READY       |     3 |
 | BLOCKED     |     0 |
-| PLANNED     |    25 |
+| PLANNED     |    23 |
 
-- Current task: `DEP-01` (Liara runtime architecture and configuration) is **DONE**. The conceptual modular-monolith runtime architecture, immutable shared release artifact, independent API/Worker processes, environment isolation, PostgreSQL/Redis authority boundaries, single migration owner, and provider-verification deferrals are recorded in ADR 0025. No provisioning or deployment was added.
+- Current task: `DEP-02` (PostgreSQL, Redis, object storage, and secrets) is **DONE**. The provider-verified Liara infrastructure/configuration contract is recorded in [docs/dep-02-infrastructure-contract.md](dep-02-infrastructure-contract.md). No provisioning, credentials, migration, or deployment was added.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate. `M4 — Ordering complete` requirements are now all DONE (PRC-01 through PRC-05, ORD-01 through ORD-08 including ORD-03A, COM-01 through COM-03, DLU-01/DLU-02, SET-01/SET-02); milestone closure remains subject to the normal review/approval gates.
 
 ## Status model
@@ -977,6 +977,22 @@ Explicitly out of scope: Re-implementing CAT-04 upload/list/delete; Sharp/thumbn
 
 Delivered: Product image, Blog cover, BlogAuthor avatar, and durable inline Media references with atomic replacement/rollback proof; reference-aware usage inspection and delete protection; deterministic PostgreSQL attach-wins/delete-wins ordering proof; restrictive FK and no-dangling-state verification; focused E2E/regression/static/build gates. The broad PostgreSQL run passed 283/284 tests with only the known unrelated notification-ordering flake. Order persistence passed independently and was classified as unrelated to MED-01.
 
+### MED-02 — Private Media delivery
+
+Status: READY | Depends on: MED-01, DEP-02 | Primary: Codex | Review: Claude/Cursor security review, Human deployment approval
+
+Scope: Add secure private-object read delivery for Media consumers without exposing bucket credentials or treating `STORAGE_PUBLIC_BASE_URL` as authorization. Extend the `StorageProvider` abstraction with provider-compatible presigned GET URLs or an equivalent secure delivery mechanism, bounded expiry, and the affected Admin/storefront response/read paths.
+
+Acceptance criteria:
+
+- `StorageProvider` owns private object read access; application code does not import an S3/Liara SDK or expose bucket credentials.
+- Presigned GET URLs or the approved equivalent use a bounded, configuration-controlled expiry and never rely on `STORAGE_PUBLIC_BASE_URL` as an access-control mechanism.
+- Authorization/ownership rules are enforced for any authenticated Media read path, with minimized responses and no storage-key leakage.
+- Unit, integration, and API-level tests cover expiry bounds, authorization/ownership, failure mapping, and credential non-disclosure.
+- A dedicated staging private-bucket proof succeeds before any production workflow requiring private Media reads; production deployment remains human-approved.
+
+Explicitly out of scope: Provisioning infrastructure, changing bucket privacy, public-bucket workarounds, local-disk storage, orphan reconciliation, or production deployment.
+
 ## Phase 9 — Transactional Async & Operational Features
 
 ### ASY-01 — Transactional outbox schema and publisher contract
@@ -1249,7 +1265,7 @@ Explicitly out of scope: Production cutover.
 
 ### DEP-02 — PostgreSQL, Redis, object storage, and secrets
 
-Status: READY | Depends on: DEP-01, MED-01 | Primary: Human infrastructure process | Review: Claude/Cursor security review, Human approval
+Status: DONE | Depends on: DEP-01, MED-01 | Primary: Human infrastructure process | Review: Claude/Cursor security review, Human approval
 
 Scope: Provision and document environment-scoped services, least-privilege credentials, TLS/network controls, rotation, capacity, and production/development isolation.
 
@@ -1257,9 +1273,21 @@ Acceptance criteria: Secrets are not committed or logged; production Redis canno
 
 Explicitly out of scope: Schema migration and application release.
 
+Delivered: [DEP-02 infrastructure contract](dep-02-infrastructure-contract.md)
+records the verified Liara private-network boundary, separate staging and
+production PostgreSQL/Redis/Object Storage resources, default-disabled public
+DB/Redis access, provider-issued URL/TLS policy, private bucket and
+bucket-scoped credential contract, Liara-managed secret ownership/rotation,
+safe provisioning checklist, and the no-provisioning boundary. The contract
+also identifies the current runtime gap: `StorageProvider` has URL derivation
+but no presign operation, so private-object Media reads require follow-up
+before production use. No credentials, provisioning, migration, deployment,
+sizing, backup-retention, RPO/RTO, replica, or worker-concurrency decision was
+added.
+
 ### DEP-03 — Deployment migrations and process health
 
-Status: PLANNED | Depends on: DEP-01, DEP-02 | Primary: Codex | Review: Claude/Cursor operations review, Human deployment approval
+Status: READY | Depends on: DEP-01, DEP-02 | Primary: Codex | Review: Claude/Cursor operations review, Human deployment approval
 
 Scope: Add explicit `prisma migrate deploy` release step, API liveness, dependency/worker readiness, graceful shutdown, and failed-start behavior.
 
@@ -1269,7 +1297,7 @@ Explicitly out of scope: Destructive migration approval and rollback automation 
 
 ### DEP-04 — Staging, smoke tests, and release metadata
 
-Status: PLANNED | Depends on: DEP-03, FND-08 | Primary: Codex | Review: Claude/Cursor, Human release approval
+Status: PLANNED | Depends on: DEP-03, DEP-02, MED-02, FND-08 | Primary: Codex | Review: Claude/Cursor, Human release approval
 
 Scope: Establish production-like staging, post-deploy API/worker smoke tests, release version/Git SHA verification, and environment-safe fixtures.
 
@@ -1279,7 +1307,7 @@ Explicitly out of scope: Treating staging as a substitute for integration tests.
 
 ### DEP-05 — Backup strategy and restore test
 
-Status: PLANNED | Depends on: DEP-02 | Primary: Human infrastructure process, then Codex | Review: Human operations approval
+Status: READY | Depends on: DEP-02 | Primary: Human infrastructure process, then Codex | Review: Human operations approval
 
 Scope: Define PostgreSQL/object-storage backup ownership, encryption, access, recovery objectives, and a repeatable isolated restore test.
 

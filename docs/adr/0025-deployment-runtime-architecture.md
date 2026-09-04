@@ -67,13 +67,17 @@ Liara behavior into an architecture decision or provisioning infrastructure.
 ## Provider-specific verification
 
 The conceptual architecture does not depend on undocumented Liara facts. DEP-02
-and DEP-03 planning must verify and record evidence for:
+and DEP-03 planning must verify and record evidence for. DEP-02's verified
+resource/configuration contract is recorded in
+[DEP-02 infrastructure contract](../dep-02-infrastructure-contract.md):
 
 - separate Liara applications versus independent process types;
 - non-HTTP Worker support and custom commands from one artifact;
 - migration/release-job execution;
 - readiness/health probes and graceful termination/signals;
 - private networking and PostgreSQL/Redis TLS/connectivity;
+- Liara Object Storage's official S3-compatible HTTPS endpoint, private
+  buckets, bucket-scoped credentials, and presigned-access requirement;
 - secret-management behavior;
 - forwarded-header/proxy topology, including exact trust-proxy hops; and
 - structured stdout log collection.

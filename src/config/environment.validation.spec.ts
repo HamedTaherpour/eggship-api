@@ -384,6 +384,25 @@ describe('validateEnvironment', () => {
     );
   });
 
+  it('requires HTTPS for production S3 endpoints', () => {
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        NODE_ENV: 'production',
+        OTP_PROVIDER: 'kavenegar',
+        KAVENEGAR_API_KEY: 'test-kavenegar-key',
+        KAVENEGAR_OTP_TEMPLATE: 'test-template',
+        STORAGE_PROVIDER: 's3',
+        STORAGE_ENDPOINT: 'http://storage.example.invalid',
+        STORAGE_REGION: 'provider-issued-region',
+        STORAGE_BUCKET: 'eggship-media-production',
+        STORAGE_ACCESS_KEY: 'test-access-key',
+        STORAGE_SECRET_KEY: 'test-secret-key',
+        STORAGE_PUBLIC_BASE_URL: 'https://media.example.invalid',
+      }),
+    ).toThrow('STORAGE_ENDPOINT must use HTTPS when NODE_ENV=production.');
+  });
+
   it('rejects MEDIA_MAX_FILE_BYTES above the hard maximum', () => {
     expect(() =>
       validateEnvironment({

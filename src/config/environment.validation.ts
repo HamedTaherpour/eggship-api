@@ -470,6 +470,11 @@ function resolveStorageConfig(
       'STORAGE_ENDPOINT must be an http(s) URL with a hostname and no credentials.',
     );
   }
+  if (nodeEnv === 'production' && !endpoint.startsWith('https://')) {
+    throw new Error(
+      'STORAGE_ENDPOINT must use HTTPS when NODE_ENV=production.',
+    );
+  }
   const region = requiredString(values, 'STORAGE_REGION');
   const bucket = requiredString(values, 'STORAGE_BUCKET');
   const accessKey = requiredString(values, 'STORAGE_ACCESS_KEY');

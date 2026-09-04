@@ -163,7 +163,7 @@ Out of V1 Media Library UX: folders, collections, tagging, DAM taxonomy, bulk tr
 
 Responses expose a derived `url`, not a persisted host-specific string and not `storageKey`.
 
-Launch assumption: catalog/blog imagery is **public** object content. Private-media ACL and indefinite signed URLs are not implemented. Changing CDN/`STORAGE_PUBLIC_BASE_URL` must not require rewriting consumer relationships.
+Production/staging Object Storage buckets are **private** under the DEP-02 contract. `STORAGE_PUBLIC_BASE_URL` is only a derived URL-base input and is not an access grant. Private-object reads require presigned access where the consumer needs a URL. The current provider port only exposes `getPublicUrl`; implementing presigned access and updating any affected response/read path is an explicit follow-up before production Media reads. Changing the endpoint or URL base must not require rewriting consumer relationships.
 
 ## Permissions
 

@@ -462,7 +462,8 @@ export class AuthController {
       'Revokes the session bound to the current access token when present,',
       'clears `eggship_at` and `eggship_rt`, and is idempotent when already logged out.',
       'Short-lived access tokens may remain cryptographically valid until expiry;',
-      'refresh continuation is stopped. Browser requests require the customer CSRF contract.',
+      'refresh continuation is stopped. Push-installation lifecycle is unchanged;',
+      'use the installation DELETE contract to suppress a device. Browser requests require the customer CSRF contract.',
     ].join(' '),
   })
   @ApiResponse({
@@ -500,8 +501,9 @@ export class AuthController {
     summary: 'Revoke all sessions for the authenticated subject',
     description: [
       'Requires a valid access token (cookie or Bearer).',
-      'Revokes every active session for that subject, clears current auth cookies,',
-      'and prevents further refresh on those sessions.',
+      'Revokes every active session and active push installation for that customer,',
+      'clears current auth cookies, and prevents further refresh on those sessions.',
+      'Session and installation revocation are separate PostgreSQL operations and are not one shared transaction.',
       'Customer sessions only: an authenticated non-customer subject is rejected with 403.',
       'Does not affect other users. Browser requests require the customer CSRF contract.',
     ].join(' '),

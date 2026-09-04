@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { forwardRef, Inject, Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApplicationLogger } from '../../../common/observability/application-logger.service';
 import { UserRepository } from '../../users/infrastructure/user.repository';
@@ -14,6 +14,7 @@ import { AuthSubjectType } from '../domain/subject-type';
 import { AuthSessionRepository } from '../infrastructure/auth-session.repository';
 import { AccessTokenService } from '../infrastructure/access-token.service';
 import { RefreshTokenService } from '../infrastructure/refresh-token.service';
+import { PushInstallationService } from '../../notifications/application/push-installation.service';
 
 export interface RefreshSessionResult {
   accessToken: string;
@@ -37,6 +38,9 @@ export class SessionLifecycleService {
     private readonly accessTokens: AccessTokenService,
     private readonly logger: ApplicationLogger,
     config: ConfigService,
+    @Optional()
+    @Inject(forwardRef(() => PushInstallationService))
+    private readonly installations?: PushInstallationService,
   ) {
     this.accessTokenTtlSeconds = config.getOrThrow<number>(
       'JWT_ACCESS_TTL_SECONDS',
@@ -191,6 +195,10 @@ export class SessionLifecycleService {
       principal.subjectId,
       now,
     );
+    const installationCount =
+      this.installations === undefined
+        ? 0
+        : await this.installations.revokeAll(principal.subjectId);
 
     this.logger.info(
       {
@@ -199,6 +207,7 @@ export class SessionLifecycleService {
         subjectType: principal.subjectType,
         subjectId: principal.subjectId,
         revokedCount: count,
+        installationCount,
       },
       'All auth sessions revoked for subject',
     );

@@ -7,11 +7,11 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   110 |
-| DONE        |    86 |
+| DONE        |    87 |
 | IN_PROGRESS |     0 |
-| READY       |     2 |
+| READY       |     3 |
 | BLOCKED     |     0 |
-| PLANNED     |    22 |
+| PLANNED     |    20 |
 
 - Current task: `DEP-03` (Deployment migrations and process health) is **DONE**. Explicit migration ownership, dependency-aware API health, Redis degradation, and bounded API/Worker shutdown are implemented and verified. No Liara resources were provisioned.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate. `M4 — Ordering complete` requirements are now all DONE (PRC-01 through PRC-05, ORD-01 through ORD-08 including ORD-03A, COM-01 through COM-03, DLU-01/DLU-02, SET-01/SET-02); milestone closure remains subject to the normal review/approval gates.
@@ -831,17 +831,24 @@ Explicitly out of scope: Push delivery and unapproved notification types.
 
 ### NOT-04 — Delivery abstraction and push installations
 
-Status: PLANNED | Depends on: NOT-01, AUTH-08 | Primary: Human + ChatGPT architecture process, then Codex | Review: Claude/Cursor security/privacy review
+Status: DONE | Depends on: NOT-01, AUTH-08 | Primary: Human + ChatGPT architecture process, then Codex | Review: Claude/Cursor security/privacy review
 
 Scope: Approve delivery-channel semantics and implement a provider-independent push installation/token abstraction with ownership, revocation, consent, and lifecycle rules.
 
 Acceptance criteria: Notification records remain the inbox source; provider credentials stay outside domain code; stale/invalid tokens can be retired safely.
+Implementation: Approved ADR 0028, User-owned PushInstallation lifecycle and
+registration/revocation APIs, logout-all integration, durable
+NotificationDelivery identity/state primitives, typed destination validation,
+and provider-neutral push port. Focused real-PostgreSQL concurrency/FK proof and
+focused real-Prisma/Nest/CSRF E2E proof pass against the dedicated TEST DB;
+bounded serialization and unique-race recovery are covered. Provider sending
+and workers remain NOT-05; retention remains DATA-02.
 
 Explicitly out of scope: Selecting or integrating a push vendor before approval.
 
 ### NOT-05 — BullMQ notification delivery worker
 
-Status: PLANNED | Depends on: NOT-03, NOT-04, ASY-02, ASY-03 | Primary: Codex | Review: Claude/Cursor concurrency/operations review
+Status: READY | Depends on: NOT-03, NOT-04, ASY-02, ASY-03 | Primary: Codex | Review: Claude/Cursor concurrency/operations review
 
 Scope: Implement outbox-backed delivery jobs, provider adapter invocation, retry classification, idempotency, correlation context, failed-job visibility, and replay safety.
 

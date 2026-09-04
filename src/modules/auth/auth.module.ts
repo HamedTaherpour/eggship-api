@@ -38,6 +38,7 @@ import { RedisOtpStore } from './infrastructure/redis-otp-store';
 import { RedisOtpVerificationGrantStore } from './infrastructure/redis-otp-verification-grant-store';
 import { RefreshTokenService } from './infrastructure/refresh-token.service';
 import { SecureOtpCodeIssuer } from './infrastructure/secure-otp-code-issuer';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { SecureOtpCodeIssuer } from './infrastructure/secure-otp-code-issuer';
     RedisModule,
     VisitorsModule,
     AuditModule,
+    forwardRef(() => NotificationsModule),
   ],
   controllers: [AuthController, AdminAuthController],
   providers: [

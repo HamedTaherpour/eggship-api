@@ -97,6 +97,7 @@ model User {
   sessions              AuthSession[]
   orders                Order[]
   notifications         Notification[]
+  pushInstallations     PushInstallation[]
   discountCustomerUsage DiscountCustomerUsage[]
   discountUsageRecords  DiscountUsageRecord[]
   referralAttribution   ReferralAttribution?
@@ -153,6 +154,7 @@ model Notification {
   readAt    DateTime?          @db.Timestamptz(3)
 
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  deliveries NotificationDelivery[]
 
   /// Newest-first customer inbox reads.
   @@index([userId, createdAt, id])
@@ -161,6 +163,73 @@ model Notification {
 }
 
 /// Only notification categories with an approved producer are persisted here.
+
+/// A browser/device/app installation owned by a User. The provider token is
+/// recoverable delivery material and is never exposed outside this boundary.
+model PushInstallation {
+  id                String                 @id @default(uuid()) @db.Uuid
+  userId            String                 @db.Uuid
+  installationId    String                 @unique @db.Uuid
+  providerToken     String                 @unique @db.VarChar(512)
+  status            PushInstallationStatus @default(ACTIVE)
+  permissionGranted Boolean                @default(false)
+  createdAt         DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime               @updatedAt @db.Timestamptz(3)
+  revokedAt         DateTime?              @db.Timestamptz(3)
+
+  user       User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  deliveries NotificationDelivery[]
+
+  @@index([userId, status])
+  @@index([status, permissionGranted])
+}
+
+enum PushInstallationStatus {
+  ACTIVE
+  REVOKED
+  INVALIDATED
+}
+
+/// Durable, provider-neutral delivery intent/state. It is not the inbox fact.
+model NotificationDelivery {
+  id             String                           @id @default(uuid()) @db.Uuid
+  notificationId String                           @db.Uuid
+  installationId String                           @db.Uuid
+  channel        NotificationChannel
+  state          NotificationDeliveryState        @default(PENDING)
+  failureCode    NotificationDeliveryFailureCode?
+  createdAt      DateTime                         @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime                         @updatedAt @db.Timestamptz(3)
+
+  notification Notification     @relation(fields: [notificationId], references: [id], onDelete: Restrict)
+  installation PushInstallation @relation(fields: [installationId], references: [id], onDelete: Restrict)
+
+  @@unique([notificationId, installationId, channel])
+  @@index([installationId, state])
+  @@index([state, createdAt])
+}
+
+enum NotificationChannel {
+  IN_APP
+  WEB_PUSH
+}
+
+enum NotificationDeliveryState {
+  PENDING
+  SENDING
+  ACCEPTED
+  FAILED
+  INVALIDATED
+  SUPPRESSED
+}
+
+enum NotificationDeliveryFailureCode {
+  INVALID_TOKEN
+  TRANSIENT
+  RATE_LIMITED
+  PROVIDER_CONFIGURATION
+  MALFORMED_PAYLOAD
+}
 /// New categories are additive enum migrations rather than uncontrolled text.
 enum NotificationType {
   ORDER_STATUS

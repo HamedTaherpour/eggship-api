@@ -54,3 +54,29 @@ responses use `Cache-Control: no-store`. Missing and other-owner notification
 ids return the same `NOTIFICATION_NOT_FOUND` response. Cookie-authenticated
 read mutations remain covered by the global AUTH-10 CSRF guard; Bearer clients
 retain the accepted native-client behavior.
+
+## Push installations and delivery (NOT-04)
+
+`PushInstallation` is an independently owned User installation, identified by
+a client-generated opaque UUID. Its provider token is sensitive write-only
+material. Registration is idempotent, active cross-user reassignment is
+rejected, and revoked/invalidated installations can be explicitly reactivated
+by their stable installation identity. `PUT
+/notifications/installations/:installationId` registers and `DELETE` revokes;
+neither endpoint returns the provider token. Eligibility requires User
+`isActive`, installation `ACTIVE`, and `permissionGranted`.
+
+`POST /auth/logout-all` revokes the User's active installations as well as all
+auth sessions. These are separate PostgreSQL operations and are not promised
+as one shared transaction. Current-device logout cannot identify an
+installation under the existing auth contract, so it clears/revokes the auth
+session only; clients that need device suppression call the explicit DELETE
+endpoint.
+
+`NotificationDelivery` is durable delivery intent/state, not the inbox source
+of truth. Its unique identity is `(notificationId, installationId, channel)`.
+States are `PENDING`, `SENDING`, `ACCEPTED`, `FAILED`, `INVALIDATED`, and
+`SUPPRESSED`. `ACCEPTED` never means displayed, received, opened, or read.
+Only typed internal destinations are allowed; V1 supports `{ type: "ORDER",
+id }`, and the frontend constructs the route. NOT-05 owns provider invocation,
+workers, retries, and replay. DATA-02 owns retention and cleanup policy.

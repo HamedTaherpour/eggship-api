@@ -276,8 +276,8 @@ Concurrent refresh of the **same current** RT: exactly one rotation succeeds; th
 
 | Endpoint                       | Behavior                                                                                     |
 | ------------------------------ | -------------------------------------------------------------------------------------------- |
-| `POST /api/v1/auth/logout`     | Optional AT; revoke current session when principal present; always clear cookies; idempotent |
-| `POST /api/v1/auth/logout-all` | Requires AT (cookie or Bearer); revoke all user sessions; clear cookies                      |
+| `POST /api/v1/auth/logout`     | Optional AT; revoke current session when principal present; always clear cookies; idempotent. It intentionally does not change push-installation state because the contract does not identify an installation. |
+| `POST /api/v1/auth/logout-all` | Requires AT (cookie or Bearer); revoke all user sessions and all active push installations for that User; clear cookies. Session and installation revocations are separate PostgreSQL operations, so the current implementation does not guarantee one shared transaction across both effects. |
 
 Access tokens are not blacklisted. After logout, a stolen AT may work until short expiry; refresh continuation is stopped.
 

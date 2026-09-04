@@ -7,6 +7,9 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - ASY-04 durable async failure inspection and processor-approved replay infrastructure, normalized failure metadata, operator lifecycle controls, dedicated RBAC permissions, no-store Admin API, PostgreSQL claim/lease replay dispatch, and durable processor result receipts. Real processor replay proof remains deferred until an approved side-effect processor exists.
+- NOT-04 provider-neutral push installations and durable notification delivery
+  identity, with ownership-safe lifecycle APIs, CSRF/private-response coverage,
+  PostgreSQL concurrency/FK proof, and focused real-Prisma E2E coverage.
 
 ### Fixed
 
@@ -65,6 +68,11 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - Closed AUD-03 with permissioned Admin AuditLog list/detail read APIs, `AUDIT_READ`-only authorization, explicit safe DTOs, allowlisted indexed filters, and deterministic ordering; no recursive read auditing, export, arbitrary metadata search, or schema/index change. Retention/deletion remains DATA-01/DATA-03.
+- NOT-04 foundation: added User-owned push installation lifecycle and
+  write-only token registration/revocation APIs, logout-all installation
+  suppression, durable provider-neutral NotificationDelivery identity/state,
+  typed order destinations, and ADR 0028. Provider adapters/workers and token
+  retention cleanup remain deferred to NOT-05/DATA-02.
 - Closed ORD-08 with real-PostgreSQL order audit, concurrency, bounded hot-SKU invariant, and query-plan verification; no production Orders behavior or query/index change required. Full deployed load/spike/stress/soak capacity evidence remains REL-03/REL-04/REL-05.
 - Closed REL-02 with deterministic real-PostgreSQL concurrency coordination and durable inventory/order idempotency assertions.
 

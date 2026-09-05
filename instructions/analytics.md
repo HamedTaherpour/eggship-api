@@ -209,3 +209,38 @@ approved. ANL-04 owns EXPLAIN-backed performance and index decisions.
 Analytics does not define accounting, refund, credit, tax, or settlement
 semantics. Adding those financial concepts requires an explicit architecture
 decision and a review of the affected analytics contracts.
+
+## ANL-04 measured performance boundary
+
+The approved measured index is `InventoryLedger(createdAt)`, implemented with
+PostgreSQL `CREATE INDEX CONCURRENTLY` in the Prisma migration workflow. The
+global Today Pulse ledger range filters by `createdAt`; movement type is used
+inside aggregate `FILTER` expressions rather than as the primary selective
+predicate, so `InventoryLedger(type, createdAt)` is not justified. The
+product-scoped `(productId, createdAt)` index remains the supporting path for
+product daily-stock reconstruction.
+
+Migration safety: this repository's Prisma 7 `migrate deploy` execution was
+verified with a disposable TEST-only migration to execute migration SQL without
+an encompassing transaction; the probe was removed afterward. Therefore
+`CREATE INDEX CONCURRENTLY` is compatible with the established migration owner
+(`prisma migrate deploy`). If PostgreSQL cannot complete a concurrent build,
+Prisma does not record the migration as finished. PostgreSQL may leave an
+`INVALID` index; an operator must inspect and remove that exact invalid index
+before retrying the migration. A successful retry is otherwise safe and the
+migration history remains the authority. No production or Liara database was
+used for this verification.
+
+The following candidates remain deferred or rejected based on representative
+TEST-only measurements: lifecycle timestamp indexes on `Order`; additional
+`OrderLine` indexes; `PriceHistory(productId, createdAt, id)`; unnecessary
+status composites; and `InventoryLedger(createdAt, type)`. These decisions may
+be revisited with production/load evidence. No snapshots, materialized views,
+analytics cache, pool change, or top-products rewrite is introduced.
+
+ANL-04 evidence is local TEST verification only. It does not establish
+production RPS, users, concurrent requests, orders/day, SLA, p95/p99, or
+connection-pool capacity. Full capacity and load ownership remains with
+REL-03, REL-04, and REL-05. The reverse-from-current stock reconstruction is
+preserved; snapshot reevaluation belongs after measured ledger growth and
+repeated latency/load evidence, without an invented numeric threshold.

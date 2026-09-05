@@ -7,11 +7,11 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   110 |
-| DONE        |    91 |
+| DONE        |    92 |
 | IN_PROGRESS |     0 |
 | READY       |     3 |
 | BLOCKED     |     0 |
-| PLANNED     |    16 |
+| PLANNED     |    15 |
 
 - Current task: `DEP-03` (Deployment migrations and process health) is **DONE**. Explicit migration ownership, dependency-aware API health, Redis degradation, and bounded API/Worker shutdown are implemented and verified. No Liara resources were provisioned.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate. `M4 — Ordering complete` requirements are now all DONE (PRC-01 through PRC-05, ORD-01 through ORD-08 including ORD-03A, COM-01 through COM-03, DLU-01/DLU-02, SET-01/SET-02); milestone closure remains subject to the normal review/approval gates.
@@ -1108,13 +1108,23 @@ Explicitly out of scope: Elasticsearch, a data warehouse, and predictive analyti
 
 ### ANL-04 — Analytics index and performance verification
 
-Status: READY | Depends on: ANL-02, ANL-03 | Primary: Codex | Review: Claude/Cursor performance review, Human capacity review
+Status: DONE | Depends on: ANL-02, ANL-03 | Primary: Codex | Review: Claude/Cursor performance review, Human capacity review
 
 Scope: Analyze query plans, add justified indexes or approved aggregation only where measurements demand it, and establish analytics load baselines.
 
 Acceptance criteria: Representative volumes meet approved targets without N+1 behavior; index write costs and freshness tradeoffs are documented.
 
 Explicitly out of scope: Premature analytics databases or unmeasured caching.
+
+Delivered: Added the measured `InventoryLedger(createdAt)` index with
+PostgreSQL `CREATE INDEX CONCURRENTLY`, verified through `prisma migrate deploy`
+against dedicated TEST PostgreSQL, and added representative EXPLAIN/index
+regression coverage over a 20,100-row ledger fixture. Documented the deferred
+and rejected index matrix, migration failure/retry semantics, unchanged query
+counts, preserved reverse-from-current stock reconstruction, and explicit
+non-claims about production capacity. No analytics cache, snapshot, pool
+change, or speculative query rewrite was added. Full deployed load and capacity
+ownership remains REL-03/REL-04/REL-05.
 
 ## Phase 11 — Audit & Diagnostics
 
@@ -1194,7 +1204,7 @@ Delivered: Rebaselined around existing INV/ORD/COM/DLU/SET evidence rather than 
 
 ### REL-03 — k6 baseline and scenario harness
 
-Status: PLANNED | Depends on: ORD-04, CAT-06, ANL-03 | Primary: Codex after dependency review | Review: Claude/Cursor performance review
+Status: READY | Depends on: ORD-04, CAT-06, ANL-03 | Primary: Codex after dependency review | Review: Claude/Cursor performance review
 
 Scope: Add the approved k6/equivalent harness, representative fixtures, environment safety guards, metrics, and documented execution outside the primary laptop.
 

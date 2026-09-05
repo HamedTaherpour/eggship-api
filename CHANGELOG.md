@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- ANL-04 analytics performance verification: a concurrent PostgreSQL
+  `InventoryLedger(createdAt)` index with real-TEST plan regression evidence;
+  no analytics cache, snapshot, pool, or speculative index changes.
+
+- ANL-03 admin analytics: sales overview, top-products rankings, and Tehran-day
+  today pulse endpoints with lifecycle-safe aggregation and historical line
+  snapshot names.
+
 - ANL-02 Admin product analytics: current stock, Tehran-day physical stock
   reconstruction, and bounded price-history charts with `ANALYTICS_READ`,
   no-store responses, sparse-day support, explicit inferred price anchors, and

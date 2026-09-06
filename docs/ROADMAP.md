@@ -4,17 +4,31 @@ This is the authoritative execution plan for completing the standalone EggShip A
 
 ## Progress summary
 
-| Measure     | Count |
-| ----------- | ----: |
-| Total       |   110 |
-| DONE        |    93 |
-| IN_PROGRESS |     0 |
-| READY       |     2 |
-| BLOCKED     |     0 |
-| PLANNED     |    15 |
+| Measure                                  | Count |
+| ---------------------------------------- | ----: |
+| Total                                    |   111 |
+| DONE                                     |    93 |
+| IN_PROGRESS                              |     0 |
+| READY                                    |     4 |
+| BLOCKED                                  |     0 |
+| PLANNED                                  |     8 |
+| NOT_APPLICABLE                           |     6 |
+| Effective remaining implementation tasks |    12 |
+
+## Updated roadmap counts
+
+Total roadmap entries: **111** (milestone headings excluded).
+
+- DONE: 93
+- READY: 4
+- IN_PROGRESS: 0
+- PLANNED: 8
+- BLOCKED: 0
+- NOT_APPLICABLE: 6
+- Effective remaining implementation tasks: 12
 
 - Current task: `REL-03` (k6 baseline and scenario harness) is **DONE**. Final local-only baseline evidence is retained; no production or capacity claims are made.
-- Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate. `M4 — Ordering complete` requirements are now all DONE (PRC-01 through PRC-05, ORD-01 through ORD-08 including ORD-03A, COM-01 through COM-03, DLU-01/DLU-02, SET-01/SET-02); milestone closure remains subject to the normal review/approval gates.
+- Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E verification and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate. `M4 — Ordering complete` requirements are now all DONE (PRC-01 through PRC-05, ORD-01 through ORD-08 including ORD-03A, COM-01 through COM-03, DLU-01/DLU-02, SET-01/SET-02); milestone closure remains subject to the normal review/approval gates.
 
 ## Status model
 
@@ -48,7 +62,7 @@ Foundation → Identity → Catalog → Inventory → Orders
 
 Redis/BullMQ foundation → Transactional Outbox → Business-critical delivery workers
 
-Feature parity → Reliability and data lifecycle → Liara readiness → Migration/cutover
+Feature parity → Reliability and data lifecycle → Liara/provider verification → Frontend integration and launch
 ```
 
 Tasks may be executed across phases when their explicit dependencies allow it. Dependencies, not phase numbers alone, control execution. No task may introduce a circular module or roadmap dependency.
@@ -56,6 +70,40 @@ Tasks may be executed across phases when their explicit dependencies allow it. D
 ## Cross-cutting acceptance rule
 
 Every implementation task applies the repository Definition of Done. Relevant work must cover the API contract, strict validation, authentication, authorization and ownership, structured errors, OpenAPI, database constraints, transactions, concurrency, idempotency, observability, audit/privacy, tests, performance, documentation, and changelog without copying that checklist into every task. Non-applicable concerns must be recorded in the task handoff.
+
+## Operational placement and recommended execution
+
+The remaining implementation work is intentionally split around one focused Liara/provider-verification window. Local work should be completed first; hosted services may then be stopped after verification and restarted when the Admin and Storefront are ready.
+
+### LOCAL — BEFORE LIARA
+
+- `API-ERR-01` — Standardize user-facing API error contract. The audit, conventions, DTO/error mapping, and regression tests can be completed against the local API and are needed before frontend implementation.
+- `DATA-02` — Temporary-state and orphan-cleanup policy. This is primarily a policy and local lifecycle-enforcement task; its ownership, TTL, legal-hold, and recovery rules should be settled before hosted cleanup execution.
+
+### LIARA / PROVIDER VERIFICATION
+
+- `MED-02` — Private Media delivery. Secure object reads require a real private bucket and provider-compatible presigning proof.
+- `ASY-05` — Concrete scheduled cleanup and expiration jobs. Correctness includes worker scheduling, Redis behavior, retries, and real infrastructure execution.
+- `AUD-04` — Safe diagnostic bundle. Its release metadata dependency and operational access/audit behavior should be verified in the deployed environment.
+- `REL-04` — Normal, hot-SKU, spike, stress, and soak tests. The scenarios need hosted resource observations and capacity evidence without running destructive tests against production.
+- `REL-05` — Database/query and connection-pool review. The aggregate API/worker connection budget and hosted PostgreSQL behavior must be measured together.
+- `REL-06` — Infrastructure failure and recovery scenarios. PostgreSQL, Redis, worker, and object-storage failure/recovery behavior is provider-dependent.
+- `DATA-03` — Durable business records and backup lifecycle. Backup ownership, isolated restoration, and recovery objectives require hosted database/object-storage evidence.
+- `DEP-04` — Staging, smoke tests, and release metadata. The task creates the production-like deployed verification surface.
+- `DEP-05` — Backup strategy and restore test. The outstanding acceptance evidence is a provider-backed restore drill.
+- `DEP-06` — Rollback and production release procedure. Rollback, migration recovery, process skew, and release stop conditions must be validated against the deployed topology.
+
+### POST-FRONTEND INTEGRATION / PRE-LAUNCH
+
+No currently open roadmap task belongs exclusively to this group. After the local and Liara/provider windows, the Admin and Storefront should be built locally, then the backend redeployed for full frontend/backend integration, E2E, deployment checks, and launch readiness.
+
+### Recommended order
+
+1. Complete `API-ERR-01` and `DATA-02` locally; implement/test `ASY-05` locally where possible while preserving its hosted verification requirement.
+2. Complete the Liara window in dependency order: `MED-02`, `DEP-04`, `DEP-05`, `REL-04`, `REL-05`, `REL-06`, `AUD-04`, `DEP-06`, and `DATA-03`, with provider-backed deployment, storage, worker, backup/restore, failure/recovery, and capacity evidence; verify `ASY-05` against the hosted worker/Redis services.
+3. Stop hosted services temporarily after backend verification if they are not needed, to avoid unnecessary Liara credit usage.
+4. Build Admin locally, then Storefront/Landing locally.
+5. Redeploy the backend and run full integration/E2E, deployment checks, and launch-readiness validation.
 
 ## Phase 0 — Foundation
 
@@ -198,6 +246,26 @@ Scope: Define version/tag validation, artifact checks, changelog gates, and a Gi
 Acceptance criteria: Release automation is reproducible, preserves explicit migration/deployment approval, and includes application version/Git SHA metadata.
 
 Explicitly out of scope: Liara deployment and autonomous production releases.
+
+### API-ERR-01 — Standardize user-facing API error contract
+
+Status: READY | Depends on: FND-02, FND-05, AUTH-10 | Primary: Codex | Review: Claude/Cursor contract and security review
+
+Purpose: Audit and standardize the backend error contract before frontend implementation.
+
+Scope:
+
+- Keep stable machine-readable `error.code` values.
+- Ensure user-facing `error.message` is Persian where appropriate.
+- Distinguish user-facing messages from internal/diagnostic messages.
+- Avoid leaking sensitive or internal information and define generic safe messages for unexpected failures.
+- Review authentication errors including `AUTH_TOKEN_EXPIRED`, `AUTH_INVALID_CREDENTIALS`, and `AUTH_FORBIDDEN`, plus validation/domain errors.
+- Define frontend consumption rules: react to `code` for behavior; display backend `message` directly only when it is explicitly user-facing; route token expiry into refresh/session flow rather than merely displaying a message.
+- Audit current API modules for inconsistent English/user-facing messages and centralize conventions where appropriate without overengineering.
+
+Acceptance criteria: Machine-readable codes and HTTP status semantics remain stable; contract/regression tests prevent unintended reintroduction of English user-facing messages; unexpected/internal failures are safe; frontend consumption rules are documented.
+
+Explicitly out of scope: Implementing frontend behavior or changing unrelated domain semantics.
 
 ## Phase 1 — Authentication, Identity & Access
 
@@ -1377,11 +1445,17 @@ Acceptance criteria: Rollback does not assume destructive schema reversal; respo
 
 Explicitly out of scope: Automatic cutover or irreversible migration without recovery.
 
-## Phase 15 — Migration & Cutover
+## Phase 15 — Legacy Migration & Cutover (Not Applicable)
+
+## MIGRATION TASK DECISION
+
+MIG-01 through MIG-06 are retained for roadmap history and marked `NOT_APPLICABLE`. EggShip is pre-launch; the previous backend was prototype-only and never production. No legacy production migration/cutover is required.
 
 ### MIG-01 — Legacy behavior and contract inventory
 
-Status: PLANNED | Depends on: FND-05 | Primary: Claude/Cursor large-context review, supported by Codex | Review: Human product/architecture approval
+Status: NOT_APPLICABLE | Depends on: FND-05 | Primary: Claude/Cursor large-context review, supported by Codex | Review: Human product/architecture approval
+
+Decision: EggShip is pre-launch; the previous backend was prototype-only and never production. No legacy production migration/cutover is required.
 
 Scope: Inventory legacy routes, payloads, errors, auth/cookie behavior, data semantics, consumers, and undocumented edge cases across every listed legacy domain.
 
@@ -1391,7 +1465,9 @@ Explicitly out of scope: Implementing compatibility from assumptions.
 
 ### MIG-02 — Schema and data migration design
 
-Status: PLANNED | Depends on: MIG-01, implemented target schemas | Primary: Human + ChatGPT architecture process, then Codex | Review: Claude/Cursor, Human destructive-migration approval
+Status: NOT_APPLICABLE | Depends on: MIG-01, implemented target schemas | Primary: Human + ChatGPT architecture process, then Codex | Review: Claude/Cursor, Human destructive-migration approval
+
+Decision: EggShip is pre-launch; the previous backend was prototype-only and never production. No legacy production migration/cutover is required.
 
 Scope: Map legacy identities/relationships to target schemas, define transforms/backfills, ordering, validation, rehearsal, rollback/recovery, and data reconciliation.
 
@@ -1401,7 +1477,9 @@ Explicitly out of scope: Running production migration.
 
 ### MIG-03 — Backward compatibility and OpenAPI verification
 
-Status: PLANNED | Depends on: MIG-01, FND-05, target APIs | Primary: Codex | Review: Claude/Cursor contract review, Human product approval
+Status: NOT_APPLICABLE | Depends on: MIG-01, FND-05, target APIs | Primary: Codex | Review: Claude/Cursor contract review, Human product approval
+
+Decision: EggShip is pre-launch; the previous backend was prototype-only and never production. No legacy production migration/cutover is required.
 
 Scope: Compare legacy/target OpenAPI and observed contracts, define compatibility adapters or versioned changes, and add contract/regression verification.
 
@@ -1411,7 +1489,9 @@ Explicitly out of scope: Keeping unsafe legacy behavior without review.
 
 ### MIG-04 — Frontend API client migration
 
-Status: PLANNED | Depends on: MIG-03, AUTH-04 | Primary: Codex with frontend owner | Review: Claude/Cursor, Human frontend approval
+Status: NOT_APPLICABLE | Depends on: MIG-03, AUTH-04 | Primary: Codex with frontend owner | Review: Claude/Cursor, Human frontend approval
+
+Decision: EggShip is pre-launch; the previous backend was prototype-only and never production. No legacy production migration/cutover is required.
 
 Scope: Migrate the shared frontend client/auth/session handling to target contracts, including cookie/CSRF and refresh behavior.
 
@@ -1421,7 +1501,9 @@ Explicitly out of scope: Unrelated frontend redesign.
 
 ### MIG-05 — Storefront and admin staged migration
 
-Status: PLANNED | Depends on: MIG-02, MIG-04, M5 feature parity | Primary: Codex with frontend/backend owners | Review: Claude/Cursor, Human product approval
+Status: NOT_APPLICABLE | Depends on: MIG-02, MIG-04, M5 feature parity | Primary: Codex with frontend/backend owners | Review: Claude/Cursor, Human product approval
+
+Decision: EggShip is pre-launch; the previous backend was prototype-only and never production. No legacy production migration/cutover is required.
 
 Scope: Move storefront and admin domains in bounded waves with data/contract verification and independent rollback where practical.
 
@@ -1431,7 +1513,9 @@ Explicitly out of scope: Assuming a big-bang cutover.
 
 ### MIG-06 — Parallel validation, final cutover, and legacy retirement
 
-Status: PLANNED | Depends on: MIG-05, DEP-06, M6 production hardening | Primary: Human production-cutover process | Review: Claude/Cursor risk review, Human final approval
+Status: NOT_APPLICABLE | Depends on: MIG-05, DEP-06, M6 production hardening | Primary: Human production-cutover process | Review: Claude/Cursor risk review, Human final approval
+
+Decision: EggShip is pre-launch; the previous backend was prototype-only and never production. No legacy production migration/cutover is required.
 
 Scope: Use shadow/parallel validation where practical, reconcile data/results, choose cutover strategy, execute approved smoke/rollback gates, and retire legacy API safely.
 
@@ -1491,9 +1575,9 @@ Complete when referral/visitor, notification, content/media, remaining admin, tr
 
 Complete when Phases 12 through 14 are DONE: real infrastructure and failure suites pass, measured performance/query/pool work is complete, lifecycle/retention decisions are approved, Liara API/worker/data services are staged, restore is proven, and rollback/release procedures are approved.
 
-### M7 — Cutover ready
+### M7 — Launch ready
 
-Complete when MIG-01 through MIG-05 are DONE, MIG-06 acceptance prerequisites pass in staging/parallel validation, data and contracts reconcile, and the human production owner has approved the chosen cutover and rollback gates. Legacy retirement occurs only after successful cutover obligations are met.
+Complete when the Liara/provider verification window, frontend/backend integration, E2E, deployment checks, and launch-readiness gates pass, and the human production owner approves launch. No legacy cutover or retirement gate is required because the previous backend was prototype-only.
 
 ## Explicit unresolved decisions
 
@@ -1517,7 +1601,7 @@ The following are not implementation assumptions:
 - Media attachment and reference lifecycle is decided in [ADR 0022](adr/0022-media-attachment-and-reference-lifecycle.md) (Human Architecture Gate closed; MED-01 READY): image-only JPEG/PNG/WebP; Product exactly one optional image; Blog cover + Author avatar + durable inline registry; catalog Category has no image; shared library with valid unreferenced Media; `ON DELETE RESTRICT` / `MEDIA_REFERENCED`; replace-without-delete; usage inspection in MED-01; orphan cleanup deferred to DATA-02 with conservative grace (no retention invented); CAT-04 storage/upload bounds preserved. Remaining: MED-01 implementation, DATA-02 orphan policy/durations, DEP-02 live production-bucket verification. Blog Markdown/taxonomy remain ADR 0021 / CNT-04 (DONE).
 - Analytics contracts are settled in [ADR 0029](adr/0029-analytics-contracts-and-business-time-semantics.md) / ANL-01 and [analytics.md](../instructions/analytics.md). Remaining analytics work is implementation/performance work in ANL-02 through ANL-04; no endpoint, index, snapshot, aggregation, or accounting/refund semantics is approved by ANL-01.
 - Retention periods for every data class and backup recovery objectives (classification and approved lifecycle principles in [data-lifecycle.md](data-lifecycle.md); durations remain **UNRESOLVED** pending legal/accounting/operations approval and DATA-02/DATA-03/DEP-05 work).
-- Legacy compatibility, migration transforms, rollout waves, parallel-validation feasibility, and final cutover strategy.
+- Legacy compatibility, migration transforms, rollout waves, parallel-validation feasibility, and final cutover strategy are not applicable to the pre-launch system; the retained MIG entries document that planning decision.
 
 ## Roadmap maintenance policy
 

@@ -9,6 +9,34 @@
 - Historical business records such as orders, audit events, and inventory ledger entries must not be casually hard-deleted.
 - When Redis is introduced later, it must never be authoritative for critical order or inventory state.
 
+## Durable timestamp authority
+
+PostgreSQL is the authoritative clock for system-generated durable event and
+history timestamps whose ordering or forensic meaning matters. Repositories
+for these append-only records use parameterized SQL with `CURRENT_TIMESTAMP`
+(the transaction timestamp) rather than relying on Prisma to omit a
+`@default(now())`; Prisma 7 can materialize that default client-side with the
+PostgreSQL adapter. This gives all writes in one transaction the same database
+clock basis and preserves transaction atomicity.
+
+This policy currently applies to `Order.createdAt`, `OrderLine.createdAt`,
+`InventoryLedger.createdAt`, `PriceHistory.createdAt`, and
+`AuditLog.occurredAt`. `InventoryReservation`
+already uses the same database expression. `OutboxEvent.occurredAt` remains
+the explicitly supplied event instant from the originating domain operation;
+it is distinct from the persistence timestamp `createdAt`. Externally supplied
+or business-effective instants remain application-owned and are not silently
+replaced by the database clock.
+
+The following surfaces were audited and intentionally deferred: `OrderReturn`
+and `ReferralAttribution` retain business-record creation/attribution times;
+`Notification` and `NotificationDelivery` use creation timestamps for inbox
+and delivery ordering but are not authoritative stock/history events; and
+`InventoryCommandIdempotency` / async-recovery timestamps describe command or
+retry state rather than event occurrence. Their current semantics do not use
+the timestamp as the cross-boundary business ordering authority addressed by
+this fix.
+
 ## Connection budgeting
 
 - PostgreSQL pools are configured per process. The baseline is `DATABASE_POOL_MAX=10` (validated range `1`–`50`), a 5-second acquisition timeout, and a 30-second idle timeout.

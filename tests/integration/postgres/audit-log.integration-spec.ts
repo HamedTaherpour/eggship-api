@@ -127,4 +127,26 @@ describe('AuditLog PostgreSQL contract (integration)', () => {
       await prisma.auditLog.count({ where: { correlationId: 'aud01-test' } }),
     ).toBe(20);
   });
+
+  it('uses PostgreSQL time for occurredAt rather than the supplied application instant', async () => {
+    const supplied = new Date('2000-01-01T00:00:00.000Z');
+    const before = await prisma.$queryRaw<Array<{ now: Date }>>`
+      SELECT CURRENT_TIMESTAMP AS now
+    `;
+    const appended = await repository.append({
+      ...event(),
+      occurredAt: supplied,
+    });
+    const after = await prisma.$queryRaw<Array<{ now: Date }>>`
+      SELECT CURRENT_TIMESTAMP AS now
+    `;
+
+    expect(appended.occurredAt.getTime()).toBeGreaterThanOrEqual(
+      before[0]!.now.getTime() - 5,
+    );
+    expect(appended.occurredAt.getTime()).toBeLessThanOrEqual(
+      after[0]!.now.getTime() + 5,
+    );
+    expect(appended.occurredAt).not.toEqual(supplied);
+  });
 });

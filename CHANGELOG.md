@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Fix Order and OrderLine creation timestamps to use PostgreSQL's transaction
+  clock, preventing Prisma adapter timezone displacement under Asia/Tehran;
+  no existing rows are rewritten.
+
 ### Added
 
 - ANL-04 analytics performance verification: a concurrent PostgreSQL

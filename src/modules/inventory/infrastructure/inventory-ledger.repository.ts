@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { toSkipTake, type PageResult } from '../../../common/list';
 import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../infrastructure/database/prisma/prisma.service';
@@ -100,24 +101,28 @@ export class InventoryLedgerRepository {
         : assertInventoryUuid(input.correlationId, 'correlationId');
 
     try {
-      const created = await this.db(tx).inventoryLedger.create({
-        data: {
-          productId,
-          type: input.type,
-          quantity,
-          onHandDelta: input.onHandDelta,
-          reservedDelta: input.reservedDelta,
-          onHandAfter: input.onHandAfter,
-          reservedAfter: input.reservedAfter,
-          referenceType: input.referenceType,
-          referenceId,
-          reason,
-          actorType: actor.type,
-          actorId: actor.id,
-          correlationId,
-        },
-      });
-      return mapLedger(created);
+      const id = randomUUID();
+      const rows = await this.db(tx).$queryRaw<PrismaLedger[]>(Prisma.sql`
+        INSERT INTO "InventoryLedger" (
+          "id", "productId", "type", "quantity", "onHandDelta", "reservedDelta",
+          "onHandAfter", "reservedAfter", "referenceType", "referenceId",
+          "reason", "actorType", "actorId", "correlationId", "createdAt"
+        )
+        VALUES (
+          ${id}::uuid, ${productId}::uuid,
+          ${input.type}::"InventoryLedgerType",
+          ${quantity}, ${input.onHandDelta}, ${input.reservedDelta},
+          ${input.onHandAfter}, ${input.reservedAfter},
+          ${input.referenceType}::"InventoryLedgerReferenceType",
+          ${referenceId}::uuid, ${reason},
+          ${actor.type}::"InventoryLedgerActorType", ${actor.id}::uuid,
+          ${correlationId}::uuid, CURRENT_TIMESTAMP
+        )
+        RETURNING "id", "productId", "type", "quantity", "onHandDelta",
+          "reservedDelta", "onHandAfter", "reservedAfter", "referenceType",
+          "referenceId", "reason", "actorType", "actorId", "correlationId", "createdAt"
+      `);
+      return mapLedger(rows[0]!);
     } catch (error: unknown) {
       translateInventoryPersistenceError(error);
     }

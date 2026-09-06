@@ -35,21 +35,24 @@ export class AuditLogRepository {
     event: NormalizedAuditEvent,
     tx?: TransactionContext,
   ): Promise<AuditLogRecord> {
-    const row = await this.db(tx).auditLog.create({
-      data: {
-        id: event.id,
-        occurredAt: event.occurredAt,
-        actorType: event.actorType,
-        actorId: event.actorId,
-        action: event.action,
-        entityType: event.entityType,
-        entityId: event.entityId,
-        requestId: event.requestId,
-        correlationId: event.correlationId,
-        metadata: event.metadata === null ? Prisma.JsonNull : event.metadata,
-      },
-    });
-    return { ...event, metadata: row.metadata };
+    const metadata =
+      event.metadata === null ? null : JSON.stringify(event.metadata);
+    const rows = await this.db(tx).$queryRaw<AuditLogReadRecord[]>(Prisma.sql`
+      INSERT INTO "AuditLog" (
+        "id", "actorType", "actorId", "action", "entityType", "entityId",
+        "requestId", "correlationId", "metadata", "occurredAt"
+      )
+      VALUES (
+        ${event.id}::uuid, ${event.actorType}, ${event.actorId}::uuid,
+        ${event.action}, ${event.entityType}, ${event.entityId}::uuid,
+        ${event.requestId}, ${event.correlationId},
+        ${metadata}::jsonb, CURRENT_TIMESTAMP
+      )
+      RETURNING "id", "occurredAt", "actorType", "actorId", "action",
+        "entityType", "entityId", "requestId", "correlationId", "metadata"
+    `);
+    const row = rows[0]!;
+    return { ...event, occurredAt: row.occurredAt, metadata: row.metadata };
   }
 
   async findById(id: string): Promise<AuditLogReadRecord | null> {

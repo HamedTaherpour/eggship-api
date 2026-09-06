@@ -206,6 +206,32 @@ describe('Inventory reconciliation (integration)', () => {
     expect(result.status).toBe(InventoryReconciliationStatus.CONSISTENT);
   });
 
+  it('persists ledger createdAt from the PostgreSQL transaction clock', async () => {
+    const productId = await createProduct();
+    const before = await prisma.$queryRaw<Array<{ now: Date }>>`
+      SELECT CURRENT_TIMESTAMP AS now
+    `;
+    await inventory.receiveOnHand({
+      productId,
+      quantity: 1,
+      referenceType: InventoryLedgerReferenceType.RECEIVE,
+      referenceId: randomUUID(),
+      actor: SYSTEM_ACTOR,
+    });
+    const after = await prisma.$queryRaw<Array<{ now: Date }>>`
+      SELECT CURRENT_TIMESTAMP AS now
+    `;
+    const row = await prisma.inventoryLedger.findFirstOrThrow({
+      where: { productId },
+    });
+    expect(row.createdAt.getTime()).toBeGreaterThanOrEqual(
+      before[0]!.now.getTime() - 5,
+    );
+    expect(row.createdAt.getTime()).toBeLessThanOrEqual(
+      after[0]!.now.getTime() + 5,
+    );
+  });
+
   it('detects manual current-balance corruption', async () => {
     const productId = await stockProduct(100);
     const orderId = randomUUID();

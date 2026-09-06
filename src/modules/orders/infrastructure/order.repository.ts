@@ -463,44 +463,77 @@ export class OrderRepository {
     const db = resolvePrismaConnection(this.prisma, tx);
 
     try {
-      const created = await db.order.create({
-        data: {
-          id: randomUUID(),
-          userId: normalized.userId,
-          status: OrderStatus.PENDING_REVIEW,
-          customerPhone: normalized.customerPhone,
-          regionId: normalized.regionId,
-          regionName: normalized.regionName,
-          grossSubtotal: normalized.grossSubtotal,
-          lineDiscountTotal: normalized.lineDiscountTotal,
-          subtotalAfterLineDiscounts: normalized.subtotalAfterLineDiscounts,
-          orderDiscountAmount: normalized.orderDiscountAmount,
-          total: normalized.total,
-          pricingEvaluatedAt: normalized.pricingEvaluatedAt,
-          commercePolicyRevision: normalized.commercePolicyRevision,
-          ...mapOrderDiscountColumns(normalized.appliedOrderDiscount),
-          idempotencyKey: normalized.idempotencyKey,
-          idempotencyPayloadHash: normalized.idempotencyPayloadHash,
-          lines: {
-            create: normalized.lines.map((line) => ({
-              id: randomUUID(),
-              productId: line.productId,
-              productName: line.productName,
-              unitPrice: line.unitPrice,
-              quantity: line.quantity,
-              discountedQuantity: line.discountedQuantity,
-              grossLineTotal: line.grossLineTotal,
-              lineDiscountAmount: line.lineDiscountAmount,
-              finalLineTotal: line.finalLineTotal,
-              ...mapLineDiscountColumns(line.appliedLineDiscount),
-            })),
-          },
-        },
-        include: {
-          lines: { orderBy: [{ productId: 'asc' }, { createdAt: 'asc' }] },
-        },
-      });
-      return mapOrder(created);
+      const orderId = randomUUID();
+      const orderDiscount = mapOrderDiscountColumns(
+        normalized.appliedOrderDiscount,
+      );
+
+      // Prisma 7 can materialize an omitted @default(now()) through the
+      // PostgreSQL adapter. These are durable order/history instants, so the
+      // database must assign them inside the caller's transaction.
+      await db.$executeRaw(Prisma.sql`
+        INSERT INTO "Order" (
+          "id", "userId", "status", "customerPhone", "regionId", "regionName",
+          "grossSubtotal", "lineDiscountTotal", "subtotalAfterLineDiscounts",
+          "orderDiscountAmount", "total", "pricingEvaluatedAt",
+          "commercePolicyRevision", "appliedOrderDiscountId",
+          "appliedOrderDiscountName", "appliedOrderDiscountType",
+          "appliedOrderDiscountPercentValue", "appliedOrderDiscountFixedAmount",
+          "appliedOrderDiscountPrecedence", "idempotencyKey",
+          "idempotencyPayloadHash", "createdAt", "updatedAt"
+        ) VALUES (
+          ${orderId}::uuid, ${normalized.userId}::uuid,
+          ${OrderStatus.PENDING_REVIEW}::"OrderStatus", ${normalized.customerPhone},
+          ${normalized.regionId}::uuid, ${normalized.regionName},
+          ${normalized.grossSubtotal}, ${normalized.lineDiscountTotal},
+          ${normalized.subtotalAfterLineDiscounts}, ${normalized.orderDiscountAmount},
+          ${normalized.total}, ${normalized.pricingEvaluatedAt},
+          ${normalized.commercePolicyRevision}, ${orderDiscount.appliedOrderDiscountId}::uuid,
+          ${orderDiscount.appliedOrderDiscountName},
+          ${orderDiscount.appliedOrderDiscountType}::"DiscountType",
+          ${orderDiscount.appliedOrderDiscountPercentValue},
+          ${orderDiscount.appliedOrderDiscountFixedAmount},
+          ${orderDiscount.appliedOrderDiscountPrecedence},
+          ${normalized.idempotencyKey}::uuid, ${normalized.idempotencyPayloadHash},
+          CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        )
+      `);
+
+      for (const line of normalized.lines) {
+        const lineDiscount = mapLineDiscountColumns(line.appliedLineDiscount);
+        await db.$executeRaw(Prisma.sql`
+          INSERT INTO "OrderLine" (
+            "id", "orderId", "productId", "productName", "unitPrice", "quantity",
+            "discountedQuantity", "grossLineTotal", "lineDiscountAmount",
+            "finalLineTotal", "appliedLineDiscountId", "appliedLineDiscountName",
+            "appliedLineDiscountType", "appliedLineDiscountTarget",
+            "appliedLineDiscountPercentValue", "appliedLineDiscountFixedAmount",
+            "appliedLineDiscountPrecedence", "appliedLineDiscountProductId",
+            "appliedLineDiscountCategoryId", "createdAt"
+          ) VALUES (
+            ${randomUUID()}::uuid, ${orderId}::uuid, ${line.productId}::uuid,
+            ${line.productName}, ${line.unitPrice}, ${line.quantity},
+            ${line.discountedQuantity}, ${line.grossLineTotal},
+            ${line.lineDiscountAmount}, ${line.finalLineTotal},
+            ${lineDiscount.appliedLineDiscountId}::uuid,
+            ${lineDiscount.appliedLineDiscountName},
+            ${lineDiscount.appliedLineDiscountType}::"DiscountType",
+            ${lineDiscount.appliedLineDiscountTarget}::"DiscountTarget",
+            ${lineDiscount.appliedLineDiscountPercentValue},
+            ${lineDiscount.appliedLineDiscountFixedAmount},
+            ${lineDiscount.appliedLineDiscountPrecedence},
+            ${lineDiscount.appliedLineDiscountProductId}::uuid,
+            ${lineDiscount.appliedLineDiscountCategoryId}::uuid,
+            CURRENT_TIMESTAMP
+          )
+        `);
+      }
+
+      const created = await this.findById(orderId, tx);
+      if (created === null) {
+        throw new Error('Order disappeared after creation.');
+      }
+      return created;
     } catch (error: unknown) {
       throwTranslatedCreateError(error);
       throw error;

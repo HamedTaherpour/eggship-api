@@ -135,6 +135,37 @@ describe('Product price history (integration)', () => {
     });
   });
 
+  it('persists createdAt from the PostgreSQL transaction clock', async () => {
+    const category = await categories.create({ name: 'Eggs' });
+    const created = await products.create({
+      name: 'Fresh eggs',
+      price: 625000,
+      categoryId: category.id,
+    });
+    const before = await prisma.$queryRaw<Array<{ now: Date }>>`
+      SELECT CURRENT_TIMESTAMP AS now
+    `;
+
+    await pricing.changeProductPrice({
+      productId: created.id,
+      newPrice: 650000,
+      actor: { type: PriceHistoryActorType.ADMIN, id: ADMIN_ID },
+    });
+
+    const after = await prisma.$queryRaw<Array<{ now: Date }>>`
+      SELECT CURRENT_TIMESTAMP AS now
+    `;
+    const row = await prisma.priceHistory.findFirstOrThrow({
+      where: { productId: created.id },
+    });
+    expect(row.createdAt.getTime()).toBeGreaterThanOrEqual(
+      before[0]!.now.getTime() - 5,
+    );
+    expect(row.createdAt.getTime()).toBeLessThanOrEqual(
+      after[0]!.now.getTime() + 5,
+    );
+  });
+
   it('skips history for a no-op admin price update', async () => {
     const category = await categories.create({ name: 'Eggs' });
     const created = await products.create({

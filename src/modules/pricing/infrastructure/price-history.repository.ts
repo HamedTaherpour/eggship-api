@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import { Prisma } from '../../../generated/prisma/client';
 import { toSkipTake, type PageResult } from '../../../common/list';
 import {
   resolvePrismaConnection,
@@ -57,17 +59,20 @@ export class PriceHistoryRepository {
       type: input.actorType,
       id: input.actorId,
     });
+    const id = randomUUID();
 
-    const created = await this.db(tx).priceHistory.create({
-      data: {
-        productId,
-        oldPrice,
-        newPrice,
-        actorType: actor.type,
-        actorId: actor.id,
-      },
-    });
-    return mapPriceHistory(created);
+    const rows = await this.db(tx).$queryRaw<PrismaPriceHistory[]>(Prisma.sql`
+      INSERT INTO "PriceHistory" (
+        "id", "productId", "oldPrice", "newPrice", "actorType", "actorId", "createdAt"
+      )
+      VALUES (
+        ${id}::uuid, ${productId}::uuid, ${oldPrice}, ${newPrice},
+        ${actor.type}::"PriceHistoryActorType", ${actor.id}::uuid,
+        CURRENT_TIMESTAMP
+      )
+      RETURNING "id", "productId", "oldPrice", "newPrice", "actorType", "actorId", "createdAt"
+    `);
+    return mapPriceHistory(rows[0]!);
   }
 
   async listByProductId(

@@ -223,6 +223,61 @@ describe('Order creation (integration)', () => {
     });
   });
 
+  it('uses the PostgreSQL transaction clock for Order and OrderLine creation', async () => {
+    const { user, regionId, productId } = await seedBase({ onHand: 10 });
+    const previousTz = process.env.TZ;
+    process.env.TZ = 'Asia/Tehran';
+
+    try {
+      const before = await prisma.$queryRaw<Array<{ now: Date }>>`
+        SELECT CURRENT_TIMESTAMP AS now
+      `;
+      const result = await creation.createOrder({
+        actor: { type: OrderActorType.USER, id: user.id },
+        regionId,
+        idempotencyKey: randomUUID(),
+        lines: [{ productId, quantity: 1 }],
+      });
+      const after = await prisma.$queryRaw<Array<{ now: Date }>>`
+        SELECT CURRENT_TIMESTAMP AS now
+      `;
+      const ledger = await prisma.inventoryLedger.findFirstOrThrow({
+        where: { referenceId: result.order.id, type: 'RESERVE' },
+      });
+      const line = await prisma.orderLine.findFirstOrThrow({
+        where: { orderId: result.order.id },
+      });
+
+      expect(result.order.createdAt.getTime()).toBeGreaterThanOrEqual(
+        before[0]!.now.getTime() - 5,
+      );
+      expect(result.order.createdAt.getTime()).toBeLessThanOrEqual(
+        after[0]!.now.getTime() + 5,
+      );
+      expect(line.createdAt.getTime()).toBeGreaterThanOrEqual(
+        result.order.createdAt.getTime() - 5,
+      );
+      expect(line.createdAt.getTime()).toBeLessThanOrEqual(
+        after[0]!.now.getTime() + 5,
+      );
+      expect(ledger.createdAt.getTime()).toBeGreaterThanOrEqual(
+        result.order.createdAt.getTime() - 5,
+      );
+      expect(ledger.createdAt.getTime()).toBeLessThanOrEqual(
+        after[0]!.now.getTime() + 5,
+      );
+      expect(
+        Math.abs(result.order.createdAt.getTime() - after[0]!.now.getTime()),
+      ).toBeLessThan(1_000);
+    } finally {
+      if (previousTz === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = previousTz;
+      }
+    }
+  });
+
   it('rolls back Order and reservation when stock is insufficient', async () => {
     const { user, regionId, productId } = await seedBase({ onHand: 1 });
 

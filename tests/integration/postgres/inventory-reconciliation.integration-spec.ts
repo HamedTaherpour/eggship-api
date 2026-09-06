@@ -232,6 +232,32 @@ describe('Inventory reconciliation (integration)', () => {
     );
   });
 
+  it('stays consistent across canonical receive, runtime receive, and reserve', async () => {
+    const productId = await createProduct();
+    await inventory.receiveOnHand({
+      productId,
+      quantity: 12,
+      referenceType: InventoryLedgerReferenceType.RECEIVE,
+      referenceId: randomUUID(),
+      actor: SYSTEM_ACTOR,
+    });
+    await inventory.receiveOnHand({
+      productId,
+      quantity: 8,
+      referenceType: InventoryLedgerReferenceType.RECEIVE,
+      referenceId: randomUUID(),
+      actor: adminActor,
+    });
+    await inventory.reserveForOrder({
+      orderId: randomUUID(),
+      lines: [{ productId, quantity: 5 }],
+      actor: SYSTEM_ACTOR,
+    });
+
+    const result = await reconciliation.reconcileProduct(productId);
+    expect(result.status).toBe(InventoryReconciliationStatus.CONSISTENT);
+    expect(result.current).toEqual({ onHand: 20, reserved: 5, available: 15 });
+  });
   it('detects manual current-balance corruption', async () => {
     const productId = await stockProduct(100);
     const orderId = randomUUID();

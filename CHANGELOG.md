@@ -26,6 +26,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Canonical `pnpm db:seed:dev` local fixture with fail-closed loopback
+  targeting, deterministic catalog/region/products, append-only inventory
+  RECEIVE evidence, current integer-Toman prices, and local commerce settings;
+  no customer credentials, orders, discounts, or media are created.
+
 - ANL-04 analytics performance verification: a concurrent PostgreSQL
   `InventoryLedger(createdAt)` index with real-TEST plan regression evidence;
   no analytics cache, snapshot, pool, or speculative index changes.

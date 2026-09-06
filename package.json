@@ -41,6 +41,7 @@
     "prisma:validate": "prisma validate",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
+    "db:seed:dev": "node scripts/seed-dev.mjs",
     "admin:create": "node scripts/admin-create.mjs",
     "check:agent-tooling": "node scripts/check-agent-tooling.mjs",
     "env:check": "node scripts/check-environment.mjs",

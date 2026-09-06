@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Fix REL-03 k6 reporting URL sanitization for runtimes without a global URL
+  constructor while preserving credential-free base URL output.
+
+- Fix REL-03 launcher propagation of sanitized k6 runtime metadata by passing
+  non-secret `__ENV` values explicitly at the k6 CLI boundary while preserving
+  inherited credential handling.
+
+- REL-03 bounded k6 baseline harness with separate smoke, public browse,
+  authenticated order-read/create, and Admin analytics scenarios; explicit
+  non-production safety guards, fixture contract, aggregate JSON/Markdown
+  results, and no production capacity or SLA claims.
+
+- Closed REL-03 with final local-only baseline evidence for all five scenarios;
+  production capacity, SLA, stress, spike, soak, and provider-capacity claims
+  remain deferred to REL-04/REL-05.
+
 - Fix Order and OrderLine creation timestamps to use PostgreSQL's transaction
   clock, preventing Prisma adapter timezone displacement under Asia/Tehran;
   no existing rows are rewritten.

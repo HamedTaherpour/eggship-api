@@ -7,13 +7,13 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure     | Count |
 | ----------- | ----: |
 | Total       |   110 |
-| DONE        |    92 |
+| DONE        |    93 |
 | IN_PROGRESS |     0 |
-| READY       |     3 |
+| READY       |     2 |
 | BLOCKED     |     0 |
 | PLANNED     |    15 |
 
-- Current task: `DEP-03` (Deployment migrations and process health) is **DONE**. Explicit migration ownership, dependency-aware API health, Redis degradation, and bounded API/Worker shutdown are implemented and verified. No Liara resources were provisioned.
+- Current task: `REL-03` (k6 baseline and scenario harness) is **DONE**. Final local-only baseline evidence is retained; no production or capacity claims are made.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E migration and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate. `M4 — Ordering complete` requirements are now all DONE (PRC-01 through PRC-05, ORD-01 through ORD-08 including ORD-03A, COM-01 through COM-03, DLU-01/DLU-02, SET-01/SET-02); milestone closure remains subject to the normal review/approval gates.
 
 ## Status model
@@ -1204,7 +1204,7 @@ Delivered: Rebaselined around existing INV/ORD/COM/DLU/SET evidence rather than 
 
 ### REL-03 — k6 baseline and scenario harness
 
-Status: READY | Depends on: ORD-04, CAT-06, ANL-03 | Primary: Codex after dependency review | Review: Claude/Cursor performance review
+Status: DONE | Depends on: ORD-04, CAT-06, ANL-03 | Primary: Codex after dependency review | Review: Claude/Cursor performance review
 
 Scope: Add the approved k6/equivalent harness, representative fixtures, environment safety guards, metrics, and documented execution outside the primary laptop.
 
@@ -1212,9 +1212,17 @@ Acceptance criteria: Baseline scenarios cover health, public catalog, order read
 
 Explicitly out of scope: Invented capacity promises and production load generation.
 
+Delivered: Final local-only evidence retained for smoke, public browse, authenticated
+order reads/creation, and Admin analytics. Harness correctness, expected rejection
+classification, PostgreSQL-authoritative timestamps, inventory/reservation/ledger
+reconciliation, and credential-free reporting were verified. Production RPS,
+concurrency, SLA, stress, spike, soak, and provider-capacity claims remain out of
+scope; REL-04 owns normal/hot-SKU/spike/stress/soak scenarios and REL-05 owns
+database/query/pool/resource review.
+
 ### REL-04 — Normal, hot-SKU, spike, stress, and soak tests
 
-Status: PLANNED | Depends on: REL-02, REL-03 | Primary: Codex | Review: Claude/Cursor, Human capacity review
+Status: READY | Depends on: REL-02, REL-03 | Primary: Codex | Review: Claude/Cursor, Human capacity review
 
 Scope: Implement distinct normal-load, hot-SKU contention, spike, controlled stress, and soak scenarios with resource and correctness observations.
 

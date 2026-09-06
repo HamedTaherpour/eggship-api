@@ -9,6 +9,7 @@ src/generated/prisma/
 
 # Generated artifacts
 artifacts/openapi.json
+artifacts/load-tests/
 
 # Environment and secrets
 .env

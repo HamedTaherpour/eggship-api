@@ -32,4 +32,8 @@ export class PushInstallationService {
   invalidate(id: string): Promise<void> {
     return this.installations.invalidate(id);
   }
+
+  listAndroidWebOnlyUserIds(): Promise<string[]> {
+    return this.installations.findAndroidWebOnlyUserIds();
+  }
 }

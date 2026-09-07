@@ -171,6 +171,8 @@ model PushInstallation {
   userId            String                 @db.Uuid
   installationId    String                 @unique @db.Uuid
   providerToken     String                 @unique @db.VarChar(512)
+  channel           PushChannel?
+  os                PushOs?
   status            PushInstallationStatus @default(ACTIVE)
   permissionGranted Boolean                @default(false)
   createdAt         DateTime               @default(now()) @db.Timestamptz(3)
@@ -182,12 +184,27 @@ model PushInstallation {
 
   @@index([userId, status])
   @@index([status, permissionGranted])
+  @@index([status, channel, os, userId])
 }
 
 enum PushInstallationStatus {
   ACTIVE
   REVOKED
   INVALIDATED
+}
+
+enum PushChannel {
+  WEB_PUSH
+  NATIVE_PUSH
+}
+
+enum PushOs {
+  ANDROID
+  WINDOWS
+  MACOS
+  IOS
+  LINUX
+  OTHER
 }
 
 /// Durable, provider-neutral delivery intent/state. It is not the inbox fact.

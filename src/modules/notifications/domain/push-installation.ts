@@ -12,19 +12,42 @@ export const PushInstallationStatus = {
 export type PushInstallationStatus =
   (typeof PushInstallationStatus)[keyof typeof PushInstallationStatus];
 
+export const PushChannel = {
+  WEB_PUSH: 'WEB_PUSH',
+  NATIVE_PUSH: 'NATIVE_PUSH',
+} as const;
+export type PushChannel = (typeof PushChannel)[keyof typeof PushChannel];
+
+export const PushOs = {
+  ANDROID: 'ANDROID',
+  WINDOWS: 'WINDOWS',
+  MACOS: 'MACOS',
+  IOS: 'IOS',
+  LINUX: 'LINUX',
+  OTHER: 'OTHER',
+} as const;
+export type PushOs = (typeof PushOs)[keyof typeof PushOs];
+
 export interface RegisterPushInstallationInput {
   installationId: string;
   providerToken: string;
   permissionGranted: boolean;
+  channel: PushChannel;
+  os: PushOs;
 }
 
-export interface PushInstallationRecord extends RegisterPushInstallationInput {
+export interface PushInstallationRecord extends Omit<
+  RegisterPushInstallationInput,
+  'channel' | 'os'
+> {
   id: string;
   userId: string;
   status: PushInstallationStatus;
   createdAt: Date;
   updatedAt: Date;
   revokedAt: Date | null;
+  channel: PushChannel | null;
+  os: PushOs | null;
 }
 
 export class PushInstallationInvalidInputError extends ApplicationError {
@@ -73,9 +96,15 @@ export function normalizeRegistration(
     throw new PushInstallationInvalidInputError(
       'permissionGranted must be boolean.',
     );
+  if (!Object.values(PushChannel).includes(input.channel))
+    throw new PushInstallationInvalidInputError('channel is invalid.');
+  if (!Object.values(PushOs).includes(input.os))
+    throw new PushInstallationInvalidInputError('os is invalid.');
   return {
     installationId: input.installationId.toLowerCase(),
     providerToken: input.providerToken,
     permissionGranted: input.permissionGranted,
+    channel: input.channel,
+    os: input.os,
   };
 }

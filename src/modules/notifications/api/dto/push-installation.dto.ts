@@ -1,5 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsBoolean, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
+import { PushChannel, PushOs } from '../../domain/push-installation';
 
 export class RegisterPushInstallationDto {
   @ApiProperty({ format: 'uuid' })
@@ -17,6 +24,14 @@ export class RegisterPushInstallationDto {
   })
   @IsBoolean()
   permissionGranted!: boolean;
+
+  @ApiProperty({ enum: PushChannel })
+  @IsEnum(PushChannel)
+  channel!: PushChannel;
+
+  @ApiProperty({ enum: PushOs })
+  @IsEnum(PushOs)
+  os!: PushOs;
 }
 
 export class PushInstallationResponseDto {
@@ -24,6 +39,8 @@ export class PushInstallationResponseDto {
   @ApiProperty({ format: 'uuid' }) installationId!: string;
   @ApiProperty({ enum: ['ACTIVE', 'REVOKED', 'INVALIDATED'] }) status!: string;
   @ApiProperty() permissionGranted!: boolean;
+  @ApiProperty({ enum: PushChannel, nullable: true }) channel!: string | null;
+  @ApiProperty({ enum: PushOs, nullable: true }) os!: string | null;
 }
 
 export class PushInstallationResponseEnvelopeDto {

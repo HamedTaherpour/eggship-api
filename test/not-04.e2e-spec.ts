@@ -98,6 +98,8 @@ describe('NOT-04 push installations (focused e2e)', () => {
       installationId,
       status: 'ACTIVE',
       permissionGranted: true,
+      channel: 'WEB_PUSH',
+      os: 'ANDROID',
     });
     expect(JSON.stringify(response.body)).not.toContain('e2e-token-private');
 
@@ -107,6 +109,22 @@ describe('NOT-04 push installations (focused e2e)', () => {
       .send({
         ...registration(installationId, 'e2e-token-private'),
         extra: true,
+      })
+      .expect(400);
+    await request(server())
+      .put(`/api/v1/notifications/installations/${installationId}`)
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({
+        ...registration(installationId, 'e2e-token-invalid-channel'),
+        channel: 'FCM',
+      })
+      .expect(400);
+    await request(server())
+      .put(`/api/v1/notifications/installations/${installationId}`)
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({
+        ...registration(installationId, 'e2e-token-invalid-os'),
+        os: 'CHROME_OS',
       })
       .expect(400);
     await request(server())
@@ -277,7 +295,19 @@ describe('NOT-04 push installations (focused e2e)', () => {
   function registration(
     installationId: string,
     providerToken: string,
-  ): { installationId: string; providerToken: string; permissionGranted: boolean } {
-    return { installationId, providerToken, permissionGranted: true };
+  ): {
+    installationId: string;
+    providerToken: string;
+    permissionGranted: boolean;
+    channel: string;
+    os: string;
+  } {
+    return {
+      installationId,
+      providerToken,
+      permissionGranted: true,
+      channel: 'WEB_PUSH',
+      os: 'ANDROID',
+    };
   }
 });

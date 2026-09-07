@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Complete NOT-06 push installation metadata: require explicit enum-validated
+  channel/OS registration fields, preserve legacy rows as unknown, and add
+  user-aware Android web-only eligibility without changing push delivery.
+
 - Complete ORD-09: accept, normalize, persist, and expose the optional
   500-character customer checkout note as immutable historical Order context;
   the note participates in existing create idempotency payload hashing.

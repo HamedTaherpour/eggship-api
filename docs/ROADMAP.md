@@ -6,8 +6,8 @@ This is the authoritative execution plan for completing the standalone EggShip A
 
 | Measure                                  | Count |
 | ---------------------------------------- | ----: |
-| Total                                    |   112 |
-| DONE                                     |    96 |
+| Total                                    |   113 |
+| DONE                                     |    97 |
 | IN_PROGRESS                              |     0 |
 | READY                                    |     3 |
 | BLOCKED                                  |     0 |
@@ -17,9 +17,9 @@ This is the authoritative execution plan for completing the standalone EggShip A
 
 ## Updated roadmap counts
 
-Total roadmap entries: **112** (milestone headings excluded).
+Total roadmap entries: **113** (milestone headings excluded).
 
-- DONE: 96
+- DONE: 97
 - READY: 3
 - IN_PROGRESS: 0
 - PLANNED: 7
@@ -80,6 +80,7 @@ The remaining implementation work is intentionally split around one focused Liar
 - `API-ERR-01` — Standardize user-facing API error contract. The audit, conventions, DTO/error mapping, and regression tests can be completed against the local API and are needed before frontend implementation.
 - `DATA-02` — Temporary-state and orphan-cleanup policy is complete locally; its policy contract and ownership are settled before hosted cleanup execution.
 - `ORD-09` — Customer checkout note contract and persistence. Product/migration gate before Storefront checkout implementation.
+- `NOT-06` — Push installation channel and OS metadata. Product/privacy gate before push-campaign or native-app targeting work; does not reopen NOT-04/NOT-05.
 
 ### LIARA / PROVIDER VERIFICATION
 
@@ -943,6 +944,26 @@ Acceptance criteria: At-least-once delivery cannot duplicate logical sends beyon
 
 Explicitly out of scope: Admin UI and additional delivery channels.
 
+Follow-on: Push installation channel and OS metadata for campaign eligibility is owned by `NOT-06` and must not silently expand NOT-04/NOT-05.
+
+### NOT-06 — Push installation channel and OS metadata
+
+Status: DONE | Depends on: NOT-04 | Primary: Human + ChatGPT architecture process, then Codex | Review: Claude/Cursor security/privacy review, Human product/privacy approval
+
+Timing: BEFORE PUSH CAMPAIGN / NATIVE APP INTEGRATION.
+
+Human gate: Product/privacy contract.
+
+Cross-references: Builds on NOT-04 installation/token abstraction and NOT-05 delivery worker; does not rewrite their history.
+
+Scope: Extend the future installation/device model (not the User itself) so installations distinguish conceptual `channel` (`WEB_PUSH`, `NATIVE_PUSH`) and `os` (`ANDROID`, `WINDOWS`, `MACOS`, `IOS`, `LINUX`, `OTHER`). Required product use case: identify users who have an Android web/browser installation and do not have an active native Android installation, so EggShip can target an Android-app-install campaign appropriately.
+
+Acceptance criteria: Client-reported vs server-derived metadata, validation, migration/default behavior, installation uniqueness, active/inactive semantics, eligibility queries, and privacy/retention are explicit and approved; schema/API changes follow the approved contract rather than inventing fields earlier.
+
+Delivered: Additive nullable `PushChannel`/`PushOs` metadata with truthful `NULL` legacy representation; required enum-validated registration and OpenAPI fields; existing installation identity, uniqueness, re-registration, revocation, invalidation, and multi-device semantics preserved; set-based user-aware Android web-only eligibility query; focused E2E and PostgreSQL coverage.
+
+Explicitly out of scope: Campaign sending, campaign copy or vendor UX, and reopening NOT-04/NOT-05 delivery guarantees.
+
 ## Phase 8 — Content & Remaining Admin APIs
 
 ### CNT-01 — Blog model and public APIs
@@ -1575,7 +1596,7 @@ Explicitly out of scope: Autonomous AI cutover and deleting legacy data/services
 | Admin Blog                      | CNT-02, CNT-04                                |
 | Refresh-token/session lifecycle | AUTH-02 through AUTH-04                       |
 | User/store referral links       | REF-01 through REF-04                         |
-| Durable notification inbox      | NOT-01 through NOT-05                         |
+| Durable notification inbox      | NOT-01 through NOT-06                         |
 
 ## Milestones
 
@@ -1597,7 +1618,7 @@ Complete when PRC-01 through PRC-05, ORD-01 through ORD-08 (including ORD-03A), 
 
 ### M5 — Feature parity complete
 
-Complete when referral/visitor, notification, content/media, remaining admin, transactional async, analytics, and audit tasks through Phase 11 are DONE and the legacy/new-capability coverage table has no unowned or unverified domain.
+Complete when referral/visitor, notification, content/media, remaining admin, transactional async, analytics, and audit tasks through Phase 11 are DONE and the legacy/new-capability coverage table has no unowned or unverified domain. `NOT-06` remains a pre-campaign metadata gap and is not required to close M5 feature parity for the existing NOT-01 through NOT-05 delivery path.
 
 ### M6 — Production hardening complete
 
@@ -1625,7 +1646,7 @@ The following are not implementation assumptions:
 - Product-discount lifetime caps are decided in [ADR 0017](adr/0017-discount-lifetime-quantity-limit.md) / DLU-01 (partial discount; PRODUCT LINE only; create consume / pre-ship release; no return restore) and implemented in DLU-02. V1 LINE-then-ORDER composition and single-winner-per-scope rules remain locked in PRC-03 / PRC-05 / [ADR 0015](adr/0015-line-then-order-discount-composition.md). Promo codes and promo-banner behavior remain unapproved.
 - Deferred settlement lifecycle is decided in [ADR 0018](adr/0018-deferred-settlement-lifecycle.md) / SET-01 (separate `OrderSettlement` module; `DELIVERED`-only creation; `OPEN`/`SETTLED` with derived overdue; one current receipt; receipt-required explicit settle; no V1 reopen; `RETURNED` leaves settlement untouched; full `Order.total`; `SUPER_ADMIN`-only grants). Remaining explicit decisions, not implementation assumptions: `WAREHOUSE`/`ORDER_OPS` settlement permission grants (MIG-01 evidence), settlement without receipt, correction/reopen workflow, return/refund/credit adjustments interacting with settlement, multiple receipts or PDF proof, customer-facing settlement surfaces, and due/overdue reminders. No gateway, card/bank fields, refunds, or accounting subsystem is approved.
 - Future USER referral, visitor conversion, attribution correction/reassignment, reward policy, and any broader self-referral rule remain deferred. V1 Visitor attribution, duplicate handling, no-op existing-user behavior, no-reuse codes, and no speculative self-referral matching are settled in ADR 0020 / `instructions/referrals.md`.
-- Notification type/content rules, push provider/consent, delivery guarantees, and token lifecycle.
+- Notification type/content rules, push provider/consent, delivery guarantees, and token lifecycle. Installation channel/OS metadata and Android web-vs-native campaign eligibility ownership is `NOT-06` (DONE; does not rewrite NOT-04/NOT-05).
 - Media attachment and reference lifecycle is decided in [ADR 0022](adr/0022-media-attachment-and-reference-lifecycle.md) (Human Architecture Gate closed; MED-01 READY): image-only JPEG/PNG/WebP; Product exactly one optional image; Blog cover + Author avatar + durable inline registry; catalog Category has no image; shared library with valid unreferenced Media; `ON DELETE RESTRICT` / `MEDIA_REFERENCED`; replace-without-delete; usage inspection in MED-01; orphan cleanup deferred to DATA-02 with conservative grace (no retention invented); CAT-04 storage/upload bounds preserved. Remaining: MED-01 implementation, DATA-02 orphan policy/durations, DEP-02 live production-bucket verification. Blog Markdown/taxonomy remain ADR 0021 / CNT-04 (DONE).
 - Analytics contracts are settled in [ADR 0029](adr/0029-analytics-contracts-and-business-time-semantics.md) / ANL-01 and [analytics.md](../instructions/analytics.md). Remaining analytics work is implementation/performance work in ANL-02 through ANL-04; no endpoint, index, snapshot, aggregation, or accounting/refund semantics is approved by ANL-01.
 - Retention periods for every data class and backup recovery objectives (classification and approved lifecycle principles in [data-lifecycle.md](data-lifecycle.md); durations remain **UNRESOLVED** pending legal/accounting/operations approval and DATA-02/DATA-03/DEP-05 work).

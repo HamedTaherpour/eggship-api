@@ -6,6 +6,8 @@ import {
   PushInstallationOwnershipError,
   type PushInstallationRecord,
   type RegisterPushInstallationInput,
+  type PushChannel,
+  type PushOs,
 } from '../domain/push-installation';
 
 @Injectable()
@@ -52,6 +54,8 @@ export class PushInstallationRepository {
                     installationId: input.installationId,
                     providerToken: input.providerToken,
                     permissionGranted: input.permissionGranted,
+                    channel: input.channel,
+                    os: input.os,
                   },
                 })
               : await tx.pushInstallation.update({
@@ -62,6 +66,8 @@ export class PushInstallationRepository {
                     permissionGranted: input.permissionGranted,
                     status: 'ACTIVE',
                     revokedAt: null,
+                    channel: input.channel,
+                    os: input.os,
                   },
                 });
           return mapInstallation(row);
@@ -87,6 +93,8 @@ export class PushInstallationRepository {
               permissionGranted: input.permissionGranted,
               status: 'ACTIVE',
               revokedAt: null,
+              channel: input.channel,
+              os: input.os,
             },
           }),
         );
@@ -136,6 +144,20 @@ export class PushInstallationRepository {
       data: { status: 'INVALIDATED', revokedAt: new Date() },
     });
   }
+
+  async findAndroidWebOnlyUserIds(): Promise<string[]> {
+    const users = await this.prisma.user.findMany({
+      where: {
+        isActive: true,
+        pushInstallations: {
+          some: { status: 'ACTIVE', channel: 'WEB_PUSH', os: 'ANDROID' },
+          none: { status: 'ACTIVE', channel: 'NATIVE_PUSH', os: 'ANDROID' },
+        },
+      },
+      select: { id: true },
+    });
+    return users.map(({ id }) => id);
+  }
 }
 
 function isUnique(error: unknown): boolean {
@@ -158,6 +180,8 @@ function mapInstallation(row: {
   installationId: string;
   providerToken: string;
   permissionGranted: boolean;
+  channel: PushChannel | null;
+  os: PushOs | null;
   status: string;
   createdAt: Date;
   updatedAt: Date;
@@ -169,6 +193,8 @@ function mapInstallation(row: {
     installationId: row.installationId,
     providerToken: row.providerToken,
     permissionGranted: row.permissionGranted,
+    channel: row.channel,
+    os: row.os,
     status: row.status as PushInstallationRecord['status'],
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

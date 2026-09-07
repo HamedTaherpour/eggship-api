@@ -118,6 +118,8 @@ describe('NOT-04 push installations and delivery (PostgreSQL integration)', () =
           installationId,
           providerToken: 'token-same',
           permissionGranted: true,
+          channel: 'WEB_PUSH',
+          os: 'ANDROID',
         });
       }),
     );
@@ -140,11 +142,15 @@ describe('NOT-04 push installations and delivery (PostgreSQL integration)', () =
       installationId,
       providerToken: 'token-before-rotation',
       permissionGranted: true,
+      channel: 'WEB_PUSH',
+      os: 'ANDROID',
     });
     const second = await installations.register(user.id, {
       installationId,
       providerToken: 'token-after-rotation',
       permissionGranted: true,
+      channel: 'WEB_PUSH',
+      os: 'ANDROID',
     });
     expect(second.id).toBe(first.id);
     await expect(
@@ -173,12 +179,16 @@ describe('NOT-04 push installations and delivery (PostgreSQL integration)', () =
       installationId,
       providerToken: 'token-owner',
       permissionGranted: true,
+      channel: 'WEB_PUSH',
+      os: 'ANDROID',
     });
     await expect(
       installations.register(other.id, {
         installationId,
         providerToken: 'token-other',
         permissionGranted: true,
+        channel: 'WEB_PUSH',
+        os: 'ANDROID',
       }),
     ).rejects.toMatchObject({ code: 'NOTIFICATION_INSTALLATION_CONFLICT' });
 
@@ -191,6 +201,8 @@ describe('NOT-04 push installations and delivery (PostgreSQL integration)', () =
           installationId,
           providerToken: `token-revoked-${index}`,
           permissionGranted: true,
+          channel: 'WEB_PUSH',
+          os: 'ANDROID',
         });
       }),
     );
@@ -220,6 +232,8 @@ describe('NOT-04 push installations and delivery (PostgreSQL integration)', () =
       installationId,
       providerToken: 'token-revoke',
       permissionGranted: true,
+      channel: 'WEB_PUSH',
+      os: 'ANDROID',
     });
     await expect(
       installations.revokeOwned(other.id, installationId),
@@ -234,6 +248,8 @@ describe('NOT-04 push installations and delivery (PostgreSQL integration)', () =
       installationId,
       providerToken: 'token-invalidated',
       permissionGranted: true,
+      channel: 'WEB_PUSH',
+      os: 'ANDROID',
     });
     await installations.invalidate(
       (
@@ -295,6 +311,123 @@ describe('NOT-04 push installations and delivery (PostgreSQL integration)', () =
       await sessions.listActiveSessionsForUser(other.id, new Date()),
     ).toHaveLength(1);
     expect(first.id).toBeDefined();
+  });
+
+  it('stores explicit metadata, updates it on re-registration, and supports multiple installations', async () => {
+    const user = await createUser();
+    const webId = randomUUID();
+    const nativeId = randomUUID();
+    installationIds.push(webId, nativeId);
+    const web = await installations.register(user.id, {
+      installationId: webId,
+      providerToken: 'token-metadata-web',
+      permissionGranted: true,
+      channel: 'WEB_PUSH',
+      os: 'ANDROID',
+    });
+    const native = await installations.register(user.id, {
+      installationId: nativeId,
+      providerToken: 'token-metadata-native',
+      permissionGranted: true,
+      channel: 'NATIVE_PUSH',
+      os: 'ANDROID',
+    });
+    expect(native.id).not.toBe(web.id);
+    const updated = await installations.register(user.id, {
+      installationId: webId,
+      providerToken: 'token-metadata-web-rotated',
+      permissionGranted: true,
+      channel: 'WEB_PUSH',
+      os: 'WINDOWS',
+    });
+    expect(updated).toMatchObject({
+      id: web.id,
+      channel: 'WEB_PUSH',
+      os: 'WINDOWS',
+    });
+    expect(
+      await prisma.pushInstallation.count({ where: { userId: user.id } }),
+    ).toBe(2);
+  });
+
+  it('returns only active Android web-only users without N+1 reads', async () => {
+    const webOnly = await createUser();
+    const both = await createUser();
+    const inactiveNative = await createUser();
+    const registerMetadata = async (
+      userId: string,
+      token: string,
+      channel: 'WEB_PUSH' | 'NATIVE_PUSH',
+      os: 'ANDROID' | 'WINDOWS',
+    ): Promise<Awaited<ReturnType<PushInstallationRepository['register']>>> => {
+      const id = randomUUID();
+      installationIds.push(id);
+      return installations.register(userId, {
+        installationId: id,
+        providerToken: token,
+        permissionGranted: true,
+        channel,
+        os,
+      });
+    };
+    await registerMetadata(
+      webOnly.id,
+      'token-target-web',
+      'WEB_PUSH',
+      'ANDROID',
+    );
+    await registerMetadata(
+      both.id,
+      'token-target-both-web',
+      'WEB_PUSH',
+      'ANDROID',
+    );
+    await registerMetadata(
+      both.id,
+      'token-target-both-native',
+      'NATIVE_PUSH',
+      'ANDROID',
+    );
+    const revokedNative = await registerMetadata(
+      inactiveNative.id,
+      'token-target-revoked-native',
+      'NATIVE_PUSH',
+      'ANDROID',
+    );
+    await registerMetadata(
+      inactiveNative.id,
+      'token-target-inactive-web',
+      'WEB_PUSH',
+      'ANDROID',
+    );
+    await installations.revokeOwned(
+      inactiveNative.id,
+      revokedNative.installationId,
+    );
+
+    await expect(installations.findAndroidWebOnlyUserIds()).resolves.toEqual(
+      expect.arrayContaining([webOnly.id, inactiveNative.id]),
+    );
+    await expect(
+      installations.findAndroidWebOnlyUserIds(),
+    ).resolves.not.toContain(both.id);
+  });
+
+  it('does not target legacy rows whose metadata is unknown', async () => {
+    const user = await createUser();
+    const installationId = randomUUID();
+    installationIds.push(installationId);
+    await prisma.pushInstallation.create({
+      data: {
+        userId: user.id,
+        installationId,
+        providerToken: 'token-legacy-unknown',
+        permissionGranted: true,
+      },
+    });
+    await expect(
+      installations.findAndroidWebOnlyUserIds(),
+    ).resolves.not.toContain(user.id);
   });
 
   it('reliably creates one delivery per notification/install/channel and preserves FKs', async () => {
@@ -369,6 +502,8 @@ describe('NOT-04 push installations and delivery (PostgreSQL integration)', () =
       installationId,
       providerToken,
       permissionGranted: true,
+      channel: 'WEB_PUSH',
+      os: 'ANDROID',
     });
   }
 });

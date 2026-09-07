@@ -68,6 +68,8 @@ export class PushInstallationController {
         installationId,
         providerToken: body.providerToken,
         permissionGranted: body.permissionGranted,
+        channel: body.channel,
+        os: body.os,
       },
     );
     return {
@@ -76,6 +78,8 @@ export class PushInstallationController {
         installationId: row.installationId,
         status: row.status,
         permissionGranted: row.permissionGranted,
+        channel: row.channel,
+        os: row.os,
       },
     };
   }

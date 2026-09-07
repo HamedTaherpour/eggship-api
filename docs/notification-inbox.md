@@ -80,3 +80,12 @@ States are `PENDING`, `SENDING`, `ACCEPTED`, `FAILED`, `INVALIDATED`, and
 Only typed internal destinations are allowed; V1 supports `{ type: "ORDER",
 id }`, and the frontend constructs the route. NOT-05 owns provider invocation,
 workers, retries, and replay. DATA-02 owns retention and cleanup policy.
+
+NOT-06 adds explicit nullable `PushInstallation.channel` and `.os` metadata.
+The fields are required and enum-validated on new registration, while legacy
+rows remain `NULL` because historical platform values cannot be inferred
+truthfully. Re-registration updates metadata on the existing installation row
+and does not create a duplicate. Metadata-specific targeting is user-aware:
+active Android web installations qualify only when the same active User has no
+active Android native installation. The query is one set-based relation query,
+not per-installation or per-user N+1 work.

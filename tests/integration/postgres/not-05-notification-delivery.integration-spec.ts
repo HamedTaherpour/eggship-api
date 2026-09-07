@@ -295,6 +295,8 @@ describe('NOT-05 notification delivery PostgreSQL proof (integration)', () => {
       installationId,
       providerToken,
       permissionGranted: true,
+      channel: 'WEB_PUSH',
+      os: 'ANDROID',
     });
     fixtureInstallations.push(row.id);
     return row;

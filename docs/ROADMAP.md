@@ -7,9 +7,9 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure                                  | Count |
 | ---------------------------------------- | ----: |
 | Total                                    |   111 |
-| DONE                                     |    93 |
+| DONE                                     |    94 |
 | IN_PROGRESS                              |     0 |
-| READY                                    |     4 |
+| READY                                    |     3 |
 | BLOCKED                                  |     0 |
 | PLANNED                                  |     8 |
 | NOT_APPLICABLE                           |     6 |
@@ -19,8 +19,8 @@ This is the authoritative execution plan for completing the standalone EggShip A
 
 Total roadmap entries: **111** (milestone headings excluded).
 
-- DONE: 93
-- READY: 4
+- DONE: 94
+- READY: 3
 - IN_PROGRESS: 0
 - PLANNED: 8
 - BLOCKED: 0
@@ -249,7 +249,7 @@ Explicitly out of scope: Liara deployment and autonomous production releases.
 
 ### API-ERR-01 — Standardize user-facing API error contract
 
-Status: READY | Depends on: FND-02, FND-05, AUTH-10 | Primary: Codex | Review: Claude/Cursor contract and security review
+Status: DONE | Depends on: FND-02, FND-05, AUTH-10 | Primary: Codex | Review: Claude/Cursor contract and security review
 
 Purpose: Audit and standardize the backend error contract before frontend implementation.
 

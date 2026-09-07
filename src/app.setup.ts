@@ -1,9 +1,10 @@
-import { ValidationPipe } from '@nestjs/common';
+import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import type { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiExceptionFilter } from './common/http/api-exception.filter';
 import type { EnvironmentVariables } from './config/environment.validation';
 import { CsrfGuard } from './modules/auth/api/csrf.guard';
+import type { ValidationError } from 'class-validator';
 
 export function configureApplication(app: INestApplication): void {
   const config = app.get(ConfigService);
@@ -17,6 +18,8 @@ export function configureApplication(app: INestApplication): void {
       transform: true,
       whitelist: true,
       forbidNonWhitelisted: true,
+      exceptionFactory: (errors: ValidationError[]): BadRequestException =>
+        new BadRequestException({ message: errors }),
     }),
   );
   app.useGlobalFilters(app.get(ApiExceptionFilter));

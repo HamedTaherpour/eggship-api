@@ -13,15 +13,9 @@ import { ApplicationError } from '../errors/application-error';
 import { ApplicationLogger } from '../observability/application-logger.service';
 import { RequestContextService } from '../observability/request-context.service';
 import { createRequestId } from '../observability/request-id';
+import { normalizeException } from './error-contract';
 
-interface ErrorBody {
-  error: {
-    code: string;
-    message: string;
-    details: Record<string, unknown>;
-  };
-  requestId: string;
-}
+import type { ErrorResponseBody } from './error-contract';
 
 @Catch()
 @Injectable()
@@ -44,7 +38,10 @@ export class ApiExceptionFilter implements ExceptionFilter {
             : HttpStatus.INTERNAL_SERVER_ERROR;
     const requestId = this.context.getRequestId() ?? createRequestId();
     const correlationId = this.context.getCorrelationId() ?? requestId;
-    const body = this.buildBody(exception, status, requestId);
+    const body: ErrorResponseBody = {
+      error: normalizeException(exception, status),
+      requestId,
+    };
 
     if (status >= 500) {
       this.logger.error(
@@ -95,115 +92,6 @@ export class ApiExceptionFilter implements ExceptionFilter {
     }
 
     response.status(status).json(body);
-  }
-
-  private buildBody(
-    exception: unknown,
-    status: number,
-    requestId: string,
-  ): ErrorBody {
-    if (exception instanceof AuthError) {
-      return {
-        error: {
-          code: exception.code,
-          message: exception.message,
-          details: exception.details,
-        },
-        requestId,
-      };
-    }
-
-    if (exception instanceof ApplicationError) {
-      return {
-        error: {
-          code: exception.code,
-          message: exception.message,
-          details: exception.details,
-        },
-        requestId,
-      };
-    }
-
-    if (!(exception instanceof HttpException)) {
-      return this.internalErrorBody(requestId);
-    }
-
-    if (status >= 500) {
-      return this.internalErrorBody(requestId);
-    }
-
-    const exceptionResponse: unknown = exception.getResponse();
-    const details = this.extractDetails(exceptionResponse);
-
-    return {
-      error: {
-        code: this.extractCode(exceptionResponse, status),
-        message: this.extractMessage(exceptionResponse, exception.message),
-        details,
-      },
-      requestId,
-    };
-  }
-
-  private internalErrorBody(requestId: string): ErrorBody {
-    return {
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: 'An unexpected error occurred.',
-        details: {},
-      },
-      requestId,
-    };
-  }
-
-  private extractCode(response: unknown, status: number): string {
-    if (this.isRecord(response) && typeof response['code'] === 'string') {
-      const code = response['code'].trim();
-      if (code !== '') {
-        return code;
-      }
-    }
-    return this.codeForStatus(status);
-  }
-
-  private extractMessage(response: unknown, fallback: string): string {
-    if (typeof response === 'string') {
-      return response;
-    }
-    if (this.isRecord(response)) {
-      const message = response['message'];
-      if (typeof message === 'string') {
-        return message;
-      }
-      if (Array.isArray(message)) {
-        return 'Request validation failed.';
-      }
-    }
-    return fallback;
-  }
-
-  private extractDetails(response: unknown): Record<string, unknown> {
-    if (this.isRecord(response) && Array.isArray(response['message'])) {
-      return { violations: response['message'] };
-    }
-    return {};
-  }
-
-  private codeForStatus(status: number): string {
-    const knownCodes: Partial<Record<number, string>> = {
-      [HttpStatus.BAD_REQUEST]: 'BAD_REQUEST',
-      [HttpStatus.UNAUTHORIZED]: 'UNAUTHORIZED',
-      [HttpStatus.FORBIDDEN]: 'FORBIDDEN',
-      [HttpStatus.NOT_FOUND]: 'NOT_FOUND',
-      [HttpStatus.CONFLICT]: 'CONFLICT',
-      [HttpStatus.UNPROCESSABLE_ENTITY]: 'UNPROCESSABLE_ENTITY',
-      [HttpStatus.TOO_MANY_REQUESTS]: 'TOO_MANY_REQUESTS',
-    };
-    return knownCodes[status] ?? 'HTTP_ERROR';
-  }
-
-  private isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null;
   }
 }
 

@@ -18,8 +18,11 @@
   - Offset pagination with `total` / `totalPages` is the default; cursor pagination is not introduced globally.
 - Errors use `{ "error": { "code": "DOMAIN_REASON", "message": "Human-readable message", "details": {} }, "requestId": "req_..." }`.
 - Rate-limit and cooldown Auth errors that include `error.details.retryAfterSeconds` also set the HTTP `Retry-After` header to the same delay (whole seconds).
-- Unexpected server errors use the stable `INTERNAL_ERROR` code and a safe generic message; internal exception details are never exposed.
+- Validation errors use `VALIDATION_ERROR` with `details.violations[]` entries containing stable `field` and `rule` values plus safe Persian `message` text; clients never parse the text.
+- Unexpected server errors use the stable `INTERNAL_ERROR` code and the safe generic message `خطایی رخ داد. لطفاً دوباره تلاش کنید.`; internal exception details are never exposed.
+- Intentional Auth operational failures such as OTP delivery unavailability retain their stable public code/status; unrelated 5xx failures normalize to `INTERNAL_ERROR`.
 - Clients use stable error codes for program logic and never parse error messages.
+- Frontend refresh, retry, validation, and safe-detail handling is defined in [frontend-error-consumption.md](frontend-error-consumption.md). Error codes are stable after API-ERR-01 and must not be renamed casually.
 - Timestamps are ISO 8601 and handled internally in UTC.
 - Monetary values are integers expressed in Toman.
 - Endpoints return explicit response DTOs and never expose raw Prisma models.

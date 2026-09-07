@@ -166,7 +166,7 @@ describe('MediaService', () => {
     if (result.items[0]?.status === 'failed') {
       expect(result.items[0].error).toEqual({
         code: MediaErrorCode.UPLOAD_FAILED,
-        message: 'The file could not be stored.',
+        message: 'خطایی رخ داد. لطفاً دوباره تلاش کنید.',
       });
     }
     expect(logger.error).toHaveBeenCalledWith(

@@ -8,7 +8,7 @@ export class ApiErrorBodyDto {
   code!: string;
 
   @ApiProperty({
-    example: 'Request validation failed.',
+    example: 'اطلاعات واردشده معتبر نیست.',
     description:
       'Human-readable message; clients must not parse this for logic.',
   })
@@ -18,10 +18,16 @@ export class ApiErrorBodyDto {
     type: 'object',
     additionalProperties: true,
     example: {
-      violations: ['property unexpected should not exist'],
+      violations: [
+        {
+          field: 'phone',
+          rule: 'isIranianMobilePhone',
+          message: 'شماره موبایل واردشده معتبر نیست.',
+        },
+      ],
     },
     description:
-      'Optional structured details. Validation failures use a violations array.',
+      'Safe contract details. Validation failures use violations with field, rule, and Persian message.',
   })
   details!: Record<string, unknown>;
 }
@@ -37,12 +43,51 @@ export class ApiErrorResponseDto {
   requestId!: string;
 }
 
+export class ApiValidationViolationDto {
+  @ApiProperty({ example: 'phone' })
+  field!: string;
+
+  @ApiProperty({ example: 'isIranianMobilePhone' })
+  rule!: string;
+
+  @ApiProperty({ example: 'شماره موبایل واردشده معتبر نیست.' })
+  message!: string;
+}
+
+export class ApiValidationErrorDetailsDto {
+  @ApiProperty({ type: ApiValidationViolationDto, isArray: true })
+  violations!: ApiValidationViolationDto[];
+}
+
+export class ApiValidationErrorResponseDto {
+  @ApiProperty({
+    type: ApiErrorBodyDto,
+    example: {
+      code: 'VALIDATION_ERROR',
+      message: 'اطلاعات واردشده معتبر نیست.',
+      details: {
+        violations: [
+          {
+            field: 'phone',
+            rule: 'isIranianMobilePhone',
+            message: 'شماره موبایل واردشده معتبر نیست.',
+          },
+        ],
+      },
+    },
+  })
+  error!: ApiErrorBodyDto;
+
+  @ApiProperty({ example: 'req_00000000-0000-4000-8000-000000000000' })
+  requestId!: string;
+}
+
 export class ApiInternalErrorResponseDto {
   @ApiProperty({
     type: ApiErrorBodyDto,
     example: {
       code: 'INTERNAL_ERROR',
-      message: 'An unexpected error occurred.',
+      message: 'خطایی رخ داد. لطفاً دوباره تلاش کنید.',
       details: {},
     },
   })

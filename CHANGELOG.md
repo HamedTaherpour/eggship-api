@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Standardize the shared API error boundary, safe 5xx responses, structured Persian validation violations, and multipart/bulk error normalization.
+
+- Complete API-ERR-01 PASS 2 public-message enforcement: typed and custom-code
+  errors now receive Persian boundary copy, media per-item errors use the same
+  contract, and frontend error-consumption guidance is documented.
+
 - Fix REL-03 k6 reporting URL sanitization for runtimes without a global URL
   constructor while preserving credential-free base URL output.
 

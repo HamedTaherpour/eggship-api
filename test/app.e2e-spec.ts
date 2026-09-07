@@ -183,10 +183,16 @@ describe('application foundation (e2e)', () => {
     const responseBody: unknown = response.body;
     expect(responseBody).toEqual({
       error: {
-        code: 'BAD_REQUEST',
-        message: 'Request validation failed.',
+        code: 'VALIDATION_ERROR',
+        message: 'اطلاعات واردشده معتبر نیست.',
         details: {
-          violations: ['property unexpected should not exist'],
+          violations: [
+            {
+              field: 'unexpected',
+              rule: 'whitelistValidation',
+              message: 'این فیلد مجاز نیست.',
+            },
+          ],
         },
       },
       requestId: 'req_validation',
@@ -203,7 +209,7 @@ describe('application foundation (e2e)', () => {
     expect(responseBody).toEqual({
       error: {
         code: 'NOT_FOUND',
-        message: 'Cannot GET /api/v1/missing',
+        message: 'موردنظر پیدا نشد.',
         details: {},
       },
       requestId: 'req_test',
@@ -221,7 +227,7 @@ describe('application foundation (e2e)', () => {
     expect(responseBody).toEqual({
       error: {
         code: 'NOT_FOUND',
-        message: 'Cannot GET /api/v1/missing-with-generated-id',
+        message: 'موردنظر پیدا نشد.',
         details: {},
       },
       requestId,
@@ -239,7 +245,7 @@ describe('application foundation (e2e)', () => {
     expect(responseBody).toEqual({
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'An unexpected error occurred.',
+        message: 'خطایی رخ داد. لطفاً دوباره تلاش کنید.',
         details: {},
       },
       requestId: 'req_internal',
@@ -256,7 +262,7 @@ describe('application foundation (e2e)', () => {
     expect(responseBody).toEqual({
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'An unexpected error occurred.',
+        message: 'خطایی رخ داد. لطفاً دوباره تلاش کنید.',
         details: {},
       },
       requestId: 'req_unexpected',
@@ -335,7 +341,7 @@ describe('application foundation (e2e)', () => {
     expect(expected[0]).toMatchObject({
       level: 'info',
       errorKind: 'expected',
-      errorCode: 'BAD_REQUEST',
+      errorCode: 'VALIDATION_ERROR',
     });
     expect(unexpected).toHaveLength(1);
     expect(unexpected[0]).toMatchObject({

@@ -7,6 +7,9 @@ import { ReadinessResponseDto } from '../health/dto/readiness-response.dto';
 import {
   ApiErrorResponseDto,
   ApiInternalErrorResponseDto,
+  ApiValidationErrorResponseDto,
+  ApiValidationErrorDetailsDto,
+  ApiValidationViolationDto,
   ExamplePaginatedResponseDto,
   PaginationMetaDto,
 } from './dto/common-response.dto';
@@ -52,6 +55,8 @@ export function buildOpenApiConfig(
         'Business routes are versioned under `/api/v1`.',
         '`info.version` is the application release version (APP_VERSION), not the URL contract version.',
         'Every response includes an `X-Request-Id` header; error bodies repeat the same value as `requestId`.',
+        'Errors use a stable `error.code`; representative responses include `VALIDATION_ERROR` (400), `AUTH_UNAUTHENTICATED` (401), `AUTH_FORBIDDEN` (403), `NOT_FOUND` (404), `CONFLICT` (409), `AUTH_RATE_LIMITED` (429), `AUTH_UNAVAILABLE` (503), and `INTERNAL_ERROR` (500).',
+        'Error messages are safe Persian display copy. Validation uses `details.violations[]` with structural `field`, stable `rule`, and Persian `message`; clients must never branch on message text.',
         'Browser customer auth uses HttpOnly cookies `eggship_at` / `eggship_rt`.',
         'Browser Admin auth uses HttpOnly cookies `eggship_admin_at` / `eggship_admin_rt` (Path=/api/v1/admin).',
         'Authorization Bearer remains supported for tooling when it does not conflict with the path-appropriate access cookie.',
@@ -158,6 +163,9 @@ export function createOpenApiDocument(app: INestApplication): OpenAPIObject {
       UpdateRegionBodyDto,
       ApiErrorResponseDto,
       ApiInternalErrorResponseDto,
+      ApiValidationErrorResponseDto,
+      ApiValidationErrorDetailsDto,
+      ApiValidationViolationDto,
       PaginationMetaDto,
       ExamplePaginatedResponseDto,
     ],

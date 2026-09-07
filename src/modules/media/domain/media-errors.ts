@@ -1,5 +1,6 @@
 import { HttpStatus } from '@nestjs/common';
 import { ApplicationError } from '../../../common/errors/application-error';
+import { publicMessageForCode } from '../../../common/http/error-contract';
 
 export const MediaErrorCode = {
   UNSUPPORTED_TYPE: 'MEDIA_UNSUPPORTED_TYPE',
@@ -91,5 +92,8 @@ export function mediaErrorBody(error: ApplicationError): {
   code: string;
   message: string;
 } {
-  return { code: error.code, message: error.message };
+  return {
+    code: error.code,
+    message: publicMessageForCode(error.code, error.httpStatus, error.message),
+  };
 }

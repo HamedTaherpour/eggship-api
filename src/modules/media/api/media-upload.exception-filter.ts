@@ -12,6 +12,7 @@ import { ApplicationError } from '../../../common/errors/application-error';
 import { ApplicationLogger } from '../../../common/observability/application-logger.service';
 import { RequestContextService } from '../../../common/observability/request-context.service';
 import { createRequestId } from '../../../common/observability/request-id';
+import { normalizeException } from '../../../common/http/error-contract';
 import {
   MediaBatchTooLargeError,
   MediaFileTooLargeError,
@@ -53,11 +54,7 @@ export class MediaUploadExceptionFilter implements ExceptionFilter {
 
     response.setHeader('x-request-id', requestId);
     response.status(mapped.httpStatus).json({
-      error: {
-        code: mapped.code,
-        message: mapped.message,
-        details: {},
-      },
+      error: normalizeException(mapped),
       requestId,
     });
   }

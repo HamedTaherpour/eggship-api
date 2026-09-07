@@ -4,6 +4,7 @@ import { ApplicationLogger } from '../../../common/observability/application-log
 import type { OrderAdminActor } from '../domain/order-actor';
 import type { OrderRecord } from '../domain/order';
 import { OrderTransitionService } from './order-transition.service';
+import { normalizeException } from '../../../common/http/error-contract';
 
 export const ADMIN_BULK_ORDER_TRANSITION_MAXIMUM = 50;
 
@@ -101,13 +102,14 @@ export class BulkOrderTransitionService {
     error: unknown,
   ): BulkOrderTransitionFailure {
     if (error instanceof ApplicationError) {
+      const normalized = normalizeException(error);
       return {
         orderId,
         success: false,
         error: {
-          code: error.code,
-          message: error.message,
-          details: error.details,
+          code: normalized.code,
+          message: normalized.message,
+          details: normalized.details,
         },
       };
     }
@@ -127,7 +129,7 @@ export class BulkOrderTransitionService {
       success: false,
       error: {
         code: 'ORDER_BULK_ITEM_FAILED',
-        message: 'Order transition could not be completed.',
+        message: 'تغییر وضعیت این سفارش انجام نشد.',
         details: {},
       },
     };

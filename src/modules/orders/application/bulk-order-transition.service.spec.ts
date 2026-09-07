@@ -231,7 +231,7 @@ describe('BulkOrderTransitionService', () => {
       success: false,
       error: {
         code: 'ORDER_BULK_ITEM_FAILED',
-        message: 'Order transition could not be completed.',
+        message: 'تغییر وضعیت این سفارش انجام نشد.',
         details: {},
       },
     });

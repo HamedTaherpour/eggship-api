@@ -7,25 +7,25 @@ This is the authoritative execution plan for completing the standalone EggShip A
 | Measure                                  | Count |
 | ---------------------------------------- | ----: |
 | Total                                    |   111 |
-| DONE                                     |    94 |
+| DONE                                     |    95 |
 | IN_PROGRESS                              |     0 |
 | READY                                    |     3 |
 | BLOCKED                                  |     0 |
-| PLANNED                                  |     8 |
+| PLANNED                                  |     7 |
 | NOT_APPLICABLE                           |     6 |
-| Effective remaining implementation tasks |    12 |
+| Effective remaining implementation tasks |    10 |
 
 ## Updated roadmap counts
 
 Total roadmap entries: **111** (milestone headings excluded).
 
-- DONE: 94
+- DONE: 95
 - READY: 3
 - IN_PROGRESS: 0
-- PLANNED: 8
+- PLANNED: 7
 - BLOCKED: 0
 - NOT_APPLICABLE: 6
-- Effective remaining implementation tasks: 12
+- Effective remaining implementation tasks: 10
 
 - Current task: `REL-03` (k6 baseline and scenario harness) is **DONE**. Final local-only baseline evidence is retained; no production or capacity claims are made.
 - Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E verification and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate. `M4 — Ordering complete` requirements are now all DONE (PRC-01 through PRC-05, ORD-01 through ORD-08 including ORD-03A, COM-01 through COM-03, DLU-01/DLU-02, SET-01/SET-02); milestone closure remains subject to the normal review/approval gates.
@@ -78,7 +78,7 @@ The remaining implementation work is intentionally split around one focused Liar
 ### LOCAL — BEFORE LIARA
 
 - `API-ERR-01` — Standardize user-facing API error contract. The audit, conventions, DTO/error mapping, and regression tests can be completed against the local API and are needed before frontend implementation.
-- `DATA-02` — Temporary-state and orphan-cleanup policy. This is primarily a policy and local lifecycle-enforcement task; its ownership, TTL, legal-hold, and recovery rules should be settled before hosted cleanup execution.
+- `DATA-02` — Temporary-state and orphan-cleanup policy is complete locally; its policy contract and ownership are settled before hosted cleanup execution.
 
 ### LIARA / PROVIDER VERIFICATION
 
@@ -99,7 +99,7 @@ No currently open roadmap task belongs exclusively to this group. After the loca
 
 ### Recommended order
 
-1. Complete `API-ERR-01` and `DATA-02` locally; implement/test `ASY-05` locally where possible while preserving its hosted verification requirement.
+1. Complete `API-ERR-01` locally; implement/test `ASY-05` locally where possible while preserving its hosted verification requirement.
 2. Complete the Liara window in dependency order: `MED-02`, `DEP-04`, `DEP-05`, `REL-04`, `REL-05`, `REL-06`, `AUD-04`, `DEP-06`, and `DATA-03`, with provider-backed deployment, storage, worker, backup/restore, failure/recovery, and capacity evidence; verify `ASY-05` against the hosted worker/Redis services.
 3. Stop hosted services temporarily after backend verification if they are not needed, to avoid unnecessary Liara credit usage.
 4. Build Admin locally, then Storefront/Landing locally.
@@ -1336,13 +1336,24 @@ Delivered: Data classification inventory, sensitivity/lifecycle vocabulary, appr
 
 ### DATA-02 — Temporary-state and orphan-cleanup policy
 
-Status: PLANNED | Depends on: DATA-01, AUTH-05, MED-01 | Primary: Human + ChatGPT architecture process, then Codex | Review: Claude/Cursor security review
+Status: DONE | Depends on: DATA-01, AUTH-05, MED-01 | Primary: Human + ChatGPT architecture process, then Codex | Review: Claude/Cursor security review
 
 Scope: Approve and implement lifecycle enforcement for OTP/session/rate-limit state, push tokens, visitor/referral raw data, media/orphans, and safe application-log handling.
 
 Acceptance criteria: Ownership, TTL/expiry, cleanup trigger, retry/idempotency, legal holds, observability, and recovery are explicit for each implemented class.
 
 Explicitly out of scope: Hard-deleting durable order, ledger, price, or audit history without separate approval.
+
+Delivered: Canonical [data-lifecycle.md](data-lifecycle.md) now records the
+approved lifecycle contract and retention matrix. Session rows and refresh-token
+consumption evidence retain 90 days after their safe terminal authority;
+reservations, inventory idempotency history, notifications, push installations,
+published outbox, async failure/replay history, and durable business/audit data
+remain retained for now. Media cleanup is limited to a future ASY-05 contract
+for provider-verified object-only candidates at least seven days old, with
+daily reconciliation target, dry-run, re-check, bounded deletion, metrics, and
+DB-to-missing-object reporting. Redis native TTL remains authoritative. No jobs,
+provider work, data deletion, or remote access were performed.
 
 ### DATA-03 — Durable business records and backup lifecycle
 

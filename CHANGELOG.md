@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Complete DATA-02 as a documentation-only lifecycle contract: approve
+  terminal-state retention for authentication sessions and refresh-consumption
+  evidence, preserve deferred datasets, and define the provider-verified Media
+  reconciliation, Redis TTL, PostgreSQL cleanup, observability, review-trigger,
+  ASY-05, and DATA-03 handoffs. No cleanup jobs or data deletion were added.
+
 - Standardize the shared API error boundary, safe 5xx responses, structured Persian validation violations, and multipart/bulk error normalization.
 
 - Complete API-ERR-01 PASS 2 public-message enforcement: typed and custom-code

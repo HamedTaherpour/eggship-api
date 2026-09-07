@@ -246,7 +246,8 @@ export class OrdersController {
     description: [
       'Authenticated USER subjects only. Derives userId and USER actor exclusively from the authenticated principal — never from the body or query.',
       'An authenticated Admin (or other non-customer subject) is rejected with AUTH_FORBIDDEN (403).',
-      'Request body accepts only regionId and lines `{ productId, quantity }`.',
+      'Request body accepts only regionId, optional customerNote, and lines `{ productId, quantity }`.',
+      'Optional customerNote is bounded to 500 plain-text characters, trimmed, and retained as historical order context.',
       'Clients must not submit userId, actor, phone, prices, product names, discount ids, totals, status, or commerce-policy fields.',
       'Requires a UUID `Idempotency-Key` header. Same USER + key + normalized payload replays the committed Order without a second reservation or discount-usage consumption.',
       'Same key with a materially different payload returns ORDER_IDEMPOTENCY_CONFLICT.',
@@ -341,6 +342,7 @@ export class OrdersController {
     const result = await this.orderCreation.createOrder({
       actor: { type: OrderActorType.USER, id: ownerId },
       regionId: body.regionId,
+      customerNote: body.customerNote,
       idempotencyKey,
       lines: body.lines.map((line) => ({
         productId: line.productId,

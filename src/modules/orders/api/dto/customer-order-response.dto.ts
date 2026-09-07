@@ -120,6 +120,14 @@ export class CustomerOrderDto {
   })
   customerPhone!: string;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    maxLength: 500,
+    description:
+      'Immutable customer-provided operational note at placement time.',
+  })
+  customerNote!: string | null;
+
   @ApiProperty({ format: 'uuid' })
   regionId!: string;
 
@@ -308,6 +316,7 @@ export function toCustomerOrderDto(order: OrderRecord): CustomerOrderDto {
     id: order.id,
     status: order.status,
     customerPhone: order.customerPhone,
+    customerNote: order.customerNote ?? null,
     regionId: order.regionId,
     regionName: order.regionName,
     grossSubtotal: orderMoneyToJson(order.grossSubtotal),

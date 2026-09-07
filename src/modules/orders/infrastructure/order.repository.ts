@@ -24,6 +24,7 @@ import {
   normalizeCustomerPhoneSnapshot,
   normalizeRegionNameSnapshot,
 } from '../domain/order-snapshot';
+import { normalizeCustomerNote } from '../domain/order-create-idempotency';
 import { OrderStatus } from '../domain/order-status';
 import type {
   OrderLineRecord,
@@ -54,6 +55,7 @@ type PrismaOrderWithLines = {
   userId: string;
   status: string;
   customerPhone: string;
+  customerNote: string | null;
   regionId: string;
   regionName: string;
   grossSubtotal: bigint;
@@ -474,6 +476,7 @@ export class OrderRepository {
       await db.$executeRaw(Prisma.sql`
         INSERT INTO "Order" (
           "id", "userId", "status", "customerPhone", "regionId", "regionName",
+          "customerNote",
           "grossSubtotal", "lineDiscountTotal", "subtotalAfterLineDiscounts",
           "orderDiscountAmount", "total", "pricingEvaluatedAt",
           "commercePolicyRevision", "appliedOrderDiscountId",
@@ -485,6 +488,7 @@ export class OrderRepository {
           ${orderId}::uuid, ${normalized.userId}::uuid,
           ${OrderStatus.PENDING_REVIEW}::"OrderStatus", ${normalized.customerPhone},
           ${normalized.regionId}::uuid, ${normalized.regionName},
+          ${normalized.customerNote},
           ${normalized.grossSubtotal}, ${normalized.lineDiscountTotal},
           ${normalized.subtotalAfterLineDiscounts}, ${normalized.orderDiscountAmount},
           ${normalized.total}, ${normalized.pricingEvaluatedAt},
@@ -554,6 +558,7 @@ function normalizeTrustedCreateInput(
   );
   const customerPhone = normalizeCustomerPhoneSnapshot(input.customerPhone);
   const regionName = normalizeRegionNameSnapshot(input.regionName);
+  const customerNote = normalizeCustomerNote(input.customerNote);
 
   if (
     typeof input.idempotencyPayloadHash !== 'string' ||
@@ -588,6 +593,7 @@ function normalizeTrustedCreateInput(
     regionId,
     customerPhone,
     regionName,
+    customerNote,
     idempotencyKey,
     lines,
   };
@@ -664,6 +670,7 @@ function mapOrder(row: PrismaOrderWithLines): OrderRecord {
     userId: row.userId,
     status: row.status as OrderRecord['status'],
     customerPhone: row.customerPhone,
+    customerNote: row.customerNote,
     regionId: row.regionId,
     regionName: row.regionName,
     grossSubtotal: row.grossSubtotal,

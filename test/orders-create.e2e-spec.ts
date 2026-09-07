@@ -222,6 +222,7 @@ describe('Orders create HTTP (ORD-03A, e2e)', () => {
       actor: { type: OrderActorType.USER, id: userId },
       regionId: REGION_ID,
       idempotencyKey: key,
+      customerNote: undefined,
       lines: [{ productId: PRODUCT_ID, quantity: 2 }],
     });
 

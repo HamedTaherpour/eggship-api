@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Complete ORD-09: accept, normalize, persist, and expose the optional
+  500-character customer checkout note as immutable historical Order context;
+  the note participates in existing create idempotency payload hashing.
+
 - Complete DATA-02 as a documentation-only lifecycle contract: approve
   terminal-state retention for authentication sessions and refresh-consumption
   evidence, preserve deferred datasets, and define the provider-verified Media

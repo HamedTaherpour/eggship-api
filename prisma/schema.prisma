@@ -816,6 +816,8 @@ model Order {
   status                           OrderStatus   @default(PENDING_REVIEW)
   /// Canonical customer phone at order time (E.164). Immutable after creation.
   customerPhone                    String        @db.VarChar(16)
+  /// Optional customer-provided operational note at placement time; immutable historical context.
+  customerNote                     String?       @db.VarChar(500)
   /// Region traceability + historical display name. Immutable after creation.
   regionId                         String        @db.Uuid
   regionName                       String        @db.VarChar(100)
@@ -1041,24 +1043,24 @@ model AsyncFailure {
 /// Durable operator/system replay command. The original event and payload are
 /// immutable; this record is the replay's identity and history.
 model AsyncReplay {
-  id                 String            @id @default(uuid()) @db.Uuid
-  failureId          String            @db.Uuid
-  deterministicJobId String            @unique @db.VarChar(128)
-  status             AsyncReplayStatus @default(REQUESTED)
-  claimToken         String?           @db.Uuid
-  requestedBy        String?           @db.Uuid
-  requestedAt        DateTime          @default(now()) @db.Timestamptz(3)
+  id                 String                @id @default(uuid()) @db.Uuid
+  failureId          String                @db.Uuid
+  deterministicJobId String                @unique @db.VarChar(128)
+  status             AsyncReplayStatus     @default(REQUESTED)
+  claimToken         String?               @db.Uuid
+  requestedBy        String?               @db.Uuid
+  requestedAt        DateTime              @default(now()) @db.Timestamptz(3)
   claimedAt          DateTime?
   leaseExpiresAt     DateTime?
-  attemptCount       Int               @default(0)
+  attemptCount       Int                   @default(0)
   lastAttemptAt      DateTime?
   completedAt        DateTime?
-  failureReasonCode  String?           @db.VarChar(64)
+  failureReasonCode  String?               @db.VarChar(64)
   resultCategory     AsyncFailureCategory?
-  processorIdentity  String?           @db.VarChar(128)
-  releaseIdentity    String?           @db.VarChar(128)
-  createdAt          DateTime          @default(now()) @db.Timestamptz(3)
-  failure            AsyncFailure      @relation(fields: [failureId], references: [id], onDelete: Restrict)
+  processorIdentity  String?               @db.VarChar(128)
+  releaseIdentity    String?               @db.VarChar(128)
+  createdAt          DateTime              @default(now()) @db.Timestamptz(3)
+  failure            AsyncFailure          @relation(fields: [failureId], references: [id], onDelete: Restrict)
 
   @@index([failureId, createdAt, id])
   @@index([status, leaseExpiresAt, createdAt, id])

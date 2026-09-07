@@ -223,6 +223,35 @@ describe('Order creation (integration)', () => {
     });
   });
 
+  it('persists and replays an immutable Unicode customer checkout note', async () => {
+    const { user, regionId, productId } = await seedBase({ onHand: 10 });
+    const idempotencyKey = randomUUID();
+    const customerNote = 'لطفاً قبل از تحویل تماس بگیرید؛ ورودی پشتی ساختمان.';
+    const input = {
+      actor: { type: OrderActorType.USER, id: user.id },
+      regionId,
+      idempotencyKey,
+      customerNote,
+      lines: [{ productId, quantity: 1 }],
+    } as const;
+
+    const created = await creation.createOrder(input);
+    const replay = await creation.createOrder(input);
+    const persisted = await prisma.order.findUnique({
+      where: { id: created.order.id },
+      select: { customerNote: true },
+    });
+
+    expect(created.created).toBe(true);
+    expect(created.order.customerNote).toBe(customerNote);
+    expect(persisted?.customerNote).toBe(customerNote);
+    expect(replay).toEqual({ order: created.order, created: false });
+    expect(await prisma.order.count()).toBe(1);
+    const balance = await inventory.getBalance(productId);
+    expect(balance).not.toBeNull();
+    expect(balance!.reserved).toBe(1);
+  });
+
   it('uses the PostgreSQL transaction clock for Order and OrderLine creation', async () => {
     const { user, regionId, productId } = await seedBase({ onHand: 10 });
     const previousTz = process.env.TZ;

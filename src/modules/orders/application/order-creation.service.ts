@@ -21,7 +21,10 @@ import type { OrderPricingSnapshot } from '../../pricing/domain/order-pricing';
 import { RegionRepository } from '../../regions/infrastructure/region.repository';
 import { UserRepository } from '../../users/infrastructure/user.repository';
 import { assertUserActor } from '../domain/order-actor';
-import { hashOrderCreatePayload } from '../domain/order-create-idempotency';
+import {
+  hashOrderCreatePayload,
+  normalizeCustomerNote,
+} from '../domain/order-create-idempotency';
 import {
   OrderIdempotencyConflictError,
   OrderInvalidInputError,
@@ -82,6 +85,7 @@ export class OrderCreationService {
 
     const payloadHash = hashOrderCreatePayload({
       regionId,
+      customerNote: input.customerNote,
       lines: normalizedLines,
     });
 
@@ -96,6 +100,7 @@ export class OrderCreationService {
           userId,
           regionId,
           idempotencyKey,
+          customerNote: normalizeCustomerNote(input.customerNote),
           payloadHash,
           normalizedLines,
         });
@@ -164,6 +169,7 @@ export class OrderCreationService {
     userId: string;
     regionId: string;
     idempotencyKey: string;
+    customerNote: string | null;
     payloadHash: string;
     normalizedLines: Array<{ productId: string; quantity: number }>;
   }): Promise<CreateOrderResult> {
@@ -215,6 +221,7 @@ export class OrderCreationService {
         regionId: region.id,
         regionName: region.name,
         idempotencyKey: input.idempotencyKey,
+        customerNote: input.customerNote,
         payloadHash: input.payloadHash,
         commercePolicyRevision: acceptance.revision,
         evaluatedAt: acceptance.evaluatedAt,
@@ -290,6 +297,7 @@ export class OrderCreationService {
     regionId: string;
     regionName: string;
     idempotencyKey: string;
+    customerNote: string | null;
     payloadHash: string;
     commercePolicyRevision: number;
     evaluatedAt: Date;
@@ -301,6 +309,7 @@ export class OrderCreationService {
       regionId: input.regionId,
       regionName: input.regionName,
       idempotencyKey: input.idempotencyKey,
+      customerNote: input.customerNote,
       idempotencyPayloadHash: input.payloadHash,
       pricingEvaluatedAt: input.evaluatedAt,
       commercePolicyRevision: input.commercePolicyRevision,

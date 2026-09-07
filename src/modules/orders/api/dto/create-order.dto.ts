@@ -1,11 +1,14 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
   IsInt,
   IsUUID,
   Max,
+  MaxLength,
+  IsOptional,
+  IsString,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -51,6 +54,21 @@ export class CreateOrderBodyDto {
   })
   @IsUUID('4')
   regionId!: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    maxLength: 500,
+    description:
+      'Optional plain-text delivery instruction retained as historical order context. Leading/trailing whitespace is trimmed; blank input is stored as null.',
+    example: 'Call before delivery; use the rear entrance.',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @MaxLength(500)
+  customerNote?: string | null;
 
   @ApiProperty({
     type: CreateOrderLineDto,

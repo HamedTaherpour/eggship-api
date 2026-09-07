@@ -6,8 +6,8 @@ This is the authoritative execution plan for completing the standalone EggShip A
 
 | Measure                                  | Count |
 | ---------------------------------------- | ----: |
-| Total                                    |   111 |
-| DONE                                     |    95 |
+| Total                                    |   112 |
+| DONE                                     |    96 |
 | IN_PROGRESS                              |     0 |
 | READY                                    |     3 |
 | BLOCKED                                  |     0 |
@@ -17,9 +17,9 @@ This is the authoritative execution plan for completing the standalone EggShip A
 
 ## Updated roadmap counts
 
-Total roadmap entries: **111** (milestone headings excluded).
+Total roadmap entries: **112** (milestone headings excluded).
 
-- DONE: 95
+- DONE: 96
 - READY: 3
 - IN_PROGRESS: 0
 - PLANNED: 7
@@ -28,7 +28,7 @@ Total roadmap entries: **111** (milestone headings excluded).
 - Effective remaining implementation tasks: 10
 
 - Current task: `REL-03` (k6 baseline and scenario harness) is **DONE**. Final local-only baseline evidence is retained; no production or capacity claims are made.
-- Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E verification and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate. `M4 — Ordering complete` requirements are now all DONE (PRC-01 through PRC-05, ORD-01 through ORD-08 including ORD-03A, COM-01 through COM-03, DLU-01/DLU-02, SET-01/SET-02); milestone closure remains subject to the normal review/approval gates.
+- Current milestone: `M2 — Identity complete` is ready for its remaining review/approval gates. AUTH-10 browser E2E verification and security proof are complete; cookie-authenticated browser mutations are production-ready subject to the normal release gate. `M4 — Ordering complete` requirements remain DONE for the original ORD-01 through ORD-08 / COM / DLU / SET / PRC scope; the pre-frontend gap `ORD-09` is now DONE. Milestone closure remains subject to the normal review/approval gates.
 
 ## Status model
 
@@ -79,6 +79,7 @@ The remaining implementation work is intentionally split around one focused Liar
 
 - `API-ERR-01` — Standardize user-facing API error contract. The audit, conventions, DTO/error mapping, and regression tests can be completed against the local API and are needed before frontend implementation.
 - `DATA-02` — Temporary-state and orphan-cleanup policy is complete locally; its policy contract and ownership are settled before hosted cleanup execution.
+- `ORD-09` — Customer checkout note contract and persistence. Product/migration gate before Storefront checkout implementation.
 
 ### LIARA / PROVIDER VERIFICATION
 
@@ -95,7 +96,7 @@ The remaining implementation work is intentionally split around one focused Liar
 
 ### POST-FRONTEND INTEGRATION / PRE-LAUNCH
 
-No currently open roadmap task belongs exclusively to this group. After the local and Liara/provider windows, the Admin and Storefront should be built locally, then the backend redeployed for full frontend/backend integration, E2E, deployment checks, and launch readiness.
+No currently open roadmap task belongs exclusively to this group. After the local and Liara/provider windows and the `ORD-09` gate, the Admin and Storefront should be built locally, then the backend redeployed for full frontend/backend integration, E2E, deployment checks, and launch readiness.
 
 ### Recommended order
 
@@ -659,7 +660,23 @@ Acceptance criteria: Duplicate creation, hot-SKU reservation, cancel/transition 
 
 Delivered: Real-PostgreSQL verification only — no production Orders behavior or query/index change. Extended existing order-creation, order-transitions, discount-lifetime-usage, and settlement suites with `ConcurrencyGate` overlap proofs for capped DLU release, cancel XOR confirm, and once-only transition AuditLog rows; added bounded N-way hot-SKU creation invariant proof (five successes / three rejections against five units); added `ord-08-query-analysis.integration-spec.ts` with `EXPLAIN (FORMAT JSON)` evidence that existing `Order` indexes satisfy list/detail/transition/idempotency paths. Representative bounded load asserts durable invariants only — not throughput, latency, or capacity. Full deployed API load/spike/stress/soak and connection-pool evidence remain REL-03/REL-04/REL-05.
 
-Explicitly out of scope: Changing business rules to meet performance targets; production query/index changes; REL-03/REL-04/REL-05 capacity ownership.
+Explicitly out of scope: Changing business rules to meet performance targets; production query/index changes; REL-03/REL-04/REL-05 capacity ownership; customer checkout note contract (`ORD-09`).
+
+### ORD-09 — Customer checkout note contract and persistence
+
+Status: DONE | Depends on: ORD-03A, ORD-04, ORD-06 | Primary: Human + ChatGPT architecture process, then Codex | Review: Claude/Cursor, Human product/migration review
+
+Timing: BEFORE FRONTEND CHECKOUT IMPLEMENTATION.
+
+Human gate: Product contract + migration review.
+
+Scope: Approve and implement an optional customer-entered operational note at checkout, conceptually named `customerNote`: optional bounded plain text, persisted durably with the Order as the customer's note at placement time, immutable as historical order context after creation, and distinct from any future internal/admin note. Examples include call-before-delivery, rear-entrance delivery, and branch-specific delivery notes.
+
+Acceptance criteria: Checkout DTO, Prisma migration, Order persistence, response/OpenAPI policy, Admin/customer visibility, validation, privacy/logging, and tests follow the approved product contract; the note is not used by pricing, discount, inventory, settlement, state transitions, or other business logic; maximum length is confirmed during implementation review rather than invented here.
+
+Delivered: `customerNote` is an optional nullable 500-character plain-text Order snapshot. Checkout trims surrounding whitespace and stores blank input as null; customer and Admin detail responses expose the persisted value. The existing idempotency hash includes non-empty notes while preserving no-note hashes for legacy replay compatibility. Focused unit and gated PostgreSQL integration coverage were added; no note edit endpoint or business-logic coupling was introduced.
+
+Explicitly out of scope: Choosing an exact maximum length in this roadmap entry; inventing internal/admin notes; using the note as an authoritative business-rule input; frontend Storefront checkout UI beyond the API contract.
 
 ## Phase 4A — Commerce Order-Acceptance Policy
 
@@ -1542,7 +1559,7 @@ Explicitly out of scope: Autonomous AI cutover and deleting legacy data/services
 | Catalog                         | CAT-01 through CAT-06                         |
 | Blog                            | CNT-01, CNT-02, CNT-03, CNT-04, MED-01        |
 | Auth / OTP                      | AUTH-01 through AUTH-08                       |
-| Orders                          | ORD-01 through ORD-08                         |
+| Orders                          | ORD-01 through ORD-09                         |
 | Admin Auth / Admin Admins       | AUTH-03, AUTH-08, ADM-00, ADM-AUTH-01, ADM-01 |
 | Admin Catalog / Regions         | CAT-02, CAT-05                                |
 | Admin Media                     | CAT-04, MED-01                                |
@@ -1576,7 +1593,7 @@ Complete when CAT-01 through CAT-06 and INV-01A through INV-06 are DONE, includi
 
 ### M4 — Ordering complete
 
-Complete when PRC-01 through PRC-05, ORD-01 through ORD-08 (including ORD-03A), COM-01 through COM-03, DLU-01/DLU-02, and SET-01/SET-02 are DONE: historical snapshots, pricing/discount rules and lifetime discounted-quantity limits, configurable Order acceptance, transactional idempotent multi-item creation, Inventory integration, customer/Admin flows, deferred settlement, cancellation/returns/dispatch behavior, audit, and load/concurrency checks are approved.
+Complete when PRC-01 through PRC-05, ORD-01 through ORD-08 (including ORD-03A), COM-01 through COM-03, DLU-01/DLU-02, and SET-01/SET-02 are DONE: historical snapshots, pricing/discount rules and lifetime discounted-quantity limits, configurable Order acceptance, transactional idempotent multi-item creation, Inventory integration, customer/Admin flows, deferred settlement, cancellation/returns/dispatch behavior, audit, and load/concurrency checks are approved. `ORD-09` (customer checkout note) is a separately owned pre-frontend contract/persistence gap and is not required to close M4.
 
 ### M5 — Feature parity complete
 
@@ -1601,7 +1618,7 @@ The following are not implementation assumptions:
 - Customer/store business profile fields required at registration vs later completion (store name, manager name, address, region, coordinates): no in-repo legacy inventory yet (`MIG-01`); AUTH-07 shipped Pattern A phone-only identity with empty profile update allowlist. Region **reference** rows exist (CAT-02); profile `regionId` FK remains deferred.
 - Category/Region legacy parity gaps (MIG-01): name uniqueness, public slug, sortOrder, category hierarchy/parent, shipping-related Region fields, and whether hard delete is ever allowed after Product/profile FKs land.
 - Product legacy parity gaps (MIG-01): SKU/code uniqueness, description, unit/package semantics, whether zero-price products should be allowed, and whether product name uniqueness is ever required. Product image attachment is decided in ADR 0022 (exactly one optional `imageMediaId`; no gallery); MED-01 implements it.
-- Order transition runtime (ORD-02), customer create/read HTTP (`ORD-03A`/`ORD-04`), customer cancellation HTTP (`ORD-05`), and Admin Orders HTTP (`ORD-06`) are DONE. V1 state machine, actors, concurrency, and Inventory orchestration rules are settled in ADR 0014 / [instructions/orders.md](../instructions/orders.md). Return/bulk/dispatch architecture is decided in [ADR 0024](adr/0024-order-returns-bulk-transitions-and-dispatch-board.md) / ORD-07 (Human gate closed; implementation DONE). Shipping/address snapshot fields and payment/refund semantics remain deferred. Deferred settlement is separately planned in SET-01/SET-02 and must not become Order state.
+- Order transition runtime (ORD-02), customer create/read HTTP (`ORD-03A`/`ORD-04`), customer cancellation HTTP (`ORD-05`), and Admin Orders HTTP (`ORD-06`) are DONE. V1 state machine, actors, concurrency, and Inventory orchestration rules are settled in ADR 0014 / [instructions/orders.md](../instructions/orders.md). Return/bulk/dispatch architecture is decided in [ADR 0024](adr/0024-order-returns-bulk-transitions-and-dispatch-board.md) / ORD-07 (Human gate closed; implementation DONE). Shipping/address snapshot fields and payment/refund semantics remain deferred. Optional customer checkout note (`customerNote`) ownership is `ORD-09` (DONE; before Storefront checkout). Deferred settlement is separately planned in SET-01/SET-02 and must not become Order state.
 - Whether a future `PACKED`/`PICKED` state should move the physical `onHand` decrement earlier than `SHIPPED`.
 - Whether partial fulfillment or split shipment is ever allowed after V1.
 - Public exposure of exact inventory `available`, and any preferred-customer allocation/fairness policy under contention.

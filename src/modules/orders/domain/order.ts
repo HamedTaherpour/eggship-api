@@ -25,6 +25,8 @@ export interface OrderRecord {
   userId: string;
   status: OrderStatus;
   customerPhone: string;
+  /** Optional immutable operational note supplied at checkout. */
+  customerNote?: string | null;
   regionId: string;
   regionName: string;
   grossSubtotal: bigint;
@@ -74,6 +76,8 @@ export interface TrustedOrderLineSnapshot {
 export interface TrustedCreateOrderInput {
   userId: string;
   customerPhone: string;
+  /** Optional immutable operational note supplied at checkout. */
+  customerNote?: string | null;
   regionId: string;
   regionName: string;
   idempotencyKey: string;

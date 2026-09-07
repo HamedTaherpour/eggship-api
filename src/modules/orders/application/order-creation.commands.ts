@@ -8,6 +8,7 @@ import type { OrderRecord } from '../domain/order';
 export interface CreateOrderCommand {
   actor: OrderUserActor;
   regionId: string;
+  customerNote?: string | null;
   idempotencyKey: string;
   lines: ReadonlyArray<{
     productId: string;

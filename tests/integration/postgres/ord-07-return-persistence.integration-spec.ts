@@ -669,6 +669,88 @@ describe('ORD-07 return persistence (PostgreSQL integration)', () => {
     ).toBe(1);
   });
 
+  it('preserves non-zero financial snapshots, DLU usage, and settlement on return recording and completion', async () => {
+    const { admin, order, line } = await deliveredContext();
+    const discount = await prisma.discount.create({
+      data: {
+        name: 'Historical return discount',
+        type: 'PERCENT',
+        target: 'PRODUCT',
+        percentValue: 10,
+        productId: line.productId,
+        maxQuantityPerCustomer: 10,
+      },
+    });
+    await prisma.discountCustomerUsage.create({
+      data: {
+        discountId: discount.id,
+        userId: order.userId,
+        consumedQuantity: 4,
+      },
+    });
+    await prisma.discountUsageRecord.create({
+      data: {
+        discountId: discount.id,
+        userId: order.userId,
+        orderId: order.id,
+        kind: 'CONSUME',
+        quantity: 4,
+      },
+    });
+    await prisma.orderSettlement.create({
+      data: {
+        orderId: order.id,
+        dueAt: new Date('2026-09-15T00:00:00.000Z'),
+        createdByAdminId: admin.id,
+      },
+    });
+
+    const beforeOrder = await prisma.order.findUniqueOrThrow({
+      where: { id: order.id },
+      include: { lines: true },
+    });
+    const beforeUsage = await prisma.discountCustomerUsage.findUniqueOrThrow({
+      where: {
+        discountId_userId: { discountId: discount.id, userId: order.userId },
+      },
+    });
+    const beforeSettlement = await prisma.orderSettlement.findUniqueOrThrow({
+      where: { orderId: order.id },
+    });
+
+    await returnService.recordReturn(
+      recordCommand({
+        orderId: order.id,
+        adminId: admin.id,
+        lineId: line.id,
+        key: randomUUID(),
+        sellableQuantity: 2,
+      }),
+    );
+    await transitions.completeReturnProcess({
+      orderId: order.id,
+      actor: { type: 'ADMIN', id: admin.id },
+    });
+
+    const afterOrder = await prisma.order.findUniqueOrThrow({
+      where: { id: order.id },
+      include: { lines: true },
+    });
+    const afterUsage = await prisma.discountCustomerUsage.findUniqueOrThrow({
+      where: {
+        discountId_userId: { discountId: discount.id, userId: order.userId },
+      },
+    });
+    const afterSettlement = await prisma.orderSettlement.findUniqueOrThrow({
+      where: { orderId: order.id },
+    });
+
+    expect(afterOrder.total).toBe(beforeOrder.total);
+    expect(afterOrder.lines).toEqual(beforeOrder.lines);
+    expect(afterUsage).toEqual(beforeUsage);
+    expect(afterSettlement).toEqual(beforeSettlement);
+  });
+
   it('rolls back return completion when the required audit append fails', async () => {
     const { admin, order } = await deliveredContext();
     jest

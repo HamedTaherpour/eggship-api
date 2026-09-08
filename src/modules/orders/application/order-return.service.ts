@@ -126,6 +126,9 @@ export class OrderReturnService {
         left.productId.localeCompare(right.productId),
       );
       if (sorted.length > 0) {
+        // ORD-07 extends the canonical Orders → Inventory lock sequence:
+        // Order row → Inventory order scope → sorted balance rows.
+        await this.inventory.lockOrderScope(orderId, ctx);
         await this.inventory.lockBalances(
           sorted.map((row) => row.productId),
           ctx,

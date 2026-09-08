@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Harden ORD-07 return concurrency: expose InventoryService.lockOrderScope and
+  acquire the Inventory order-scope advisory lock after the Order row lock and
+  before sorted balance locks; re-canonicalize ADR 0024 as a UTF-8 decision
+  contract; add focused Admin HTTP return/bulk coverage and PostgreSQL proof that
+  return recording/completion do not mutate financial snapshots, DLU usage, or
+  Settlement.
+
 - Complete NOT-06 push installation metadata: require explicit enum-validated
   channel/OS registration fields, preserve legacy rows as unknown, and add
   user-aware Android web-only eligibility without changing push delivery.

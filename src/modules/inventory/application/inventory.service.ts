@@ -110,6 +110,15 @@ export class InventoryService {
   }
 
   /**
+   * Acquires the canonical transaction-scoped lock for one order before any
+   * Inventory balance locks. Orders may use this when coordinating an
+   * order-owned Inventory effect in the same transaction.
+   */
+  async lockOrderScope(orderId: string, tx: TransactionContext): Promise<void> {
+    await this.reservations.lockOrderScope(orderId, tx);
+  }
+
+  /**
    * Lock rows, then report every shortage without writing.
    */
   async lockAndInspectAvailability(input: LockAndInspectInput): Promise<{

@@ -16,7 +16,14 @@ import { createOpenApiDocument } from '../src/common/openapi/openapi.document';
 import { PrismaService } from '../src/infrastructure/database/prisma/prisma.service';
 import { AuthSubjectType } from '../src/modules/auth/domain/subject-type';
 import { OrderReadService } from '../src/modules/orders/application/order-read.service';
+import { OrderTransitionService } from '../src/modules/orders/application/order-transition.service';
+import { OrderReturnService } from '../src/modules/orders/application/order-return.service';
+import {
+  BulkOrderTransitionService,
+  BulkOrderTransitionAction,
+} from '../src/modules/orders/application/bulk-order-transition.service';
 import { OrderStatus } from '../src/modules/orders/domain/order-status';
+import { OrderIdempotencyConflictError } from '../src/modules/orders/domain/order-errors';
 import { ADMIN_DISPATCH_ORDER_LIMIT } from '../src/modules/orders/domain/order-dispatch';
 
 const REGION_ID = '33333333-3333-4333-8333-333333333333';
@@ -51,6 +58,9 @@ describe('Admin Orders Dispatch HTTP (ORD-07 Slice 5, e2e)', () => {
   let roles: RoleResolver;
   const adminId = randomUUID();
   const getDispatchBoard = jest.fn();
+  const recordReturn = jest.fn();
+  const completeReturnProcess = jest.fn();
+  const bulkTransition = jest.fn();
 
   beforeAll(async () => {
     roles = new RoleResolver();
@@ -70,6 +80,12 @@ describe('Admin Orders Dispatch HTTP (ORD-07 Slice 5, e2e)', () => {
         getOwned: jest.fn(),
         getDispatchBoard,
       })
+      .overrideProvider(OrderReturnService)
+      .useValue({ recordReturn })
+      .overrideProvider(OrderTransitionService)
+      .useValue({ completeReturnProcess })
+      .overrideProvider(BulkOrderTransitionService)
+      .useValue({ execute: bulkTransition })
       .compile();
     app = moduleRef.createNestApplication();
     configureApplication(app);
@@ -111,6 +127,9 @@ describe('Admin Orders Dispatch HTTP (ORD-07 Slice 5, e2e)', () => {
         },
       ],
     });
+    recordReturn.mockReset();
+    completeReturnProcess.mockReset();
+    bulkTransition.mockReset();
   });
 
   afterAll(async () => app.close());
@@ -199,5 +218,159 @@ describe('Admin Orders Dispatch HTTP (ORD-07 Slice 5, e2e)', () => {
       .get('/api/v1/admin/orders/dispatch?search=phone')
       .set('Authorization', `Bearer ${adminToken()}`)
       .expect(400);
+  });
+
+  it('covers Admin HTTP return recording replay/conflict, completion, and bulk partial success', async () => {
+    const returnBody = {
+      reason: 'Inspection complete',
+      lines: [
+        { orderLineId: randomUUID(), sellableQuantity: 2, damagedQuantity: 1 },
+      ],
+    };
+    const recorded = {
+      id: randomUUID(),
+      orderId: ORDER_ID,
+      reason: returnBody.reason,
+      createdAt: NOW,
+      lines: returnBody.lines.map((line) => ({ id: randomUUID(), ...line })),
+    };
+    recordReturn.mockResolvedValue({ orderReturn: recorded, replay: false });
+    const first = await request(server())
+      .post(`/api/v1/admin/orders/${ORDER_ID}/returns`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .set('Idempotency-Key', randomUUID())
+      .send(returnBody)
+      .expect(200);
+    expect(first.body).toMatchObject({ data: { orderId: ORDER_ID } });
+
+    const key = randomUUID();
+    recordReturn.mockResolvedValueOnce({
+      orderReturn: recorded,
+      replay: false,
+    });
+    recordReturn.mockResolvedValueOnce({ orderReturn: recorded, replay: true });
+    await request(server())
+      .post(`/api/v1/admin/orders/${ORDER_ID}/returns`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .set('Idempotency-Key', key)
+      .send(returnBody)
+      .expect(200);
+    await request(server())
+      .post(`/api/v1/admin/orders/${ORDER_ID}/returns`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .set('Idempotency-Key', key)
+      .send(returnBody)
+      .expect(200);
+    expect(recordReturn).toHaveBeenCalledTimes(3);
+
+    recordReturn.mockRejectedValueOnce(new OrderIdempotencyConflictError());
+    await request(server())
+      .post(`/api/v1/admin/orders/${ORDER_ID}/returns`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .set('Idempotency-Key', key)
+      .send({ ...returnBody, reason: 'Different inspection' })
+      .expect(409);
+
+    completeReturnProcess.mockResolvedValue({
+      order: {
+        id: ORDER_ID,
+        userId: randomUUID(),
+        status: OrderStatus.RETURNED,
+        customerPhone: '+989121234567',
+        regionId: REGION_ID,
+        regionName: 'Tehran',
+        grossSubtotal: 1000n,
+        lineDiscountTotal: 0n,
+        subtotalAfterLineDiscounts: 1000n,
+        orderDiscountAmount: 0n,
+        total: 1000n,
+        pricingEvaluatedAt: NOW,
+        commercePolicyRevision: 1,
+        appliedOrderDiscount: null,
+        idempotencyKey: randomUUID(),
+        idempotencyPayloadHash: 'a'.repeat(64),
+        deliveryAt: null,
+        confirmedAt: NOW,
+        shippedAt: NOW,
+        deliveredAt: NOW,
+        returnedAt: NOW,
+        cancelledAt: null,
+        cancelReason: null,
+        createdAt: NOW,
+        updatedAt: NOW,
+        lines: [],
+      },
+      replay: false,
+    });
+    await request(server())
+      .post(`/api/v1/admin/orders/${ORDER_ID}/complete-return`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .expect(200);
+
+    bulkTransition.mockResolvedValue({
+      action: BulkOrderTransitionAction.SHIP,
+      summary: { requested: 2, succeeded: 1, failed: 1 },
+      results: [
+        {
+          orderId: ORDER_ID,
+          success: true,
+          replay: false,
+          order: {
+            id: ORDER_ID,
+            userId: randomUUID(),
+            status: OrderStatus.SHIPPED,
+            customerPhone: '+989121234567',
+            regionId: REGION_ID,
+            regionName: 'Tehran',
+            grossSubtotal: 1000n,
+            lineDiscountTotal: 0n,
+            subtotalAfterLineDiscounts: 1000n,
+            orderDiscountAmount: 0n,
+            total: 1000n,
+            pricingEvaluatedAt: NOW,
+            commercePolicyRevision: 1,
+            appliedOrderDiscount: null,
+            idempotencyKey: randomUUID(),
+            idempotencyPayloadHash: 'a'.repeat(64),
+            deliveryAt: null,
+            confirmedAt: NOW,
+            shippedAt: NOW,
+            deliveredAt: null,
+            returnedAt: null,
+            cancelledAt: null,
+            cancelReason: null,
+            createdAt: NOW,
+            updatedAt: NOW,
+            lines: [],
+          },
+        },
+        {
+          orderId: randomUUID(),
+          success: false,
+          error: {
+            code: 'ORDER_NOT_FOUND',
+            message: 'Order was not found.',
+            details: {},
+          },
+        },
+      ],
+    });
+    const bulk = await request(server())
+      .post('/api/v1/admin/orders/bulk-transition')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({
+        action: BulkOrderTransitionAction.SHIP,
+        orderIds: [ORDER_ID, randomUUID()],
+      })
+      .expect(200);
+    expect(bulk.body).toMatchObject({
+      data: {
+        summary: {
+          requested: 2,
+          succeeded: 1,
+          failed: 1,
+        },
+      },
+    });
   });
 });

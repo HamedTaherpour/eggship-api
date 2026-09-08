@@ -189,7 +189,7 @@ Transitions are **explicit application commands** — not a generic status PATCH
 
 HTTP, `AccessTokenGuard`, `PermissionGuard`, and BOLA mapping belong to ORD-05/ORD-06. Commands accept a trusted `USER`/`ADMIN` actor (UUID id). Customer cancel uses `actor.id` as `userId` and cannot cancel `CONFIRMED`. Confirm/ship/deliver/admin-cancel require an `ADMIN` actor at the command boundary; they do not check `ORDER_TRANSITION` themselves.
 
-Canonical legal pairs live in `src/modules/orders/domain/order-transitions.ts`. `DELIVERED → RETURNED` is absent from that table.
+Canonical legal pairs live in `src/modules/orders/domain/order-transitions.ts`, including the ORD-07 `DELIVERED -> RETURNED` completion edge.
 
 ### Repository primitives
 

@@ -1108,6 +1108,8 @@ Acceptance criteria:
 
 Explicitly out of scope: Provisioning infrastructure, changing bucket privacy, public-bucket workarounds, local-disk storage, orphan reconciliation, or production deployment.
 
+Local progress (not DONE): immutable `PUBLIC` / `ADMIN_ONLY` access class + fail-closed migration; `StorageProvider.createSignedReadUrl`; public `GET /api/v1/media/:mediaId/content` 302; settlement-owned `GET /api/v1/admin/settlements/:id/receipt-access`; bounded TTL env validation; ADR 0026; focused unit/e2e/PostgreSQL coverage. Remaining acceptance gate: dedicated Liara/private-bucket staging proof.
+
 ## Phase 9 — Transactional Async & Operational Features
 
 ### ASY-01 — Transactional outbox schema and publisher contract

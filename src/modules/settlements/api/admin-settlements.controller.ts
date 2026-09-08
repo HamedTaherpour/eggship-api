@@ -9,6 +9,7 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -26,7 +27,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { Permission } from '../../../common/authz/permission';
 import { PermissionGuard } from '../../../common/authz/permission.guard';
 import { RequirePermissions } from '../../../common/authz/require-permissions.decorator';
@@ -45,6 +46,7 @@ import {
   AdminSettlementResponseDto,
   toAdminSettlementDto,
 } from './dto/settlement-response.dto';
+import { AdminSettlementReceiptAccessResponseDto } from './dto/settlement-response.dto';
 
 @ApiTags('AdminSettlements')
 @Controller('admin/settlements')
@@ -91,6 +93,30 @@ export class AdminSettlementsController {
   ): Promise<AdminSettlementResponseDto> {
     return {
       data: toAdminSettlementDto(await this.settlements.getAdminById(id)),
+    };
+  }
+
+  @Get(':id/receipt-access')
+  @RequirePermissions(Permission.SETTLEMENT_READ)
+  @ApiOperation({
+    operationId: 'AdminSettlements_getReceiptAccess',
+    summary: 'Create a short-lived settlement receipt URL (Admin)',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiOkResponse({ type: AdminSettlementReceiptAccessResponseDto })
+  @ApiNotFoundResponse({ type: ApiErrorResponseDto })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  async receiptAccess(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<AdminSettlementReceiptAccessResponseDto> {
+    const value = await this.settlements.getReceiptAccess(id);
+    response.set({
+      'Cache-Control': 'no-store',
+      'Referrer-Policy': 'no-referrer',
+    });
+    return {
+      data: { url: value.url, expiresAt: value.expiresAt.toISOString() },
     };
   }
 

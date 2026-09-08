@@ -9,6 +9,7 @@ import {
   Post,
   Query,
   UploadedFiles,
+  Body,
   UseFilters,
   UseGuards,
   UseInterceptors,
@@ -36,6 +37,9 @@ import { ApiErrorResponseDto } from '../../../common/openapi/dto/common-response
 import { AccessTokenGuard } from '../../auth/api/access-token.guard';
 import { MediaService } from '../application/media.service';
 import type { InboundMediaFile, MediaUploadItemResult } from '../domain/media';
+import { MediaAccessClass } from '../domain/media';
+import { IsEnum } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 import {
   HARD_MEDIA_MAX_BATCH_BYTES,
   HARD_MEDIA_MAX_FILE_BYTES,
@@ -68,6 +72,12 @@ const uploadMemoryStorage = createBoundedMemoryStorage({
   maxFileBytes: HARD_MEDIA_MAX_FILE_BYTES,
   maxBatchBytes: HARD_MEDIA_MAX_BATCH_BYTES,
 });
+
+class AdminMediaUploadBodyDto {
+  @ApiProperty({ enum: MediaAccessClass })
+  @IsEnum(MediaAccessClass)
+  accessClass!: MediaAccessClass;
+}
 
 @ApiTags('AdminMedia')
 @Controller('admin/media')
@@ -102,7 +112,12 @@ export class AdminMediaController {
     const page = await this.media.listAdmin(query);
     return {
       data: page.data.map((row) =>
-        toAdminMediaDto(row, this.media.publicUrl(row)),
+        toAdminMediaDto(
+          row,
+          row.accessClass === MediaAccessClass.PUBLIC
+            ? this.media.contentUrl(row.id)
+            : null,
+        ),
       ),
       meta: page.meta,
     };
@@ -134,15 +149,16 @@ export class AdminMediaController {
       'Single-file and batch share this endpoint. Files are independent: a failed file does not roll back successes.',
       'Accepted batch with mixed per-file outcomes returns HTTP 200 and item statuses.',
       'Request-level failures (no files, too many files, aggregate too large, multer hard limits) return 4xx.',
-      'Accepted types: image/jpeg, image/png, image/webp. SVG is rejected.',
+      'Accepted types: image/jpeg, image/png, image/webp. SVG is rejected. One accessClass is required for the complete batch.',
       'Requires MEDIA_MANAGE.',
     ].join(' '),
   })
   @ApiBody({
     schema: {
       type: 'object',
-      required: ['files'],
+      required: ['files', 'accessClass'],
       properties: {
+        accessClass: { type: 'string', enum: Object.values(MediaAccessClass) },
         files: {
           type: 'array',
           maxItems: HARD_MEDIA_MAX_FILES_PER_BATCH,
@@ -161,10 +177,11 @@ export class AdminMediaController {
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
   @ApiForbiddenResponse({ type: ApiErrorResponseDto })
   async upload(
+    @Body() body: AdminMediaUploadBodyDto,
     @UploadedFiles() files: UploadedFile[] | undefined,
   ): Promise<MediaUploadBatchResponseDto> {
     const inbound = (files ?? []).map(toInboundFile);
-    const batch = await this.media.uploadBatch(inbound);
+    const batch = await this.media.uploadBatch(inbound, body.accessClass);
     return {
       data: {
         items: batch.items.map((item) => this.toUploadItemDto(item)),
@@ -190,7 +207,14 @@ export class AdminMediaController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<AdminMediaResponseDto> {
     const record = await this.media.getAdminById(id);
-    return { data: toAdminMediaDto(record, this.media.publicUrl(record)) };
+    return {
+      data: toAdminMediaDto(
+        record,
+        record.accessClass === MediaAccessClass.PUBLIC
+          ? this.media.contentUrl(record.id)
+          : null,
+      ),
+    };
   }
 
   @Get(':id/usages')
@@ -234,7 +258,14 @@ export class AdminMediaController {
       id,
       getAuthenticatedPrincipal(request)!.subjectId,
     );
-    return { data: toAdminMediaDto(deleted, this.media.publicUrl(deleted)) };
+    return {
+      data: toAdminMediaDto(
+        deleted,
+        deleted.accessClass === MediaAccessClass.PUBLIC
+          ? this.media.contentUrl(deleted.id)
+          : null,
+      ),
+    };
   }
 
   private toUploadItemDto(item: MediaUploadItemResult): MediaUploadItemDto {
@@ -242,7 +273,12 @@ export class AdminMediaController {
       return {
         index: item.index,
         status: 'uploaded',
-        media: toAdminMediaDto(item.media, this.media.publicUrl(item.media)),
+        media: toAdminMediaDto(
+          item.media,
+          item.media.accessClass === MediaAccessClass.PUBLIC
+            ? this.media.contentUrl(item.media.id)
+            : null,
+        ),
       };
     }
     return {

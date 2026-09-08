@@ -19,8 +19,8 @@ Media is not owned by Products or Blogs. Other domains store Media ids. Catalog 
 ## Storage abstraction
 
 - Canonical storage is object storage, not the application filesystem.
-- Application code must not import an S3/Liara SDK. Use `StorageProvider`: `put`, `delete`, `exists`, `getPublicUrl`.
-- Adapters: in-memory (development/test only) and S3-compatible (production, including Liara Object Storage).
+- Application code must not import an S3/Liara SDK. Use `StorageProvider`: `put`, `delete`, `exists`, `getPublicUrl`, `createSignedReadUrl`.
+- Adapters: in-memory (development/test only) and S3-compatible (production, including Liara Object Storage). S3-compatible signing uses the official AWS-compatible presigner; do not hand-roll signatures.
 - `STORAGE_PROVIDER=memory` is forbidden when `NODE_ENV=production`. Production must fail closed if S3-compatible configuration is missing.
 - Docker/MinIO is not required for local development.
 
@@ -161,9 +161,15 @@ Out of V1 Media Library UX: folders, collections, tagging, DAM taxonomy, bulk tr
 
 ## Public URL and visibility
 
-Responses expose a derived `url`, not a persisted host-specific string and not `storageKey`.
+Media has an immutable `accessClass` of `PUBLIC` or `ADMIN_ONLY` ([ADR 0026](../docs/adr/0026-private-media-delivery.md)). Product images, Blog cover/inline media, and BlogAuthor avatars are PUBLIC. Settlement receipts are ADMIN_ONLY. Reference assignment never mutates class; wrong-class assignment fails closed.
 
-Production/staging Object Storage buckets are **private** under the DEP-02 contract. `STORAGE_PUBLIC_BASE_URL` is only a derived URL-base input and is not an access grant. Private-object reads require presigned access where the consumer needs a URL. The current provider port only exposes `getPublicUrl`; implementing presigned access and updating any affected response/read path is an explicit follow-up before production Media reads. Changing the endpoint or URL base must not require rewriting consumer relationships.
+Responses expose a stable application-owned content URL for PUBLIC media (`/api/v1/media/:mediaId/content`), not a persisted host-specific string and not `storageKey`. That route resolves only PUBLIC Media, checks object availability, and 302-redirects to a bounded provider-signed GET (`Cache-Control: no-store`, `Referrer-Policy: no-referrer`). Unknown ids, ADMIN_ONLY ids, and missing objects are indistinguishable `MEDIA_NOT_FOUND` for anonymous callers. Bytes are never proxied through Nest.
+
+ADMIN_ONLY reads are settlement-owned: `GET /api/v1/admin/settlements/:id/receipt-access` requires `SETTLEMENT_READ`, verifies the settlement's current `receiptMediaId`, and returns a short-lived signed URL (`no-store`). There is no generic sensitive-media signing endpoint. Signed URLs are neither persisted nor logged.
+
+Signed-read TTL is configuration-controlled (`PUBLIC_REDIRECT_*` / `SENSITIVE_ADMIN_*`; see [environment.md](environment.md)).
+
+Production/staging Object Storage buckets are **private** under the DEP-02 contract. `STORAGE_PUBLIC_BASE_URL` is only a derived URL-base input and is not an access grant. Changing the endpoint or URL base must not require rewriting consumer relationships. Live Liara private-bucket proof remains a MED-02 staging gate.
 
 ## Permissions
 
@@ -193,6 +199,5 @@ referenced delete attempts remain operational logs only.
 
 ## Follow-ups
 
-- MED-01 implementation of ADR 0022 (attachment FKs, inline registry, reference-aware delete expansion, usage inspection)
 - Orphan object reconciliation, failed-delete retry, unused-Media retention (DATA-02; no retention periods invented here)
-- Live production-bucket verification (DEP-02 / credentials)
+- Live Liara/private-bucket signed-read proof (MED-02 staging gate; production remains human-approved)

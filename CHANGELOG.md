@@ -85,6 +85,13 @@ All notable changes to this project will be documented in this file.
   handling, and fail-closed Worker configuration. Real FCM/Liara staging proof
   remains a required pre-production gate.
 
+- MED-02 private Media delivery (local): immutable PUBLIC/ADMIN_ONLY access
+  classes, fail-closed legacy classification migration, provider-neutral signed
+  reads via official AWS-compatible presigning, bounded TTL policy, public
+  `/media/:id/content` redirects, and settlement-owned receipt access. Liara
+  private-bucket staging proof remains required before MED-02 DONE; no resources
+  were provisioned.
+
 - ASY-04 durable async failure inspection and processor-approved replay infrastructure, normalized failure metadata, operator lifecycle controls, dedicated RBAC permissions, no-store Admin API, PostgreSQL claim/lease replay dispatch, and durable processor result receipts. Real processor replay proof remains deferred until an approved side-effect processor exists.
 - NOT-04 provider-neutral push installations and durable notification delivery
   identity, with ownership-safe lifecycle APIs, CSRF/private-response coverage,

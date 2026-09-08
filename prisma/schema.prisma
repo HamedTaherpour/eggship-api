@@ -535,20 +535,21 @@ model DiscountUsageRecord {
 /// object storage. Not owned by Product; future Product/Blog/Category FKs
 /// must Restrict and must not assume a one-to-one relationship.
 model Media {
-  id               String   @id @default(uuid()) @db.Uuid
+  id               String           @id @default(uuid()) @db.Uuid
   /// Server-generated object key (`media/<year>/<month>/<uuid>.<ext>`). Unique.
-  storageKey       String   @unique @db.VarChar(255)
+  storageKey       String           @unique @db.VarChar(255)
   /// Client filename metadata only. Never used as a storage path.
-  originalFileName String   @db.VarChar(255)
-  mimeType         String   @db.VarChar(64)
+  originalFileName String           @db.VarChar(255)
+  mimeType         String           @db.VarChar(64)
   /// Byte length of the stored object. int4 is sufficient for launch file caps.
   sizeBytes        Int
   /// Pixel width when reliably parsed from image headers; otherwise null.
   width            Int?
   /// Pixel height when reliably parsed from image headers; otherwise null.
   height           Int?
-  createdAt        DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt        DateTime @updatedAt @db.Timestamptz(3)
+  accessClass      MediaAccessClass
+  createdAt        DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime         @updatedAt @db.Timestamptz(3)
 
   settlementReceipts OrderSettlement[]
   productImages      Product[]
@@ -559,6 +560,11 @@ model Media {
   /// Admin library recency and mime filter.
   @@index([createdAt])
   @@index([mimeType, createdAt])
+}
+
+enum MediaAccessClass {
+  PUBLIC
+  ADMIN_ONLY
 }
 
 /// Public storefront blog post (CNT-01). No Media FK (MED-01 owns attachment).

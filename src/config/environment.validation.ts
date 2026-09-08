@@ -73,6 +73,12 @@ const MAX_DATABASE_IDLE_TIMEOUT_MS = 300_000;
 const OTP_PROVIDER_VALUES = ['development', 'kavenegar'] as const;
 const STORAGE_PROVIDER_VALUES = ['memory', 's3'] as const;
 const DEFAULT_MEMORY_PUBLIC_BASE_URL = 'https://media.local.invalid';
+export const DEFAULT_PUBLIC_REDIRECT_TTL_SECONDS = 3600;
+export const DEFAULT_PUBLIC_REDIRECT_MIN_TTL_SECONDS = 300;
+export const DEFAULT_PUBLIC_REDIRECT_MAX_TTL_SECONDS = 86400;
+export const DEFAULT_SENSITIVE_ADMIN_TTL_SECONDS = 300;
+export const DEFAULT_SENSITIVE_ADMIN_MIN_TTL_SECONDS = 60;
+export const DEFAULT_SENSITIVE_ADMIN_MAX_TTL_SECONDS = 900;
 
 type NodeEnvironment = (typeof NODE_ENV_VALUES)[number];
 export type OtpProviderName = (typeof OTP_PROVIDER_VALUES)[number];
@@ -119,6 +125,12 @@ export interface EnvironmentVariables {
   MEDIA_MAX_FILES_PER_BATCH: number;
   MEDIA_MAX_BATCH_BYTES: number;
   MEDIA_UPLOAD_CONCURRENCY: number;
+  PUBLIC_REDIRECT_DEFAULT_TTL_SECONDS: number;
+  PUBLIC_REDIRECT_MIN_TTL_SECONDS: number;
+  PUBLIC_REDIRECT_MAX_TTL_SECONDS: number;
+  SENSITIVE_ADMIN_DEFAULT_TTL_SECONDS: number;
+  SENSITIVE_ADMIN_MIN_TTL_SECONDS: number;
+  SENSITIVE_ADMIN_MAX_TTL_SECONDS: number;
 }
 
 export function validateEnvironment(
@@ -322,6 +334,48 @@ export function validateEnvironment(
       DEFAULT_MEDIA_UPLOAD_CONCURRENCY,
     ),
   });
+  const publicRedirectDefault = parsePositiveIntSeconds(
+    values,
+    'PUBLIC_REDIRECT_DEFAULT_TTL_SECONDS',
+    DEFAULT_PUBLIC_REDIRECT_TTL_SECONDS,
+  );
+  const publicRedirectMin = parsePositiveIntSeconds(
+    values,
+    'PUBLIC_REDIRECT_MIN_TTL_SECONDS',
+    DEFAULT_PUBLIC_REDIRECT_MIN_TTL_SECONDS,
+  );
+  const publicRedirectMax = parsePositiveIntSeconds(
+    values,
+    'PUBLIC_REDIRECT_MAX_TTL_SECONDS',
+    DEFAULT_PUBLIC_REDIRECT_MAX_TTL_SECONDS,
+  );
+  const sensitiveAdminDefault = parsePositiveIntSeconds(
+    values,
+    'SENSITIVE_ADMIN_DEFAULT_TTL_SECONDS',
+    DEFAULT_SENSITIVE_ADMIN_TTL_SECONDS,
+  );
+  const sensitiveAdminMin = parsePositiveIntSeconds(
+    values,
+    'SENSITIVE_ADMIN_MIN_TTL_SECONDS',
+    DEFAULT_SENSITIVE_ADMIN_MIN_TTL_SECONDS,
+  );
+  const sensitiveAdminMax = parsePositiveIntSeconds(
+    values,
+    'SENSITIVE_ADMIN_MAX_TTL_SECONDS',
+    DEFAULT_SENSITIVE_ADMIN_MAX_TTL_SECONDS,
+  );
+  assertTtlBounds(
+    'PUBLIC_REDIRECT',
+    publicRedirectMin,
+    publicRedirectDefault,
+    publicRedirectMax,
+  );
+  assertTtlBounds(
+    'SENSITIVE_ADMIN',
+    sensitiveAdminMin,
+    sensitiveAdminDefault,
+    sensitiveAdminMax,
+  );
 
   return {
     NODE_ENV: nodeEnv,
@@ -374,7 +428,23 @@ export function validateEnvironment(
     MEDIA_MAX_FILES_PER_BATCH: mediaLimits.maxFilesPerBatch,
     MEDIA_MAX_BATCH_BYTES: mediaLimits.maxBatchBytes,
     MEDIA_UPLOAD_CONCURRENCY: mediaLimits.uploadConcurrency,
+    PUBLIC_REDIRECT_DEFAULT_TTL_SECONDS: publicRedirectDefault,
+    PUBLIC_REDIRECT_MIN_TTL_SECONDS: publicRedirectMin,
+    PUBLIC_REDIRECT_MAX_TTL_SECONDS: publicRedirectMax,
+    SENSITIVE_ADMIN_DEFAULT_TTL_SECONDS: sensitiveAdminDefault,
+    SENSITIVE_ADMIN_MIN_TTL_SECONDS: sensitiveAdminMin,
+    SENSITIVE_ADMIN_MAX_TTL_SECONDS: sensitiveAdminMax,
   };
+}
+
+function assertTtlBounds(
+  name: string,
+  min: number,
+  value: number,
+  max: number,
+): void {
+  if (min > value || value > max)
+    throw new Error(`${name} TTL values must satisfy min <= default <= max.`);
 }
 
 function resolveOtpProvider(

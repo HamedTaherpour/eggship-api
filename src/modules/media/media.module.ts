@@ -5,10 +5,24 @@ import { StorageModule } from '../../infrastructure/storage/storage.module';
 import { AuthModule } from '../auth/auth.module';
 import { AuditModule } from '../audit/audit.module';
 import { AdminMediaController } from './api/admin-media.controller';
+import { MediaContentController } from './api/media-content.controller';
 import { MediaUploadExceptionFilter } from './api/media-upload.exception-filter';
-import { MEDIA_UPLOAD_LIMITS, MediaService } from './application/media.service';
+import {
+  MEDIA_READ_TTL_POLICY,
+  MEDIA_UPLOAD_LIMITS,
+  MediaService,
+} from './application/media.service';
 import type { MediaUploadLimits } from './domain/media-upload-limits';
+import type { MediaReadTtlPolicy } from './domain/media';
 import { MediaRepository } from './infrastructure/media.repository';
+import {
+  DEFAULT_PUBLIC_REDIRECT_TTL_SECONDS,
+  DEFAULT_PUBLIC_REDIRECT_MIN_TTL_SECONDS,
+  DEFAULT_PUBLIC_REDIRECT_MAX_TTL_SECONDS,
+  DEFAULT_SENSITIVE_ADMIN_TTL_SECONDS,
+  DEFAULT_SENSITIVE_ADMIN_MIN_TTL_SECONDS,
+  DEFAULT_SENSITIVE_ADMIN_MAX_TTL_SECONDS,
+} from '../../config/environment.validation';
 
 /**
  * Reusable Media library (CAT-04). Owns metadata, upload validation, and
@@ -23,7 +37,7 @@ import { MediaRepository } from './infrastructure/media.repository';
     forwardRef(() => AuthModule),
     AuditModule,
   ],
-  controllers: [AdminMediaController],
+  controllers: [AdminMediaController, MediaContentController],
   providers: [
     MediaRepository,
     MediaService,
@@ -39,6 +53,36 @@ import { MediaRepository } from './infrastructure/media.repository';
         maxBatchBytes: config.getOrThrow<number>('MEDIA_MAX_BATCH_BYTES'),
         uploadConcurrency: config.getOrThrow<number>(
           'MEDIA_UPLOAD_CONCURRENCY',
+        ),
+      }),
+    },
+    {
+      provide: MEDIA_READ_TTL_POLICY,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService): MediaReadTtlPolicy => ({
+        publicDefault: config.get(
+          'PUBLIC_REDIRECT_DEFAULT_TTL_SECONDS',
+          DEFAULT_PUBLIC_REDIRECT_TTL_SECONDS,
+        ),
+        publicMin: config.get(
+          'PUBLIC_REDIRECT_MIN_TTL_SECONDS',
+          DEFAULT_PUBLIC_REDIRECT_MIN_TTL_SECONDS,
+        ),
+        publicMax: config.get(
+          'PUBLIC_REDIRECT_MAX_TTL_SECONDS',
+          DEFAULT_PUBLIC_REDIRECT_MAX_TTL_SECONDS,
+        ),
+        adminDefault: config.get(
+          'SENSITIVE_ADMIN_DEFAULT_TTL_SECONDS',
+          DEFAULT_SENSITIVE_ADMIN_TTL_SECONDS,
+        ),
+        adminMin: config.get(
+          'SENSITIVE_ADMIN_MIN_TTL_SECONDS',
+          DEFAULT_SENSITIVE_ADMIN_MIN_TTL_SECONDS,
+        ),
+        adminMax: config.get(
+          'SENSITIVE_ADMIN_MAX_TTL_SECONDS',
+          DEFAULT_SENSITIVE_ADMIN_MAX_TTL_SECONDS,
         ),
       }),
     },

@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { createPaginatedResponseDto } from '../../../../common/list';
 import type { MediaRecord } from '../../domain/media';
+import { MediaAccessClass } from '../../domain/media';
 
 /** Admin Media Library fields. `url` is derived; storageKey is not exposed. */
 export class AdminMediaDto {
@@ -10,13 +11,16 @@ export class AdminMediaDto {
   })
   id!: string;
 
+  @ApiProperty({ enum: MediaAccessClass })
+  accessClass!: MediaRecord['accessClass'];
+
   @ApiProperty({
+    type: String,
+    nullable: true,
     description:
-      'Derived public object URL for this deployment. Not a stored credentialed URL.',
-    example:
-      'https://media.example.invalid/media/2026/08/11111111-1111-4111-8111-111111111111.jpg',
+      'Stable application-owned content URL for PUBLIC media; null for ADMIN_ONLY media.',
   })
-  url!: string;
+  url!: string | null;
 
   @ApiProperty({ example: 'cage-free-eggs.jpg' })
   originalFileName!: string;
@@ -55,10 +59,11 @@ export const AdminMediaListResponseDto = createPaginatedResponseDto(
 
 export function toAdminMediaDto(
   record: MediaRecord,
-  url: string,
+  url: string | null,
 ): AdminMediaDto {
   return {
     id: record.id,
+    accessClass: record.accessClass,
     url,
     originalFileName: record.originalFileName,
     mimeType: record.mimeType,

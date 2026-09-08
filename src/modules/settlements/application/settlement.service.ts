@@ -68,6 +68,16 @@ export class SettlementService {
     return found;
   }
 
+  async getReceiptAccess(
+    id: string,
+  ): Promise<{ url: string; expiresAt: Date }> {
+    const settlement = await this.settlements.findById(id);
+    if (settlement === null) throw new SettlementNotFoundError();
+    if (settlement.receiptMediaId === null)
+      throw new SettlementReceiptRequiredError();
+    return this.media.createSettlementReceiptRead(settlement.receiptMediaId);
+  }
+
   async create(
     orderId: string,
     dueAtValue: string,

@@ -1,9 +1,11 @@
 import {
   DeleteObjectCommand,
+  GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { isSafeObjectKey, joinPublicObjectUrl } from './object-key';
 import type {
   PutObjectInput,
@@ -97,6 +99,29 @@ export class S3CompatibleStorageProvider implements StorageProvider {
 
   getPublicUrl(storageKey: string): string {
     return joinPublicObjectUrl(this.options.publicBaseUrl, storageKey);
+  }
+
+  async createSignedReadUrl(
+    storageKey: string,
+    options: {
+      purpose: 'PUBLIC_REDIRECT' | 'SENSITIVE_ADMIN';
+      expiresInSeconds: number;
+    },
+  ): Promise<{ url: string; expiresAt: Date }> {
+    assertSafeKey(storageKey);
+    try {
+      const url = await getSignedUrl(
+        this.client as S3Client,
+        new GetObjectCommand({ Bucket: this.options.bucket, Key: storageKey }),
+        { expiresIn: options.expiresInSeconds },
+      );
+      return {
+        url,
+        expiresAt: new Date(Date.now() + options.expiresInSeconds * 1000),
+      };
+    } catch (error: unknown) {
+      throw wrapProviderError('read signing', error);
+    }
   }
 }
 

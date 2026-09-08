@@ -16,9 +16,11 @@ import type {
   InboundMediaFile,
   MediaListQuery,
   MediaRecord,
+  MediaReadTtlPolicy,
   MediaUploadBatchResult,
   MediaUploadItemResult,
 } from '../domain/media';
+import { MediaAccessClass } from '../domain/media';
 import type { MediaPresentation } from '../domain/media-presentation';
 import { toMediaPresentation } from '../domain/media-presentation';
 import {
@@ -32,6 +34,7 @@ import {
   MediaTooManyFilesError,
   MediaUnsupportedTypeError,
   MediaUploadFailedError,
+  MediaDeliveryFailedError,
   mediaErrorBody,
 } from '../domain/media-errors';
 import { generateMediaStorageKey } from '../domain/storage-key';
@@ -47,6 +50,7 @@ import {
 } from '../../../infrastructure/database/transaction';
 
 export const MEDIA_UPLOAD_LIMITS = Symbol('MEDIA_UPLOAD_LIMITS');
+export const MEDIA_READ_TTL_POLICY = Symbol('MEDIA_READ_TTL_POLICY');
 
 @Injectable()
 export class MediaService {
@@ -58,6 +62,9 @@ export class MediaService {
     private readonly limits: MediaUploadLimits,
     private readonly logger: ApplicationLogger,
     private readonly audit: AuditLogService,
+    @Optional()
+    @Inject(MEDIA_READ_TTL_POLICY)
+    private readonly readTtls?: MediaReadTtlPolicy,
     @Optional() private readonly transactions?: TransactionRunner,
   ) {}
 
@@ -86,6 +93,11 @@ export class MediaService {
   ): Promise<MediaRecord> {
     const found = await this.media.findByIdForReference(id, tx);
     if (found === null) throw new MediaNotFoundError();
+    if (found.accessClass !== MediaAccessClass.ADMIN_ONLY) {
+      throw new MediaUnsupportedTypeError(
+        'Settlement receipts require ADMIN_ONLY media.',
+      );
+    }
     if (!isAcceptedMediaMimeType(found.mimeType)) {
       throw new MediaUnsupportedTypeError(
         'Settlement receipts must be JPEG, PNG, or WebP images.',
@@ -100,6 +112,11 @@ export class MediaService {
   ): Promise<MediaRecord> {
     const found = await this.media.findByIdForReference(id, tx);
     if (found === null) throw new MediaNotFoundError();
+    if (found.accessClass !== MediaAccessClass.PUBLIC) {
+      throw new MediaUnsupportedTypeError(
+        'Public catalog and content images require PUBLIC media.',
+      );
+    }
     if (!isAcceptedMediaMimeType(found.mimeType))
       throw new MediaUnsupportedTypeError();
     return found;
@@ -115,6 +132,66 @@ export class MediaService {
     return this.storage.getPublicUrl(record.storageKey);
   }
 
+  contentUrl(id: string): string {
+    return `/api/v1/media/${id}/content`;
+  }
+
+  async createPublicRedirect(
+    id: string,
+  ): Promise<{ url: string; expiresAt: Date }> {
+    const record = await this.media.findById(id);
+    if (record === null || record.accessClass !== MediaAccessClass.PUBLIC)
+      throw new MediaNotFoundError();
+    try {
+      if (!(await this.storage.exists(record.storageKey)))
+        throw new MediaNotFoundError();
+      return await this.storage.createSignedReadUrl(record.storageKey, {
+        purpose: 'PUBLIC_REDIRECT',
+        expiresInSeconds: this.readTtls?.publicDefault ?? 3600,
+      });
+    } catch (error: unknown) {
+      if (error instanceof MediaNotFoundError) throw error;
+      this.logger.error(
+        {
+          module: 'media',
+          operation: 'media.public_redirect.failed',
+          mediaId: id,
+        },
+        'Media public delivery failed',
+        toError(error),
+      );
+      throw new MediaDeliveryFailedError();
+    }
+  }
+
+  async createSettlementReceiptRead(
+    id: string,
+  ): Promise<{ url: string; expiresAt: Date }> {
+    const record = await this.media.findById(id);
+    if (record === null || record.accessClass !== MediaAccessClass.ADMIN_ONLY)
+      throw new MediaNotFoundError();
+    try {
+      if (!(await this.storage.exists(record.storageKey)))
+        throw new MediaDeliveryFailedError();
+      return await this.storage.createSignedReadUrl(record.storageKey, {
+        purpose: 'SENSITIVE_ADMIN',
+        expiresInSeconds: this.readTtls?.adminDefault ?? 300,
+      });
+    } catch (error: unknown) {
+      if (
+        error instanceof MediaDeliveryFailedError ||
+        error instanceof MediaNotFoundError
+      )
+        throw error;
+      this.logger.error(
+        { module: 'media', operation: 'media.admin_read.failed', mediaId: id },
+        'Media admin delivery failed',
+        toError(error),
+      );
+      throw new MediaDeliveryFailedError();
+    }
+  }
+
   async presentations(
     ids: readonly (string | null | undefined)[],
   ): Promise<Map<string, MediaPresentation>> {
@@ -125,15 +202,18 @@ export class MediaService {
     ];
     const records = await this.media.findByIds(uniqueIds);
     return new Map(
-      records.map((record) => [
-        record.id,
-        toMediaPresentation(record, this.publicUrl(record)),
-      ]),
+      records
+        .filter((record) => record.accessClass === MediaAccessClass.PUBLIC)
+        .map((record) => [
+          record.id,
+          toMediaPresentation(record, this.contentUrl(record.id)),
+        ]),
     );
   }
 
   async uploadBatch(
     files: InboundMediaFile[],
+    accessClass: MediaAccessClass = MediaAccessClass.PUBLIC,
   ): Promise<MediaUploadBatchResult> {
     this.assertRequestBounds(files);
 
@@ -141,7 +221,7 @@ export class MediaService {
     const items = await mapWithBoundedConcurrency(
       files,
       this.limits.uploadConcurrency,
-      async (file, index) => this.uploadOne(file, index),
+      async (file, index) => this.uploadOne(file, index, accessClass),
     );
 
     const uploaded = items.filter((item) => item.status === 'uploaded').length;
@@ -298,6 +378,7 @@ export class MediaService {
   private async uploadOne(
     file: InboundMediaFile,
     index: number,
+    accessClass: MediaAccessClass,
   ): Promise<MediaUploadItemResult> {
     try {
       const validated = validateInboundMediaFile(
@@ -320,6 +401,7 @@ export class MediaService {
           sizeBytes: validated.sizeBytes,
           width: validated.width,
           height: validated.height,
+          accessClass,
         });
         return { index, status: 'uploaded', media };
       } catch (error: unknown) {

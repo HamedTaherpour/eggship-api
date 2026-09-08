@@ -275,3 +275,9 @@ Do not embed Liara credentials or deployment commands here.
 - Never run destructive database migrate/reset/seed commands against an unidentified environment.
 - Before destructive data operations, the environment identity must be explicit (local development or named non-production target).
 - Do not require Docker for EggShip local development.
+
+### MED-02 signed-read TTL variables
+
+`PUBLIC_REDIRECT_DEFAULT_TTL_SECONDS` / `MIN` / `MAX` default to `3600` / `300` / `86400`.
+`SENSITIVE_ADMIN_DEFAULT_TTL_SECONDS` / `MIN` / `MAX` default to `300` / `60` / `900`.
+All values are positive integers and each triplet must satisfy `min <= default <= max`.

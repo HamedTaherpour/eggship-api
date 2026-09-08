@@ -1,5 +1,20 @@
 import type { AcceptedMediaMimeType } from './accepted-media-types';
 
+export const MediaAccessClass = {
+  PUBLIC: 'PUBLIC',
+  ADMIN_ONLY: 'ADMIN_ONLY',
+} as const;
+export type MediaAccessClass =
+  (typeof MediaAccessClass)[keyof typeof MediaAccessClass];
+export interface MediaReadTtlPolicy {
+  publicDefault: number;
+  publicMin: number;
+  publicMax: number;
+  adminDefault: number;
+  adminMin: number;
+  adminMax: number;
+}
+
 /**
  * Persistence-independent Media record. Binary content lives in object storage;
  * this is metadata only. `url` is derived at read time from storageKey + config.
@@ -14,6 +29,7 @@ export interface MediaRecord {
   height: number | null;
   createdAt: Date;
   updatedAt: Date;
+  accessClass: MediaAccessClass;
 }
 
 export interface CreateMediaInput {
@@ -23,6 +39,7 @@ export interface CreateMediaInput {
   sizeBytes: number;
   width: number | null;
   height: number | null;
+  accessClass?: MediaAccessClass;
 }
 
 export type MediaSortField = 'createdAt' | 'originalFileName' | 'sizeBytes';

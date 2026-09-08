@@ -25,6 +25,7 @@ type PrismaMedia = {
   height: number | null;
   createdAt: Date;
   updatedAt: Date;
+  accessClass?: string;
 };
 
 const SORT_FIELD_MAP: Record<
@@ -59,7 +60,7 @@ export class MediaRepository {
   ): Promise<MediaRecord | null> {
     const rows = await this.db(tx).$queryRaw<PrismaMedia[]>(Prisma.sql`
       SELECT "id", "storageKey", "originalFileName", "mimeType", "sizeBytes",
-             "width", "height", "createdAt", "updatedAt"
+             "width", "height", "createdAt", "updatedAt", "accessClass"
       FROM "Media"
       WHERE "id" = ${id}::uuid
       FOR UPDATE
@@ -136,6 +137,7 @@ export class MediaRepository {
         sizeBytes: input.sizeBytes,
         width: input.width,
         height: input.height,
+        accessClass: input.accessClass ?? 'PUBLIC',
       },
     });
     return mapMedia(created);
@@ -202,6 +204,7 @@ function mapMedia(row: PrismaMedia): MediaRecord {
     sizeBytes: row.sizeBytes,
     width: row.width,
     height: row.height,
+    accessClass: row.accessClass as MediaRecord['accessClass'],
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

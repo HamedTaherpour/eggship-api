@@ -16,6 +16,20 @@ describe('InMemoryStorageProvider', () => {
     expect(await storage.exists(key)).toBe(false);
   });
 
+  it('creates deterministic signed read URLs for tests', async () => {
+    const storage = new InMemoryStorageProvider('https://media.test.invalid');
+    const key = 'media/2026/08/11111111-1111-4111-8111-111111111111.jpg';
+    const signed = await storage.createSignedReadUrl(key, {
+      purpose: 'PUBLIC_REDIRECT',
+      expiresInSeconds: 600,
+    });
+    expect(signed.url).toContain(`https://media.test.invalid/${key}`);
+    expect(signed.url).toContain('signed-test=1');
+    expect(signed.expiresAt.getTime() - Date.now()).toBeLessThanOrEqual(
+      600_050,
+    );
+  });
+
   it('refuses unsafe keys', async () => {
     const storage = new InMemoryStorageProvider('https://media.test.invalid');
     await expect(

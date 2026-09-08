@@ -8,6 +8,12 @@ export interface PutObjectInput {
   mimeType: string;
 }
 
+export type SignedReadPurpose = 'PUBLIC_REDIRECT' | 'SENSITIVE_ADMIN';
+export interface SignedReadUrl {
+  url: string;
+  expiresAt: Date;
+}
+
 /**
  * Provider-independent object storage port.
  * Application/Media code must not import S3/Liara SDKs.
@@ -17,6 +23,10 @@ export interface StorageProvider {
   delete(storageKey: string): Promise<void>;
   exists(storageKey: string): Promise<boolean>;
   getPublicUrl(storageKey: string): string;
+  createSignedReadUrl(
+    storageKey: string,
+    options: { purpose: SignedReadPurpose; expiresInSeconds: number },
+  ): Promise<SignedReadUrl>;
 }
 
 /** Safe, non-leaking failure from a storage adapter. */

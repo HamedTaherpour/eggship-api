@@ -133,6 +133,7 @@ describe('Media library persistence (integration)', () => {
     if (first === undefined || first.status !== 'uploaded') {
       throw new Error('expected uploaded item');
     }
+    expect(first.media.accessClass).toBe('PUBLIC');
     const admin = await prisma.admin.create({
       data: {
         email: `${randomUUID()}@example.invalid`,
@@ -143,6 +144,62 @@ describe('Media library persistence (integration)', () => {
     await service.deleteAdmin(first.media.id, admin.id);
     expect(await media.findById(first.media.id)).toBeNull();
     expect(await prisma.media.count()).toBe(1);
+  });
+
+  it('persists PUBLIC and ADMIN_ONLY accessClass and serves signed reads accordingly', async () => {
+    const publicBatch = await service.uploadBatch(
+      [
+        {
+          originalName: 'storefront.jpg',
+          claimedMimeType: 'image/jpeg',
+          size: jpegFixture().length,
+          buffer: jpegFixture(),
+        },
+      ],
+      'PUBLIC',
+    );
+    const privateBatch = await service.uploadBatch(
+      [
+        {
+          originalName: 'receipt.jpg',
+          claimedMimeType: 'image/jpeg',
+          size: jpegFixture().length,
+          buffer: jpegFixture(),
+        },
+      ],
+      'ADMIN_ONLY',
+    );
+    const publicItem = publicBatch.items[0];
+    const privateItem = privateBatch.items[0];
+    if (
+      publicItem === undefined ||
+      publicItem.status !== 'uploaded' ||
+      privateItem === undefined ||
+      privateItem.status !== 'uploaded'
+    ) {
+      throw new Error('expected uploaded media');
+    }
+
+    const loadedPublic = await media.findById(publicItem.media.id);
+    const loadedPrivate = await media.findById(privateItem.media.id);
+    expect(loadedPublic?.accessClass).toBe('PUBLIC');
+    expect(loadedPrivate?.accessClass).toBe('ADMIN_ONLY');
+
+    const publicSigned = await service.createPublicRedirect(
+      publicItem.media.id,
+    );
+    expect(publicSigned.url).toContain('signed-test=1');
+    await expect(
+      service.createPublicRedirect(privateItem.media.id),
+    ).rejects.toMatchObject({ code: MediaErrorCode.NOT_FOUND });
+    await expect(
+      service.createSettlementReceiptRead(publicItem.media.id),
+    ).rejects.toMatchObject({ code: MediaErrorCode.NOT_FOUND });
+    const adminSigned = await service.createSettlementReceiptRead(
+      privateItem.media.id,
+    );
+    expect(adminSigned.url).toContain('signed-test=1');
+    expect(JSON.stringify(adminSigned)).not.toContain('storageKey');
   });
 
   it('persists exactly one privacy-safe media.deleted event with the deletion', async () => {

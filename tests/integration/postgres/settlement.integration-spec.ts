@@ -137,6 +137,7 @@ describe('Deferred settlement persistence and concurrency (integration)', () => 
       sizeBytes: 16,
       width: 1,
       height: 1,
+      accessClass: 'ADMIN_ONLY',
     });
     return row.id;
   }
@@ -338,14 +339,17 @@ describe('Deferred settlement persistence and concurrency (integration)', () => 
       '2026-08-01T00:00:00.000Z',
       adminId,
     );
-    const upload = await mediaService.uploadBatch([
-      {
-        originalName: 'proof.png',
-        claimedMimeType: 'image/png',
-        size: pngFixture().length,
-        buffer: pngFixture(),
-      },
-    ]);
+    const upload = await mediaService.uploadBatch(
+      [
+        {
+          originalName: 'proof.png',
+          claimedMimeType: 'image/png',
+          size: pngFixture().length,
+          buffer: pngFixture(),
+        },
+      ],
+      'ADMIN_ONLY',
+    );
     const item = upload.items[0];
     if (item === undefined || item.status !== 'uploaded')
       throw new Error('Expected uploaded receipt.');

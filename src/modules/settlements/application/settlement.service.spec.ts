@@ -76,7 +76,10 @@ describe('SettlementService', () => {
     markSettled: jest.Mock;
     list: jest.Mock;
   };
-  let media: { getReceiptReference: jest.Mock };
+  let media: {
+    getReceiptReference: jest.Mock;
+    createSettlementReceiptRead: jest.Mock;
+  };
   let logger: { info: jest.Mock };
   let service: SettlementService;
 
@@ -92,7 +95,10 @@ describe('SettlementService', () => {
       markSettled: jest.fn(),
       list: jest.fn(),
     };
-    media = { getReceiptReference: jest.fn() };
+    media = {
+      getReceiptReference: jest.fn(),
+      createSettlementReceiptRead: jest.fn(),
+    };
     logger = { info: jest.fn() };
     service = new SettlementService(
       repository as unknown as SettlementRepository,
@@ -288,5 +294,29 @@ describe('SettlementService', () => {
       service.markSettled(settled.id, settled.createdByAdminId),
     ).resolves.toBe(settled);
     expect(logger.info).not.toHaveBeenCalled();
+  });
+
+  it('issues settlement-owned receipt access only when a receipt media id exists', async () => {
+    repository.findById.mockResolvedValueOnce(record());
+    await expect(service.getReceiptAccess(record().id)).rejects.toBeInstanceOf(
+      SettlementReceiptRequiredError,
+    );
+
+    const withReceipt = record({
+      receiptMediaId: '44444444-4444-4444-8444-444444444444',
+    });
+    const signed = {
+      url: 'https://media.test.invalid/object?signed-test=1',
+      expiresAt: new Date(Date.now() + 300_000),
+    };
+    repository.findById.mockResolvedValueOnce(withReceipt);
+    media.createSettlementReceiptRead.mockResolvedValueOnce(signed);
+
+    await expect(service.getReceiptAccess(withReceipt.id)).resolves.toBe(
+      signed,
+    );
+    expect(media.createSettlementReceiptRead).toHaveBeenCalledWith(
+      withReceipt.receiptMediaId,
+    );
   });
 });

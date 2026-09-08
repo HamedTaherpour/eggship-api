@@ -46,7 +46,34 @@ describe('validateEnvironment', () => {
       MEDIA_MAX_FILES_PER_BATCH: 10,
       MEDIA_MAX_BATCH_BYTES: 26_214_400,
       MEDIA_UPLOAD_CONCURRENCY: 3,
+      PUBLIC_REDIRECT_DEFAULT_TTL_SECONDS: 3600,
+      PUBLIC_REDIRECT_MIN_TTL_SECONDS: 300,
+      PUBLIC_REDIRECT_MAX_TTL_SECONDS: 86400,
+      SENSITIVE_ADMIN_DEFAULT_TTL_SECONDS: 300,
+      SENSITIVE_ADMIN_MIN_TTL_SECONDS: 60,
+      SENSITIVE_ADMIN_MAX_TTL_SECONDS: 900,
     });
+  });
+
+  it('validates signed-read TTL ordering and positive integer syntax', () => {
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        PUBLIC_REDIRECT_DEFAULT_TTL_SECONDS: '299',
+      }),
+    ).toThrow('PUBLIC_REDIRECT TTL values');
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        SENSITIVE_ADMIN_MAX_TTL_SECONDS: '0',
+      }),
+    ).toThrow('must be a positive integer');
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        SENSITIVE_ADMIN_DEFAULT_TTL_SECONDS: 'not-a-number',
+      }),
+    ).toThrow('must be a positive integer');
   });
 
   it('rejects missing required variables', () => {

@@ -27,6 +27,7 @@ import type {
   MediaListQuery,
   MediaRecord,
 } from '../src/modules/media/domain/media';
+import { MediaAccessClass } from '../src/modules/media/domain/media';
 import {
   jpegFixture,
   pngFixture,
@@ -159,6 +160,7 @@ class InMemoryMediaRepository {
       height: input.height,
       createdAt: now,
       updatedAt: now,
+      accessClass: input.accessClass ?? MediaAccessClass.PUBLIC,
     };
     this.rows.set(created.id, created);
     return Promise.resolve(created);
@@ -306,11 +308,12 @@ describe('Admin Media Library APIs (e2e)', () => {
       .expect(403);
   });
 
-  it('uploads a single file and returns derived url without storageKey', async () => {
+  it('uploads a single file and returns content url without storageKey', async () => {
     const token = adminToken();
     const response = await request(server())
       .post('/api/v1/admin/media/upload')
       .set('Authorization', `Bearer ${token}`)
+      .field('accessClass', MediaAccessClass.PUBLIC)
       .attach('files', jpegFixture(), {
         filename: 'cage-free.jpg',
         contentType: 'image/jpeg',
@@ -332,10 +335,12 @@ describe('Admin Media Library APIs (e2e)', () => {
     expect(body.data.items[0]?.media).toMatchObject({
       originalFileName: 'cage-free.jpg',
       mimeType: 'image/jpeg',
+      accessClass: MediaAccessClass.PUBLIC,
     });
     expect(body.data.items[0]?.media).not.toHaveProperty('storageKey');
-    expect(String(body.data.items[0]?.media?.['url'])).toContain(
-      'https://media.test.invalid/media/',
+    const mediaId = String(body.data.items[0]?.media?.['id']);
+    expect(String(body.data.items[0]?.media?.['url'])).toBe(
+      `/api/v1/media/${mediaId}/content`,
     );
     expect(JSON.stringify(body)).not.toContain('STORAGE_SECRET');
     expect(storage.countForTest()).toBe(1);
@@ -346,6 +351,7 @@ describe('Admin Media Library APIs (e2e)', () => {
     const response = await request(server())
       .post('/api/v1/admin/media/upload')
       .set('Authorization', `Bearer ${token}`)
+      .field('accessClass', MediaAccessClass.PUBLIC)
       .attach('files', jpegFixture(), {
         filename: 'ok.jpg',
         contentType: 'image/jpeg',
@@ -378,6 +384,7 @@ describe('Admin Media Library APIs (e2e)', () => {
     const response = await request(server())
       .post('/api/v1/admin/media/upload')
       .set('Authorization', `Bearer ${token}`)
+      .field('accessClass', MediaAccessClass.PUBLIC)
       .attach('files', jpegFixture(), {
         filename: 'photo.png',
         contentType: 'image/png',
@@ -397,7 +404,8 @@ describe('Admin Media Library APIs (e2e)', () => {
     const token = adminToken();
     const req = request(server())
       .post('/api/v1/admin/media/upload')
-      .set('Authorization', `Bearer ${token}`);
+      .set('Authorization', `Bearer ${token}`)
+      .field('accessClass', MediaAccessClass.PUBLIC);
     for (let i = 0; i < 11; i += 1) {
       req.attach('files', jpegFixture(), {
         filename: `n${i}.jpg`,
@@ -414,7 +422,8 @@ describe('Admin Media Library APIs (e2e)', () => {
     const token = adminToken();
     const req = request(server())
       .post('/api/v1/admin/media/upload')
-      .set('Authorization', `Bearer ${token}`);
+      .set('Authorization', `Bearer ${token}`)
+      .field('accessClass', MediaAccessClass.PUBLIC);
     for (let i = 0; i < HARD_MEDIA_MAX_FILES_PER_BATCH + 1; i += 1) {
       req.attach('files', jpegFixture(), {
         filename: `hard-${i}.jpg`,
@@ -429,6 +438,7 @@ describe('Admin Media Library APIs (e2e)', () => {
     const wrongField = await request(server())
       .post('/api/v1/admin/media/upload')
       .set('Authorization', `Bearer ${token}`)
+      .field('accessClass', MediaAccessClass.PUBLIC)
       .attach('file', jpegFixture(), {
         filename: 'photo.jpg',
         contentType: 'image/jpeg',
@@ -444,6 +454,7 @@ describe('Admin Media Library APIs (e2e)', () => {
     const response = await request(server())
       .post('/api/v1/admin/media/upload')
       .set('Authorization', `Bearer ${token}`)
+      .field('accessClass', MediaAccessClass.PUBLIC)
       .attach('files', gifFixture(), {
         filename: 'anim.gif',
         contentType: 'image/gif',
@@ -475,6 +486,7 @@ describe('Admin Media Library APIs (e2e)', () => {
       height: 1,
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      accessClass: MediaAccessClass.PUBLIC,
     };
     const newer: MediaRecord = {
       id: randomUUID(),
@@ -486,6 +498,7 @@ describe('Admin Media Library APIs (e2e)', () => {
       height: 1,
       createdAt: new Date('2026-08-01T00:00:00.000Z'),
       updatedAt: new Date('2026-08-01T00:00:00.000Z'),
+      accessClass: MediaAccessClass.PUBLIC,
     };
     media.seed(older);
     media.seed(newer);
@@ -523,7 +536,7 @@ describe('Admin Media Library APIs (e2e)', () => {
       .query({ unknown: 'x' })
       .set('Authorization', `Bearer ${token}`)
       .expect(400);
-    expect(asApiErrorBody(rejected.body).error.code).toBe('BAD_REQUEST');
+    expect(asApiErrorBody(rejected.body).error.code).toBe('VALIDATION_ERROR');
 
     const jpegOnly = await request(server())
       .get('/api/v1/admin/media')
@@ -542,7 +555,7 @@ describe('Admin Media Library APIs (e2e)', () => {
       .query({ mimeType: 'image/gif' })
       .set('Authorization', `Bearer ${token}`)
       .expect(400);
-    expect(asApiErrorBody(badMime.body).error.code).toBe('BAD_REQUEST');
+    expect(asApiErrorBody(badMime.body).error.code).toBe('VALIDATION_ERROR');
   });
 
   it('deletes media metadata and the stored object', async () => {
@@ -550,6 +563,7 @@ describe('Admin Media Library APIs (e2e)', () => {
     const uploaded = await request(server())
       .post('/api/v1/admin/media/upload')
       .set('Authorization', `Bearer ${token}`)
+      .field('accessClass', MediaAccessClass.PUBLIC)
       .attach('files', pngFixture(), {
         filename: 'banner.png',
         contentType: 'image/png',
@@ -578,6 +592,7 @@ describe('Admin Media Library APIs (e2e)', () => {
     const uploaded = await request(server())
       .post('/api/v1/admin/media/upload')
       .set('Authorization', `Bearer ${token}`)
+      .field('accessClass', MediaAccessClass.PUBLIC)
       .attach('files', pngFixture(), 'shared.png')
       .expect(200);
     const id = (
@@ -648,14 +663,79 @@ describe('Admin Media Library APIs (e2e)', () => {
       .expect(403);
   });
 
+  it('redirects PUBLIC content and hides ADMIN_ONLY from anonymous content reads', async () => {
+    const token = adminToken();
+    const publicUpload = await request(server())
+      .post('/api/v1/admin/media/upload')
+      .set('Authorization', `Bearer ${token}`)
+      .field('accessClass', MediaAccessClass.PUBLIC)
+      .attach('files', jpegFixture(), {
+        filename: 'public.jpg',
+        contentType: 'image/jpeg',
+      })
+      .expect(200);
+    const publicId = (
+      publicUpload.body as {
+        data: { items: Array<{ media?: { id: string } }> };
+      }
+    ).data.items[0]?.media?.id;
+    expect(publicId).toBeDefined();
+
+    const redirected = await request(server())
+      .get(`/api/v1/media/${publicId}/content`)
+      .redirects(0)
+      .expect(302);
+    expect(redirected.headers['cache-control']).toBe('no-store');
+    expect(redirected.headers['referrer-policy']).toBe('no-referrer');
+    expect(String(redirected.headers.location)).toContain('signed-test=1');
+    expect(JSON.stringify(redirected.headers)).not.toContain('STORAGE_SECRET');
+
+    const privateUpload = await request(server())
+      .post('/api/v1/admin/media/upload')
+      .set('Authorization', `Bearer ${token}`)
+      .field('accessClass', MediaAccessClass.ADMIN_ONLY)
+      .attach('files', jpegFixture(), {
+        filename: 'receipt.jpg',
+        contentType: 'image/jpeg',
+      })
+      .expect(200);
+    const privateId = (
+      privateUpload.body as {
+        data: { items: Array<{ media?: { id: string; url: string | null } }> };
+      }
+    ).data.items[0]?.media?.id;
+    const privateUrl = (
+      privateUpload.body as {
+        data: { items: Array<{ media?: { url: string | null } }> };
+      }
+    ).data.items[0]?.media?.url;
+    expect(privateId).toBeDefined();
+    expect(privateUrl).toBeNull();
+
+    const denied = await request(server())
+      .get(`/api/v1/media/${privateId}/content`)
+      .expect(404);
+    expect(asApiErrorBody(denied.body).error.code).toBe('MEDIA_NOT_FOUND');
+    expect(JSON.stringify(denied.body)).not.toContain('storageKey');
+
+    const missing = await request(server())
+      .get(`/api/v1/media/${randomUUID()}/content`)
+      .expect(404);
+    expect(asApiErrorBody(missing.body).error.code).toBe('MEDIA_NOT_FOUND');
+  });
+
   it('documents Admin Media operations in OpenAPI', () => {
     const openapi = createOpenApiDocument(app);
     const paths = openapi.paths ?? {};
     expect(paths['/api/v1/admin/media']).toBeDefined();
     expect(paths['/api/v1/admin/media/upload']).toBeDefined();
     expect(paths['/api/v1/admin/media/{id}']).toBeDefined();
+    expect(paths['/api/v1/media/{mediaId}/content']).toBeDefined();
     const upload = paths['/api/v1/admin/media/upload']?.post;
     expect(upload?.operationId).toBe('AdminMedia_upload');
+    expect(paths['/api/v1/media/{mediaId}/content']?.get?.operationId).toBe(
+      'Media_getContent',
+    );
     expect(JSON.stringify(openapi)).not.toContain('STORAGE_ACCESS_KEY');
     expect(JSON.stringify(openapi)).not.toContain('liara.ir');
   });

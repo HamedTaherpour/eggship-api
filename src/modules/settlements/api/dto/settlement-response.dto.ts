@@ -74,6 +74,15 @@ export class AdminSettlementResponseDto {
   data!: AdminSettlementDto;
 }
 
+export class AdminSettlementReceiptAccessDto {
+  @ApiProperty({ type: String, format: 'uri' }) url!: string;
+  @ApiProperty({ type: String, format: 'date-time' }) expiresAt!: string;
+}
+export class AdminSettlementReceiptAccessResponseDto {
+  @ApiProperty({ type: AdminSettlementReceiptAccessDto })
+  data!: AdminSettlementReceiptAccessDto;
+}
+
 export const AdminSettlementListResponseDto = createPaginatedResponseDto(
   AdminSettlementDto,
   { name: 'AdminSettlementListResponseDto' },

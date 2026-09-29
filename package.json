@@ -1,7 +1,7 @@
 {
-  "name": "eggship-api",
+  "name": "eggship-backend",
   "version": "0.1.0",
-  "description": "Standalone backend API for EggShip.",
+  "description": "Production-minded NestJS backend case study for a B2B commerce platform — built with PostgreSQL, Prisma, Redis, BullMQ, concurrency-safe ordering, layered testing, and an AI-native engineering workflow.",
   "private": true,
   "license": "UNLICENSED",
   "engines": {
